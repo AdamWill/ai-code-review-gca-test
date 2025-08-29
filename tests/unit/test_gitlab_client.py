@@ -138,3 +138,78 @@ class TestGitLabClient:
         assert len(limited) == 2
         assert limited[0].file_path == "file1.py"
         assert limited[1].file_path == "file2.py"
+
+    @pytest.mark.asyncio
+    async def test_post_review_success(self, test_config: Config) -> None:
+        """Test successful review posting."""
+        client = GitLabClient(test_config)
+        review_content = "## AI Code Review\n\nThis is a test review."
+
+        # Mock GitLab objects
+        mock_note = MagicMock()
+        mock_note.id = 456
+        mock_note.created_at = "2024-01-01T12:00:00Z"
+        mock_note.author = {"name": "test_bot"}
+
+        mock_mr = MagicMock()
+        mock_mr.notes.create.return_value = mock_note
+
+        mock_project = MagicMock()
+        mock_project.mergerequests.get.return_value = mock_mr
+
+        with patch.object(client, "_gitlab_client", mock_client := MagicMock()):
+            mock_client.projects.get.return_value = mock_project
+
+            result = await client.post_review("test/project", 123, review_content)
+
+            # Verify API calls
+            mock_client.projects.get.assert_called_once_with("test/project")
+            mock_project.mergerequests.get.assert_called_once_with(123)
+            mock_mr.notes.create.assert_called_once_with({"body": review_content})
+
+            # Verify return data
+            assert result["id"] == "456"
+            assert result["created_at"] == "2024-01-01T12:00:00Z"
+            assert result["author"] == "test_bot"
+            assert "note_456" in result["url"]
+
+    @pytest.mark.asyncio
+    async def test_post_review_dry_run(self, dry_run_config: Config) -> None:
+        """Test review posting in dry run mode."""
+        client = GitLabClient(dry_run_config)
+        review_content = "## AI Code Review\n\nThis is a test review."
+
+        result = await client.post_review("test/project", 123, review_content)
+
+        # Verify mock data is returned
+        assert result["id"] == "mock_note_123"
+        assert result["author"] == "AI Code Review (DRY RUN)"
+        assert "mock/project" in result["url"]
+        assert "content_preview" in result
+        assert result["content_preview"].startswith("## AI Code Review")
+
+    @pytest.mark.asyncio
+    async def test_post_review_gitlab_error(self, test_config: Config) -> None:
+        """Test review posting with GitLab API error."""
+        client = GitLabClient(test_config)
+        review_content = "## AI Code Review\n\nThis is a test review."
+
+        with patch.object(client, "_gitlab_client", mock_client := MagicMock()):
+            mock_client.projects.get.side_effect = gitlab.GitlabError(
+                "Unauthorized", response_code=401
+            )
+
+            with pytest.raises(GitLabAPIError, match="Failed to post review to GitLab"):
+                await client.post_review("test/project", 123, review_content)
+
+    @pytest.mark.asyncio
+    async def test_post_review_unexpected_error(self, test_config: Config) -> None:
+        """Test review posting with unexpected error."""
+        client = GitLabClient(test_config)
+        review_content = "## AI Code Review\n\nThis is a test review."
+
+        with patch.object(client, "_gitlab_client", mock_client := MagicMock()):
+            mock_client.projects.get.side_effect = Exception("Network error")
+
+            with pytest.raises(GitLabAPIError, match="Unexpected error posting review"):
+                await client.post_review("test/project", 123, review_content)

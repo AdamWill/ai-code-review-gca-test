@@ -296,3 +296,120 @@ AI generated review feedback for test purposes. The code changes appear well-str
         context = engine._get_project_context()
 
         assert "No additional project context available" in context
+
+    @pytest.mark.asyncio
+    async def test_post_review_to_gitlab_success(self, test_config: Config) -> None:
+        """Test successful review posting to GitLab."""
+        engine = ReviewEngine(test_config)
+
+        # Mock review result
+        review = CodeReview(
+            general_feedback="Test review feedback",
+            file_reviews=[],
+            overall_assessment="Good quality",
+            priority_issues=["Issue 1"],
+            minor_suggestions=["Suggestion 1"],
+        )
+        summary = ReviewSummary(
+            title="Test Summary",
+            key_changes=["Change 1"],
+            modules_affected=["module1"],
+            user_impact="None",
+            technical_impact="Minor",
+            risk_level="Low",
+            risk_justification="Safe changes",
+        )
+        review_result = ReviewResult(review=review, summary=summary)
+
+        # Mock GitLab client response
+        mock_note_info = {
+            "id": "123",
+            "url": "https://gitlab.com/test/-/merge_requests/456#note_123",
+            "created_at": "2024-01-01T12:00:00Z",
+            "author": "AI Code Review",
+        }
+
+        with patch.object(engine.gitlab_client, "post_review") as mock_post:
+            mock_post.return_value = mock_note_info
+
+            result = await engine.post_review_to_gitlab("test/project", 456, review_result)
+
+            # Verify the post_review was called with correct parameters
+            mock_post.assert_called_once()
+            args = mock_post.call_args[0]
+            assert args[0] == "test/project"
+            assert args[1] == 456
+            assert "Test review feedback" in args[2]  # Review content
+            assert "🤖 **AI Code Review**" in args[2]  # Footer
+
+            # Verify return value
+            assert result == mock_note_info
+
+    @pytest.mark.asyncio
+    async def test_post_review_to_gitlab_dry_run(self, dry_run_config: Config) -> None:
+        """Test review posting to GitLab in dry run mode."""
+        engine = ReviewEngine(dry_run_config)
+
+        # Mock review result
+        review = CodeReview(
+            general_feedback="Test review feedback",
+            file_reviews=[],
+            overall_assessment="Good quality",
+            priority_issues=[],
+            minor_suggestions=[],
+        )
+        summary = ReviewSummary(
+            title="Test Summary",
+            key_changes=["Change 1"],
+            modules_affected=["module1"],
+            user_impact="None",
+            technical_impact="Minor",
+            risk_level="Low",
+            risk_justification="Safe changes",
+        )
+        review_result = ReviewResult(review=review, summary=summary)
+
+        # Mock GitLab client response for dry run
+        mock_note_info = {
+            "id": "mock_note_123",
+            "url": "https://gitlab.com/mock/project/-/merge_requests/456#note_mock_123",
+            "created_at": "2024-01-01T12:00:00Z",
+            "author": "AI Code Review (DRY RUN)",
+            "content_preview": "Test review feedback...",
+        }
+
+        with patch.object(engine.gitlab_client, "post_review") as mock_post:
+            mock_post.return_value = mock_note_info
+
+            result = await engine.post_review_to_gitlab("test/project", 456, review_result)
+
+            # Verify the post_review was called
+            mock_post.assert_called_once()
+            args = mock_post.call_args[0]
+            assert "**Mode:** DRY RUN" in args[2]  # Footer includes dry run mode
+
+            # Verify return value
+            assert result == mock_note_info
+            assert "DRY RUN" in result["author"]
+
+    def test_create_review_footer_normal_mode(self, test_config: Config) -> None:
+        """Test review footer creation in normal mode."""
+        engine = ReviewEngine(test_config)
+
+        footer = engine._create_review_footer()
+
+        assert "🤖 **AI Code Review**" in footer
+        assert f"**Provider:** {test_config.ai_provider.value}" in footer
+        assert f"**Model:** {test_config.ai_model}" in footer
+        assert "DRY RUN" not in footer
+
+    def test_create_review_footer_dry_run_mode(self, dry_run_config: Config) -> None:
+        """Test review footer creation in dry run mode."""
+        engine = ReviewEngine(dry_run_config)
+
+        footer = engine._create_review_footer()
+
+        assert "🤖 **AI Code Review**" in footer
+        assert f"**Provider:** {dry_run_config.ai_provider.value}" in footer
+        assert f"**Model:** {dry_run_config.ai_model}" in footer
+        assert "**Mode:** DRY RUN" in footer

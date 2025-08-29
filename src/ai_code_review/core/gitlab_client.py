@@ -225,3 +225,65 @@ class GitLabClient:
         ]
 
         return MergeRequestData(info=mock_info, diffs=mock_diffs, commits=mock_commits)
+
+    async def post_review(
+        self, project_id: str | int, mr_iid: int, review_content: str
+    ) -> dict[str, str]:
+        """Post review as a note/comment on the merge request.
+
+        Args:
+            project_id: GitLab project ID or path (e.g., 'group/project')
+            mr_iid: Merge request IID
+            review_content: The markdown content of the review to post
+
+        Returns:
+            Dictionary containing note information (id, url, etc.)
+
+        Raises:
+            GitLabAPIError: If posting fails
+        """
+        if self.config.dry_run:
+            # Return mock data for dry run
+            return self._create_mock_note_data(project_id, mr_iid, review_content)
+
+        try:
+            # Get project
+            project: Project = self.gitlab_client.projects.get(project_id)
+
+            # Get merge request
+            merge_request: ProjectMergeRequest = project.mergerequests.get(mr_iid)
+
+            # Create the note on the MR
+            note = merge_request.notes.create({"body": review_content})
+
+            # Return note information
+            return {
+                "id": str(note.id),
+                "url": f"{self.config.gitlab_url}/-/merge_requests/{mr_iid}#note_{note.id}",
+                "created_at": note.created_at,
+                "author": note.author["name"]
+                if "author" in note.__dict__
+                else "AI Code Review",
+            }
+
+        except gitlab.GitlabError as e:
+            raise GitLabAPIError(
+                f"Failed to post review to GitLab: {e}",
+                getattr(e, "response_code", None),
+            ) from e
+        except Exception as e:
+            raise GitLabAPIError(f"Unexpected error posting review: {e}") from e
+
+    def _create_mock_note_data(
+        self, project_id: str | int, mr_iid: int, review_content: str
+    ) -> dict[str, str]:
+        """Create mock note data for dry run mode."""
+        return {
+            "id": "mock_note_123",
+            "url": f"{self.config.gitlab_url}/mock/project/-/merge_requests/{mr_iid}#note_mock_123",
+            "created_at": "2024-01-01T12:00:00Z",
+            "author": "AI Code Review (DRY RUN)",
+            "content_preview": review_content[:100] + "..."
+            if len(review_content) > 100
+            else review_content,
+        }

@@ -89,7 +89,7 @@ logger = structlog.get_logger(__name__)
 @click.option(
     "--post",
     is_flag=True,
-    help="Post review as MR comment (not implemented in MVP)",
+    help="Post review as MR comment to GitLab",
 )
 @click.option(
     "--with-summary/--no-summary",
@@ -351,8 +351,24 @@ async def _run_review(
         click.echo("\n📝 Review generated successfully!")
 
         if post_review:
-            # TODO: Implement posting to GitLab in future iteration
-            click.echo("⚠️  Posting to GitLab not yet implemented (MVP)")
+            try:
+                click.echo("\n📤 Posting review to GitLab...")
+                note_info = await engine.post_review_to_gitlab(
+                    project_id, mr_iid, result
+                )
+
+                if config.dry_run:
+                    click.echo("🧪 DRY RUN: Review posting simulated successfully!")
+                    click.echo(f"   Mock Note URL: {note_info['url']}")
+                else:
+                    click.echo("✅ Review posted successfully to GitLab!")
+                    click.echo(f"   📝 Note URL: {note_info['url']}")
+                    click.echo(f"   🆔 Note ID: {note_info['id']}")
+
+            except Exception as e:
+                logger.error("Failed to post review to GitLab", error=str(e))
+                click.echo(f"❌ Failed to post review to GitLab: {e}", err=True)
+                # Continue execution - show review in stdout as fallback
 
         # Output review to stdout
         click.echo("\n" + "=" * 80)
