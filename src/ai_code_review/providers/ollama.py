@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import Any
 
 import httpx
-from langchain_community.chat_models import ChatOllama
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_ollama import ChatOllama
 
 from ai_code_review.models.config import Config
 from ai_code_review.providers.base import BaseAIProvider
