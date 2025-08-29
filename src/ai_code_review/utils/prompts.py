@@ -8,15 +8,13 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 
-def create_system_prompt(model_name: str, provider_name: str) -> str:
+def create_system_prompt() -> str:
     """Create system prompt for code review."""
-    return f"""You are an expert senior software engineer and a meticulous code reviewer.
+    return """You are an expert senior software engineer and a meticulous code reviewer.
 Your goal is to provide concise, high-quality, constructive feedback on merge requests to help developers improve their code.
 You need to focus on review ONLY the changes in the diff, not the entire codebase.
 Your tone should be helpful, collaborative, and professional.
-You must adhere strictly to the response format requested in the user's prompt.
-
-Model Context: You are running on {model_name} via {provider_name}."""
+You must adhere strictly to the response format requested in the user's prompt."""
 
 
 def create_review_prompt() -> ChatPromptTemplate:
@@ -38,8 +36,6 @@ def create_review_prompt() -> ChatPromptTemplate:
 
 Structure your feedback in Markdown using collapsible sections as follows:
 
----
-
 ### General Feedback
 
 A brief, high-level overview of the merge request. Mention the overall quality and any major architectural points.
@@ -51,21 +47,10 @@ For each file with significant feedback, use this collapsible format:
 <details>
 <summary><strong>📄 `path/to/file.ext`</strong> - Brief summary of main issues</summary>
 
-#### Reviews
-- **[Issue Type]** Brief description of the issue or suggestion
-  - **Reasoning:** Detailed explanation of why this is important
-  - **Suggestion:** Specific actionable recommendation
-
-```language
-// Code example if applicable
-suggested_improvement();
-```
-
-#### Questions (if any)
-- **[Question]** Clarifying question about specific implementation. ONLY if necessary
-
-#### Additional Comments (if any)
-- **[Note]** Any additional observations or recommendations. ONLY if necessary
+- **[Review]** A concise, actionable review. Explain the reasoning behind it.
+- **[Question]** Ask a clarifying question about a piece of code. ONLY if necessary.
+- **[Suggestion]** A suggestion for a change to the code. ONLY if necessary.
+- **[Comment]** A comment about the code. ONLY if necessary.
 
 </details>
 
@@ -75,13 +60,9 @@ suggested_improvement();
 - **Priority Issues:** Most critical items to address
 - **Minor Suggestions:** Optional improvements
 
----
+ ---
 
-## Code Diff
-
-```diff
-{diff_content}
-```"""
+ {diff_content}"""
 
     return ChatPromptTemplate.from_messages(
         [("system", "{system_prompt}"), ("human", template)]
@@ -96,31 +77,16 @@ def create_summary_prompt() -> ChatPromptTemplate:
 
 ## Response Format
 
-Use this collapsible markdown format:
-
 <details>
-<summary><strong>📋 MR Summary</strong> - Single sentence describing the main change</summary>
+<summary><strong>📋 MR Summary</strong> A single, descriptive sentence summarizing the change.</summary>
 
-### Key Changes
-- Brief bullet point of most important change
-- Another significant modification
-- Additional relevant change
-
-### Impact Assessment
-- **Modules Affected:** List of impacted components
-- **User Impact:** Description of user-facing changes (if any)
-- **Technical Impact:** Infrastructure or architectural changes
-
-### Risk Level
-- **Low/Medium/High** - Brief justification
+- **Key Changes:** A bulleted list of the most important changes.
+- **Impact:** Briefly describe the impacted modules, components, or user-facing functionality.
+- **Risk Level:** Low/Medium/High - Brief justification
 
 </details>
 
-## Code Diff
-
-```diff
-{diff_content}
-```"""
+{diff_content}"""
 
     return ChatPromptTemplate.from_messages(
         [("system", "{system_prompt}"), ("human", template)]
@@ -133,15 +99,13 @@ def create_review_chain(llm: Any) -> Any:
 
     return (
         {
-            "system_prompt": lambda x: create_system_prompt(
-                x.get("model_name", "unknown"), x.get("provider_name", "unknown")
-            ),
+            "system_prompt": lambda x: create_system_prompt(),
             "diff_content": lambda x: x["diff"],
-            "language_hint_section": lambda x: f"**Primary Language:** `{x['language']}`"
+            "language_hint_section": lambda x: f"**Primary Language:** {x['language']}"
             if x.get("language")
             else "",
-            "project_context_section": lambda x: f"## Project Context\n\n{x['context']}"
-            if x.get("context")
+            "project_context_section": lambda x: f"## Project Context\n{x['context']}"
+            if x.get("context") and x["context"].strip()
             else "",
         }
         | prompt
@@ -156,12 +120,10 @@ def create_summary_chain(llm: Any) -> Any:
 
     return (
         {
-            "system_prompt": lambda x: create_system_prompt(
-                x.get("model_name", "unknown"), x.get("provider_name", "unknown")
-            ),
+            "system_prompt": lambda x: create_system_prompt(),
             "diff_content": lambda x: x["diff"],
-            "project_context_section": lambda x: f"## Project Context\n\n{x['context']}"
-            if x.get("context")
+            "project_context_section": lambda x: f"## Project Context\n{x['context']}"
+            if x.get("context") and x["context"].strip()
             else "",
         }
         | prompt

@@ -18,11 +18,12 @@ class TestPrompts:
 
     def test_create_system_prompt(self) -> None:
         """Test system prompt creation."""
-        prompt = create_system_prompt("test-model", "test-provider")
+        prompt = create_system_prompt()
 
-        assert "expert senior software engineer" in prompt
-        assert "test-model" in prompt
-        assert "test-provider" in prompt
+        assert isinstance(prompt, str)
+        assert len(prompt) > 0
+        assert "expert senior software engineer" in prompt.lower()
+        assert "review only the changes" in prompt.lower()
 
     def test_create_review_prompt(self) -> None:
         """Test code review prompt template."""

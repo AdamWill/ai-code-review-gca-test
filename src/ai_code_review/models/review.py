@@ -33,7 +33,7 @@ class CodeReview(BaseModel):
     general_feedback: str
     file_reviews: list[FileReview]
     overall_assessment: str
-    priority_issues: list[str]
+    priority_issues: list[str] = []
     minor_suggestions: list[str] = []
 
 
@@ -57,19 +57,37 @@ class ReviewResult(BaseModel):
 
     def to_markdown(self) -> str:
         """Convert review result to markdown format."""
-        sections = [
-            "### General Feedback\n",
-            f"{self.review.general_feedback}\n",
-            "### ✅ Summary\n",
-            f"- **Overall Assessment:** {self.review.overall_assessment}",
-            f"- **Priority Issues:** {', '.join(self.review.priority_issues) if self.review.priority_issues else 'None'}",
-        ]
+        sections = []
 
-        if self.review.minor_suggestions:
+        # Add MR summary FIRST if available (executive overview comes first)
+        if self.summary:
+            sections.append("## 📋 MR Executive Summary\n")
+            sections.append(f"**Headline:** {self.summary.title}\n")
+
+            if self.summary.key_changes:
+                sections.append("**Key Changes:**")
+                for change in self.summary.key_changes:
+                    sections.append(f"- {change}")
+                sections.append("")
+
             sections.append(
-                f"- **Minor Suggestions:** {', '.join(self.review.minor_suggestions)}"
+                f"**Impact:** {', '.join(self.summary.modules_affected) if self.summary.modules_affected else 'Multiple components'}"
             )
+            if self.summary.user_impact != "To be determined":
+                sections.append(f" | User: {self.summary.user_impact}")
+            if (
+                self.summary.technical_impact
+                and self.summary.technical_impact != "To be determined"
+            ):
+                sections.append(f" | Technical: {self.summary.technical_impact}")
+            sections.append("")
 
-        # TODO: Add file reviews and MR summary formatting in future iterations
+            sections.append(
+                f"**Risk Level:** {self.summary.risk_level} - {self.summary.risk_justification}"
+            )
+            sections.append("\n---\n")
+
+        # Add AI-generated detailed review SECOND
+        sections.append(self.review.general_feedback)
 
         return "\n".join(sections)

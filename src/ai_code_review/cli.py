@@ -92,8 +92,7 @@ logger = structlog.get_logger(__name__)
     help="Post review as MR comment (not implemented in MVP)",
 )
 @click.option(
-    "--with-summary",
-    is_flag=True,
+    "--with-summary/--no-summary",
     default=True,
     help="Include MR summary in review (default: true)",
 )

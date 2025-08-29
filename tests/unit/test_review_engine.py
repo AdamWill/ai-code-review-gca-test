@@ -9,6 +9,7 @@ import pytest
 from ai_code_review.core.review_engine import ReviewEngine
 from ai_code_review.models.config import AIProvider, Config
 from ai_code_review.models.gitlab import (
+    MergeRequestCommit,
     MergeRequestData,
     MergeRequestDiff,
     MergeRequestInfo,
@@ -62,7 +63,19 @@ class TestReviewEngine:
             )
         ]
 
-        return MergeRequestData(info=info, diffs=diffs)
+        commits = [
+            MergeRequestCommit(
+                id="abc123",
+                title="Test feature implementation",
+                message="Test feature implementation\n\nAdds new functionality for testing.\n- Implements core logic\n- Updates documentation",
+                author_name="Test Author",
+                author_email="test@example.com",
+                committed_date="2024-01-01T12:00:00Z",
+                short_id="abc123",
+            )
+        ]
+
+        return MergeRequestData(info=info, diffs=diffs, commits=commits)
 
     def test_engine_initialization(self, test_config: Config) -> None:
         """Test review engine initialization."""

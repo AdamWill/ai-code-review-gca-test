@@ -15,6 +15,18 @@ class MergeRequestDiff(BaseModel):
     diff: str
 
 
+class MergeRequestCommit(BaseModel):
+    """Represents a commit in the merge request."""
+
+    id: str
+    title: str
+    message: str
+    author_name: str
+    author_email: str
+    committed_date: str
+    short_id: str
+
+
 class MergeRequestInfo(BaseModel):
     """Basic merge request information."""
 
@@ -30,10 +42,11 @@ class MergeRequestInfo(BaseModel):
 
 
 class MergeRequestData(BaseModel):
-    """Complete MR data with diffs."""
+    """Complete MR data with diffs and commits."""
 
     info: MergeRequestInfo
     diffs: list[MergeRequestDiff]
+    commits: list[MergeRequestCommit]
 
     @property
     def total_chars(self) -> int:
@@ -44,3 +57,8 @@ class MergeRequestData(BaseModel):
     def file_count(self) -> int:
         """Get number of modified files."""
         return len(self.diffs)
+
+    @property
+    def commit_count(self) -> int:
+        """Get number of commits."""
+        return len(self.commits)

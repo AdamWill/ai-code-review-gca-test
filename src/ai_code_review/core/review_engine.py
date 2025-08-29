@@ -72,6 +72,7 @@ class ReviewEngine:
             logger.info(
                 "MR data fetched successfully",
                 file_count=mr_data.file_count,
+                commit_count=mr_data.commit_count,
                 total_chars=mr_data.total_chars,
                 mr_title=mr_data.info.title,
             )
@@ -129,8 +130,6 @@ class ReviewEngine:
 
             review_response = await review_chain.ainvoke(
                 {
-                    "model_name": self.ai_provider.model_name,
-                    "provider_name": self.ai_provider.provider_name,
                     "diff": diff_content,
                     "language": self.config.language_hint,
                     "context": self._get_project_context(),
@@ -171,8 +170,6 @@ class ReviewEngine:
 
             summary_response = await summary_chain.ainvoke(
                 {
-                    "model_name": self.ai_provider.model_name,
-                    "provider_name": self.ai_provider.provider_name,
                     "diff": diff_content,
                     "context": self._get_project_context(),
                 }
@@ -182,7 +179,7 @@ class ReviewEngine:
             # TODO: Parse structured response into ReviewSummary model in future iterations
             return ReviewSummary(
                 title=mr_data.info.title,
-                key_changes=["AI-generated summary available"],
+                key_changes=[],
                 modules_affected=[],
                 user_impact="To be determined",
                 technical_impact=summary_response,

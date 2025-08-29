@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ai_code_review.models.config import AIProvider, Config
 from ai_code_review.models.gitlab import (
+    MergeRequestCommit,
     MergeRequestData,
     MergeRequestDiff,
     MergeRequestInfo,
@@ -65,11 +66,23 @@ class TestConfig:
 
         # Clear all environment variables that could interfere
         env_vars_to_clear = [
-            "GITLAB_TOKEN", "GITLAB_URL", "AI_PROVIDER", "AI_MODEL",
-            "AI_API_KEY", "TEMPERATURE", "MAX_TOKENS", "HTTP_TIMEOUT",
-            "OLLAMA_BASE_URL", "MAX_CHARS", "MAX_FILES", "LANGUAGE_HINT",
-            "DRY_RUN", "LOG_LEVEL", "CI_PROJECT_PATH", "CI_MERGE_REQUEST_IID",
-            "CI_SERVER_URL"
+            "GITLAB_TOKEN",
+            "GITLAB_URL",
+            "AI_PROVIDER",
+            "AI_MODEL",
+            "AI_API_KEY",
+            "TEMPERATURE",
+            "MAX_TOKENS",
+            "HTTP_TIMEOUT",
+            "OLLAMA_BASE_URL",
+            "MAX_CHARS",
+            "MAX_FILES",
+            "LANGUAGE_HINT",
+            "DRY_RUN",
+            "LOG_LEVEL",
+            "CI_PROJECT_PATH",
+            "CI_MERGE_REQUEST_IID",
+            "CI_SERVER_URL",
         ]
 
         for var in env_vars_to_clear:
@@ -252,10 +265,23 @@ class TestGitLabModels:
             web_url="https://gitlab.com/test/-/merge_requests/456",
         )
 
-        mr_data = MergeRequestData(info=info, diffs=diffs)
+        commits = [
+            MergeRequestCommit(
+                id="abc123",
+                title="Test commit",
+                message="Test commit message",
+                author_name="Test Author",
+                author_email="test@example.com",
+                committed_date="2024-01-01T12:00:00Z",
+                short_id="abc123",
+            )
+        ]
+
+        mr_data = MergeRequestData(info=info, diffs=diffs, commits=commits)
 
         assert mr_data.file_count == 2
         assert mr_data.total_chars == len("short diff") + len("longer diff content")
+        assert mr_data.commit_count == 1
 
 
 class TestReviewModels:
@@ -269,7 +295,7 @@ class TestReviewModels:
         )
 
         review = CodeReview(
-            general_feedback="Good code overall",
+            general_feedback="### General Feedback\n\nGood code overall\n\n### ✅ Summary\n- Overall good quality",
             file_reviews=[file_review],
             overall_assessment="Looks good",
             priority_issues=["Fix issue X"],
@@ -279,10 +305,7 @@ class TestReviewModels:
         result = ReviewResult(review=review)
         markdown = result.to_markdown()
 
-        # Test MVP simplified markdown output
-        assert "### General Feedback" in markdown
+        # Test that we get the AI-generated content directly
         assert "Good code overall" in markdown
-        assert "### ✅ Summary" in markdown
-        assert "**Overall Assessment:** Looks good" in markdown
-        assert "**Priority Issues:** Fix issue X" in markdown
-        assert "**Minor Suggestions:** Minor fix Y" in markdown
+        assert "General Feedback" in markdown
+        assert "Overall good quality" in markdown

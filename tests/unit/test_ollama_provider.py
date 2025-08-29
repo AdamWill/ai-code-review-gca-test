@@ -172,5 +172,3 @@ class TestOllamaProvider:
             assert result["status"] == "unhealthy"
             assert result["server_reachable"] is False
             assert "Connection refused" in result["error"]
-
-

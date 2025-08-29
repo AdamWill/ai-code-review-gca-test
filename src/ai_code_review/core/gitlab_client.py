@@ -7,6 +7,7 @@ from gitlab.v4.objects import Project, ProjectMergeRequest
 
 from ai_code_review.models.config import Config
 from ai_code_review.models.gitlab import (
+    MergeRequestCommit,
     MergeRequestData,
     MergeRequestDiff,
     MergeRequestInfo,
@@ -70,10 +71,11 @@ class GitLabClient:
                 web_url=merge_request.web_url,
             )
 
-            # Get diffs
+            # Get diffs and commits
             diffs = await self._fetch_merge_request_diffs(merge_request)
+            commits = await self._fetch_merge_request_commits(merge_request)
 
-            return MergeRequestData(info=mr_info, diffs=diffs)
+            return MergeRequestData(info=mr_info, diffs=diffs, commits=commits)
 
         except gitlab.GitlabError as e:
             raise GitLabAPIError(
@@ -126,6 +128,35 @@ class GitLabClient:
         except gitlab.GitlabError as e:
             raise GitLabAPIError(
                 f"Failed to fetch diffs: {e}", getattr(e, "response_code", None)
+            ) from e
+
+    async def _fetch_merge_request_commits(
+        self, merge_request: ProjectMergeRequest
+    ) -> list[MergeRequestCommit]:
+        """Fetch commits for a merge request."""
+        commits: list[MergeRequestCommit] = []
+
+        try:
+            # Get commits from the MR
+            mr_commits = merge_request.commits()
+
+            for commit_data in mr_commits:
+                commit = MergeRequestCommit(
+                    id=commit_data.id,
+                    title=commit_data.title,
+                    message=commit_data.message,
+                    author_name=commit_data.author_name,
+                    author_email=commit_data.author_email,
+                    committed_date=commit_data.committed_date,
+                    short_id=commit_data.short_id,
+                )
+                commits.append(commit)
+
+            return commits
+
+        except Exception as e:
+            raise GitLabAPIError(
+                f"Failed to fetch commits: {e}", getattr(e, "response_code", None)
             ) from e
 
     def _apply_content_limits(
@@ -181,4 +212,16 @@ class GitLabClient:
             )
         ]
 
-        return MergeRequestData(info=mock_info, diffs=mock_diffs)
+        mock_commits = [
+            MergeRequestCommit(
+                id="abc123456789",
+                title="Add world greeting feature",
+                message="Add world greeting feature\n\nImplements the requested greeting functionality to improve user experience.",
+                author_name="Mock Author",
+                author_email="author@example.com",
+                committed_date="2024-01-01T12:00:00Z",
+                short_id="abc1234",
+            )
+        ]
+
+        return MergeRequestData(info=mock_info, diffs=mock_diffs, commits=mock_commits)
