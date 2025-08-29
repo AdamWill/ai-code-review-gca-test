@@ -1,6 +1,79 @@
 stages:
+  - static-analysis
   - build
 
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      variables:
+        PIPELINE_NAME: "Merge Request #${CI_MERGE_REQUEST_IID}"
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH'
+      variables:
+        PIPELINE_NAME: "Deploy image with the tag :latest"
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG'
+      variables:
+        PIPELINE_NAME: "Deploy image witht the tag :${CI_COMMIT_TAG}"
+  name: $PIPELINE_NAME
+
+# Template
+
+.static-analysis-base:
+  stage: static-analysis
+  image: quay.io/automotive-toolchain/python3-uv:latest
+  before_script:
+    - uv sync --dev
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+      changes:
+        - src/**/*.py
+        - tests/**/*.py
+        - .gitlab-ci.yml
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH'
+      when: always
+    - if:  '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG'
+      when: always
+
+# Static Analisys
+
+check-formatting:
+  extends: .static-analysis-base
+  script:
+    - uv run ruff format --diff .
+
+lint-source:
+  extends: .static-analysis-base
+  script:
+    - uv run ruff check .
+
+type-check:
+  extends: .static-analysis-base
+  script:
+    - uv run mypy src/
+  artifacts:
+    reports:
+      junit: reports/mypy.xml
+
+security-scan:
+  extends: .static-analysis-base
+  script:
+    - uv run bandit -r src/
+
+unit-tests:
+  extends: .static-analysis-base
+  script:
+    - echo "Running unit tests"
+    - uv run pytest --cov=src --cov-report=html
+  coverage: '/(?i)total.*? (100(?:\.0+)?\%|[1-9]?\d(?:\.\d+)?\%)$/'
+  artifacts:
+    when: always
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+      junit: report.xml
+
+# Container
 
 build-container:
   image: quay.io/buildah/stable
@@ -15,7 +88,7 @@ build-container:
     - buildah build -t "${CONTAINER_NAME}" .
     - buildah push "${CONTAINER_NAME}"
   rules:
-    - if: $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG'
       variables:
         CONTAINER_TAG: "${CI_COMMIT_TAG}"
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
