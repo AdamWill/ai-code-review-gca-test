@@ -93,40 +93,148 @@ def create_summary_prompt() -> ChatPromptTemplate:
     )
 
 
-def create_review_chain(llm: Any) -> Any:
-    """Create code review chain."""
-    prompt = create_review_prompt()
+# Data processing functions for chain inputs
+def _extract_diff_content(input_data: dict[str, Any]) -> str:
+    """Extract diff content from input data.
 
-    return (
-        {
-            "system_prompt": lambda x: create_system_prompt(),
-            "diff_content": lambda x: x["diff"],
-            "language_hint_section": lambda x: f"**Primary Language:** {x['language']}"
-            if x.get("language")
-            else "",
-            "project_context_section": lambda x: f"## Project Context\n{x['context']}"
-            if x.get("context") and x["context"].strip()
-            else "",
-        }
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
+    Args:
+        input_data: Dictionary containing 'diff' key with code changes
+
+    Returns:
+        The diff content as string
+    """
+    return input_data["diff"]
+
+
+def _create_language_hint_section(input_data: dict[str, Any]) -> str:
+    """Create language hint section if language is provided.
+
+    Args:
+        input_data: Dictionary that may contain 'language' key
+
+    Returns:
+        Formatted language section or empty string if no language provided
+    """
+    language = input_data.get("language")
+    if language:
+        return f"**Primary Language:** {language}"
+    return ""
+
+
+def _create_project_context_section(input_data: dict[str, Any]) -> str:
+    """Create project context section if context is provided.
+
+    Args:
+        input_data: Dictionary that may contain 'context' key
+
+    Returns:
+        Formatted context section or empty string if no context provided
+    """
+    context = input_data.get("context")
+    if context and context.strip():
+        return f"## Project Context\n{context}"
+    return ""
+
+
+def _get_system_prompt(input_data: dict[str, Any]) -> str:
+    """Get system prompt (ignores input data, always returns same prompt).
+
+    Args:
+        input_data: Unused, but required for LangChain compatibility
+
+    Returns:
+        The system prompt string
+    """
+    return create_system_prompt()
+
+
+def _build_chain_inputs_for_review() -> dict[str, Any]:
+    """Build input transformation functions for review chain.
+
+    Returns:
+        Dictionary mapping template variables to transformation functions
+    """
+    return {
+        "system_prompt": _get_system_prompt,
+        "diff_content": _extract_diff_content,
+        "language_hint_section": _create_language_hint_section,
+        "project_context_section": _create_project_context_section,
+    }
+
+
+def _build_chain_inputs_for_summary() -> dict[str, Any]:
+    """Build input transformation functions for summary chain.
+
+    Returns:
+        Dictionary mapping template variables to transformation functions
+    """
+    return {
+        "system_prompt": _get_system_prompt,
+        "diff_content": _extract_diff_content,
+        "project_context_section": _create_project_context_section,
+    }
+
+
+def create_review_chain(llm: Any) -> Any:
+    """Create a LangChain pipeline for code review.
+
+    This function creates a processing pipeline that:
+    1. Takes input data (diff, language, context)
+    2. Transforms it into template variables
+    3. Applies the review prompt template
+    4. Passes through the LLM
+    5. Parses the output as string
+
+    Args:
+        llm: Language model instance to use for generating reviews
+
+    Returns:
+        LangChain pipeline ready to process review requests
+
+    Example:
+        >>> chain = create_review_chain(my_llm)
+        >>> result = chain.invoke({
+        ...     "diff": "- old code\n+ new code",
+        ...     "language": "Python",
+        ...     "context": "This is a web API project"
+        ... })
+    """
+    prompt_template = create_review_prompt()
+    input_transformations = _build_chain_inputs_for_review()
+
+    # Create LangChain pipeline: input_transformations -> prompt -> llm -> parser
+    chain = input_transformations | prompt_template | llm | StrOutputParser()
+
+    return chain
 
 
 def create_summary_chain(llm: Any) -> Any:
-    """Create MR summary chain."""
-    prompt = create_summary_prompt()
+    """Create a LangChain pipeline for MR summaries.
 
-    return (
-        {
-            "system_prompt": lambda x: create_system_prompt(),
-            "diff_content": lambda x: x["diff"],
-            "project_context_section": lambda x: f"## Project Context\n{x['context']}"
-            if x.get("context") and x["context"].strip()
-            else "",
-        }
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
+    This function creates a processing pipeline that:
+    1. Takes input data (diff, context)
+    2. Transforms it into template variables
+    3. Applies the summary prompt template
+    4. Passes through the LLM
+    5. Parses the output as string
+
+    Args:
+        llm: Language model instance to use for generating summaries
+
+    Returns:
+        LangChain pipeline ready to process summary requests
+
+    Example:
+        >>> chain = create_summary_chain(my_llm)
+        >>> result = chain.invoke({
+        ...     "diff": "- old code\n+ new code",
+        ...     "context": "This is a web API project"
+        ... })
+    """
+    prompt_template = create_summary_prompt()
+    input_transformations = _build_chain_inputs_for_summary()
+
+    # Create LangChain pipeline: input_transformations -> prompt -> llm -> parser
+    chain = input_transformations | prompt_template | llm | StrOutputParser()
+
+    return chain
