@@ -265,7 +265,9 @@ class TestCLI:
                 )
 
                 assert result.exit_code == 0
-                assert "DRY RUN: Review posting simulated successfully!" in result.output
+                assert (
+                    "DRY RUN: Review posting simulated successfully!" in result.output
+                )
                 assert "Mock Note URL:" in result.output
                 mock_engine.post_review_to_gitlab.assert_called_once()
 

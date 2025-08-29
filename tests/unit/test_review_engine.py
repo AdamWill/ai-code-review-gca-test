@@ -157,7 +157,7 @@ class TestReviewEngine:
                     "ai_code_review.core.review_engine.create_review_chain"
                 ) as mock_review_chain:
                     mock_chain = AsyncMock()
-                                                            # Mock complete structured response from LLM (ready to use)
+                    # Mock complete structured response from LLM (ready to use)
                     mock_response = """## AI Code Review
 
 ### 📋 MR Summary
@@ -183,7 +183,9 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
                     assert isinstance(result, ReviewResult)
                     # The entire LLM response should be used directly
-                    assert "AI generated review feedback" in result.review.general_feedback
+                    assert (
+                        "AI generated review feedback" in result.review.general_feedback
+                    )
                     assert "## AI Code Review" in result.review.general_feedback
                     assert "### 📋 MR Summary" in result.review.general_feedback
                     assert "### Detailed Code Review" in result.review.general_feedback
@@ -332,7 +334,9 @@ AI generated review feedback for test purposes. The code changes appear well-str
         with patch.object(engine.gitlab_client, "post_review") as mock_post:
             mock_post.return_value = mock_note_info
 
-            result = await engine.post_review_to_gitlab("test/project", 456, review_result)
+            result = await engine.post_review_to_gitlab(
+                "test/project", 456, review_result
+            )
 
             # Verify the post_review was called with correct parameters
             mock_post.assert_called_once()
@@ -381,7 +385,9 @@ AI generated review feedback for test purposes. The code changes appear well-str
         with patch.object(engine.gitlab_client, "post_review") as mock_post:
             mock_post.return_value = mock_note_info
 
-            result = await engine.post_review_to_gitlab("test/project", 456, review_result)
+            result = await engine.post_review_to_gitlab(
+                "test/project", 456, review_result
+            )
 
             # Verify the post_review was called
             mock_post.assert_called_once()
