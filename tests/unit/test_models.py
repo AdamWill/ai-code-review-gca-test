@@ -59,9 +59,21 @@ class TestConfig:
         assert config.temperature == 0.1
         assert config.max_tokens == 4096
 
-    def test_config_env_file_loading(self, tmp_path) -> None:
+    def test_config_env_file_loading(self, tmp_path, monkeypatch) -> None:
         """Test that config can load from .env file."""
         import os
+
+        # Clear all environment variables that could interfere
+        env_vars_to_clear = [
+            "GITLAB_TOKEN", "GITLAB_URL", "AI_PROVIDER", "AI_MODEL",
+            "AI_API_KEY", "TEMPERATURE", "MAX_TOKENS", "HTTP_TIMEOUT",
+            "OLLAMA_BASE_URL", "MAX_CHARS", "MAX_FILES", "LANGUAGE_HINT",
+            "DRY_RUN", "LOG_LEVEL", "CI_PROJECT_PATH", "CI_MERGE_REQUEST_IID",
+            "CI_SERVER_URL"
+        ]
+
+        for var in env_vars_to_clear:
+            monkeypatch.delenv(var, raising=False)
 
         # Create a temporary .env file
         env_file = tmp_path / ".env"
@@ -128,7 +140,7 @@ DRY_RUN=true
 
         with pytest.raises(ValueError, match="invalid characters"):
             Config(gitlab_token="test_token", ai_model="model\nwith\nnewlines")
-            
+
         with pytest.raises(ValueError, match="invalid characters"):
             Config(gitlab_token="test_token", ai_model="model\twith\ttabs")
 
@@ -146,6 +158,49 @@ DRY_RUN=true
         # Invalid log level should raise ValueError
         with pytest.raises(ValueError, match="Invalid log level"):
             Config(gitlab_token="test_token", log_level="INVALID")
+
+    def test_config_ci_mode_detection(self) -> None:
+        """Test CI mode detection."""
+        # Not CI mode (missing CI variables)
+        config = Config(gitlab_token="test")
+        assert not config.is_ci_mode()
+
+        # Not CI mode (only project path)
+        config = Config(gitlab_token="test", ci_project_path="group/project")
+        assert not config.is_ci_mode()
+
+        # CI mode (both variables present)
+        config = Config(
+            gitlab_token="test",
+            ci_project_path="group/project",
+            ci_merge_request_iid=123,
+        )
+        assert config.is_ci_mode()
+
+    def test_config_effective_values(self) -> None:
+        """Test effective value getters for CI integration."""
+        config = Config(
+            gitlab_token="test",
+            gitlab_url="https://gitlab.com",
+            ci_project_path="group/ci-project",
+            ci_merge_request_iid=456,
+            ci_server_url="https://ci-gitlab.com",
+        )
+
+        # CI values should take precedence
+        assert config.get_effective_project_id() == "group/ci-project"
+        assert config.get_effective_mr_iid() == 456
+        assert config.get_effective_gitlab_url() == "https://ci-gitlab.com"
+
+    def test_config_effective_values_fallback(self) -> None:
+        """Test fallback to regular values when CI vars not available."""
+        config = Config(gitlab_token="test", gitlab_url="https://gitlab.com")
+
+        # Should return None for project/MR (no CI vars)
+        assert config.get_effective_project_id() is None
+        assert config.get_effective_mr_iid() is None
+        # Should fallback to regular gitlab_url
+        assert config.get_effective_gitlab_url() == "https://gitlab.com"
 
 
 class TestGitLabModels:

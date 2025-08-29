@@ -95,6 +95,34 @@ class TestOllamaProvider:
         with patch("httpx.get", side_effect=Exception("Connection failed")):
             assert provider.is_available() is False
 
+    def test_is_available_case_insensitive(self, test_config: Config) -> None:
+        """Test is_available with case differences."""
+        test_config.ai_model = "qwen2.5-coder:7b"  # lowercase
+        provider = OllamaProvider(test_config)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "models": [{"name": "qwen2.5-coder:7B"}]  # uppercase B
+        }
+
+        with patch("httpx.get", return_value=mock_response):
+            assert provider.is_available() is True
+
+    def test_is_available_wrong_model_size(self, test_config: Config) -> None:
+        """Test is_available with wrong model size."""
+        test_config.ai_model = "qwen2.5-coder:12B"  # 12B not available
+        provider = OllamaProvider(test_config)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "models": [{"name": "qwen2.5-coder:7B"}]  # only 7B available
+        }
+
+        with patch("httpx.get", return_value=mock_response):
+            assert provider.is_available() is False
+
     @pytest.mark.asyncio
     async def test_health_check_dry_run(self, dry_run_config: Config) -> None:
         """Test health check in dry run mode."""
@@ -144,3 +172,5 @@ class TestOllamaProvider:
             assert result["status"] == "unhealthy"
             assert result["server_reachable"] is False
             assert "Connection refused" in result["error"]
+
+

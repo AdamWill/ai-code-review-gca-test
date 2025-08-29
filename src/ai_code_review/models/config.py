@@ -68,6 +68,18 @@ class Config(BaseSettings):
         default=100, description="Maximum number of files to process"
     )
 
+    # GitLab CI/CD automatic variables (optional)
+    ci_project_path: str | None = Field(
+        default=None, description="GitLab CI project path (automatically set in CI/CD)"
+    )
+    ci_merge_request_iid: int | None = Field(
+        default=None,
+        description="GitLab CI merge request IID (automatically set in CI/CD)",
+    )
+    ci_server_url: str | None = Field(
+        default=None, description="GitLab CI server URL (automatically set in CI/CD)"
+    )
+
     # Optional features
     language_hint: str | None = Field(
         default=None, description="Programming language hint"
@@ -127,3 +139,19 @@ class Config(BaseSettings):
         "case_sensitive": False,
         "env_prefix": "",
     }
+
+    def get_effective_project_id(self) -> str | None:
+        """Get effective project ID from CI environment or explicit config."""
+        return self.ci_project_path
+
+    def get_effective_mr_iid(self) -> int | None:
+        """Get effective MR IID from CI environment or explicit config."""
+        return self.ci_merge_request_iid
+
+    def get_effective_gitlab_url(self) -> str:
+        """Get effective GitLab URL prioritizing CI environment."""
+        return self.ci_server_url or self.gitlab_url
+
+    def is_ci_mode(self) -> bool:
+        """Check if running in GitLab CI/CD environment."""
+        return bool(self.ci_project_path and self.ci_merge_request_iid)

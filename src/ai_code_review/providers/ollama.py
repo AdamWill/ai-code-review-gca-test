@@ -53,11 +53,9 @@ class OllamaProvider(BaseAIProvider):
             tags = response.json()
             model_names = [model["name"] for model in tags.get("models", [])]
 
-            # Check for exact match or partial match (e.g., "qwen2.5-coder:7b" in ["qwen2.5-coder:latest"])
-            return any(
-                self.config.ai_model in model_name or model_name in self.config.ai_model
-                for model_name in model_names
-            )
+            # Case-insensitive exact model matching
+            target_model = self.config.ai_model.lower()
+            return any(target_model == model.lower() for model in model_names)
 
         except Exception:
             return False
@@ -94,12 +92,24 @@ class OllamaProvider(BaseAIProvider):
 
                 tags = response.json()
                 models = [model["name"] for model in tags.get("models", [])]
-                model_available = any(
-                    self.config.ai_model in model or model in self.config.ai_model
-                    for model in models
-                )
 
-                return {
+                # Case-insensitive exact model matching
+                target_model = self.config.ai_model.lower()
+                model_available = any(target_model == model.lower() for model in models)
+
+                # Find similar models for better error messages
+                similar_models = []
+                if not model_available:
+                    model_base = (
+                        target_model.split(":")[0]
+                        if ":" in target_model
+                        else target_model
+                    )
+                    similar_models = [
+                        model for model in models if model_base in model.lower()
+                    ]
+
+                result = {
                     "status": "healthy" if model_available else "model_unavailable",
                     "server_reachable": True,
                     "model_available": model_available,
@@ -107,6 +117,21 @@ class OllamaProvider(BaseAIProvider):
                     "requested_model": self.config.ai_model,
                     "base_url": self.config.ollama_base_url,
                 }
+
+                # Add helpful suggestions for similar models
+                if not model_available and similar_models:
+                    result["similar_models"] = similar_models
+                    result["suggestion"] = (
+                        f"Model '{self.config.ai_model}' not found. "
+                        f"Similar available models: {', '.join(similar_models)}"
+                    )
+                elif not model_available:
+                    result["suggestion"] = (
+                        f"Model '{self.config.ai_model}' not found. "
+                        f"Available models: {', '.join(models[:3])}"
+                    )
+
+                return result
 
         except Exception as e:
             return {

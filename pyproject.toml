@@ -33,6 +33,9 @@ dependencies = [
     "httpx>=0.28.1",
 ]
 
+[project.scripts]
+ai-code-review = "ai_code_review.cli:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
@@ -43,9 +46,6 @@ dev = [
     "mypy>=1.7.0",
     "types-requests",
 ]
-
-[project.scripts]
-ai-code-review = "ai_code_review.cli:main"
 
 [project.urls]
 Homepage = "https://gitlab.com/juanjeojeda/ai-code-review"

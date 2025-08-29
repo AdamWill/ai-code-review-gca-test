@@ -17,7 +17,6 @@ from ai_code_review.utils.exceptions import AIProviderError
 from ai_code_review.utils.prompts import (
     create_review_chain,
     create_summary_chain,
-    create_system_prompt,
 )
 
 logger = structlog.get_logger(__name__)
@@ -34,6 +33,11 @@ class ReviewEngine:
 
         # Setup logging
         logging.getLogger().setLevel(getattr(logging, config.log_level))
+
+        # Silence noisy third-party loggers in INFO mode
+        if config.log_level.upper() == "INFO":
+            logging.getLogger("httpx").setLevel(logging.WARNING)
+            logging.getLogger("urllib3").setLevel(logging.WARNING)
 
     def _create_ai_provider(self) -> BaseAIProvider:
         """Create AI provider instance based on configuration."""
@@ -96,7 +100,9 @@ class ReviewEngine:
                 project_id=project_id,
                 mr_iid=mr_iid,
             )
-            raise AIProviderError(f"Failed to generate review: {e}", "review_engine") from e
+            raise AIProviderError(
+                f"Failed to generate review: {e}", "review_engine"
+            ) from e
 
     async def _generate_code_review(self, mr_data: MergeRequestData) -> CodeReview:
         """Generate detailed code review using AI."""
@@ -117,18 +123,17 @@ class ReviewEngine:
 
             # Prepare input data
             diff_content = self._format_diffs_for_ai(mr_data)
-            system_prompt = create_system_prompt(
-                self.ai_provider.model_name, self.ai_provider.provider_name
-            )
 
             # Generate review
             logger.debug("Invoking AI for code review", diff_length=len(diff_content))
 
             review_response = await review_chain.ainvoke(
                 {
-                    "system_prompt": system_prompt,
-                    "diff_content": diff_content,
-                    "project_context": self._get_project_context(),
+                    "model_name": self.ai_provider.model_name,
+                    "provider_name": self.ai_provider.provider_name,
+                    "diff": diff_content,
+                    "language": self.config.language_hint,
+                    "context": self._get_project_context(),
                 }
             )
 
@@ -166,8 +171,10 @@ class ReviewEngine:
 
             summary_response = await summary_chain.ainvoke(
                 {
-                    "diff_content": diff_content,
-                    "project_context": self._get_project_context(),
+                    "model_name": self.ai_provider.model_name,
+                    "provider_name": self.ai_provider.provider_name,
+                    "diff": diff_content,
+                    "context": self._get_project_context(),
                 }
             )
 
