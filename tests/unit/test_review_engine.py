@@ -157,28 +157,38 @@ class TestReviewEngine:
                     "ai_code_review.core.review_engine.create_review_chain"
                 ) as mock_review_chain:
                     mock_chain = AsyncMock()
-                    mock_chain.ainvoke.return_value = "AI generated review feedback"
+                                                            # Mock complete structured response from LLM (ready to use)
+                    mock_response = """## AI Code Review
+
+### 📋 MR Summary
+Test merge request with sample code modifications.
+
+- **Key Changes:** Sample code modification in test files
+- **Impact:** Test module affected, no user-facing changes
+- **Risk Level:** Low - Simple test change with minimal impact
+
+### Detailed Code Review
+
+AI generated review feedback for test purposes. The code changes appear well-structured and follow good practices.
+
+### ✅ Summary
+- **Overall Assessment:** Good code quality with minor suggestions
+- **Priority Issues:** None identified
+- **Minor Suggestions:** Consider adding more comprehensive tests"""
+
+                    mock_chain.ainvoke.return_value = mock_response
                     mock_review_chain.return_value = mock_chain
 
-                    # Mock summary chain
-                    with patch(
-                        "ai_code_review.core.review_engine.create_summary_chain"
-                    ) as mock_summary_chain:
-                        mock_summary_chain_instance = AsyncMock()
-                        mock_summary_chain_instance.ainvoke.return_value = (
-                            "AI generated summary"
-                        )
-                        mock_summary_chain.return_value = mock_summary_chain_instance
+                    result = await engine.generate_review("test/project", 123)
 
-                        result = await engine.generate_review("test/project", 123)
-
-                        assert isinstance(result, ReviewResult)
-                        assert (
-                            result.review.general_feedback
-                            == "AI generated review feedback"
-                        )
-                        assert result.summary is not None
-                        assert result.summary.technical_impact == "AI generated summary"
+                    assert isinstance(result, ReviewResult)
+                    # The entire LLM response should be used directly
+                    assert "AI generated review feedback" in result.review.general_feedback
+                    assert "## AI Code Review" in result.review.general_feedback
+                    assert "### 📋 MR Summary" in result.review.general_feedback
+                    assert "### Detailed Code Review" in result.review.general_feedback
+                    assert result.summary is not None
+                    assert result.summary.title == "Test MR"
 
     @pytest.mark.asyncio
     async def test_generate_review_ai_unavailable(

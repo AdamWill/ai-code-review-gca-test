@@ -24,16 +24,60 @@ class OllamaProvider(BaseAIProvider):
     def _create_client(self) -> BaseChatModel:
         """Create ChatOllama client instance."""
         try:
+            context_size = self._get_context_window_size()
+
+            # Import logger here to avoid circular imports
+            import structlog
+
+            logger = structlog.get_logger()
+
+            logger.info(
+                "Creating Ollama client",
+                model=self.config.ai_model,
+                context_window_size=context_size,
+                max_tokens=self.config.max_tokens,
+            )
+
             return ChatOllama(
                 model=self.config.ai_model,
                 base_url=self.config.ollama_base_url,
                 temperature=self.config.temperature,
                 num_predict=self.config.max_tokens,
+                num_ctx=context_size,
             )
         except Exception as e:
             raise AIProviderError(
                 f"Failed to create Ollama client: {e}", "ollama"
             ) from e
+
+    def _get_context_window_size(self) -> int:
+        """Determine optimal context window size based on model capabilities."""
+        # Balanced context window sizes for efficient code review
+        # All Ollama models use 16K for optimal performance/memory balance
+        return self._get_context_size_for_config()
+
+    def _get_context_size_for_config(self) -> int:
+        """Get context size based on configuration flags."""
+        # Check if big-diffs flag is manually enabled
+        if hasattr(self.config, "big_diffs") and self.config.big_diffs:
+            return 24576  # 24K for manually requested large diffs
+        else:
+            return 16384  # 16K standard - optimal balance
+
+    def get_adaptive_context_size(self, diff_size_chars: int) -> int:
+        """Get context size adaptively based on diff size and config."""
+        # Manual override always takes precedence
+        if hasattr(self.config, "big_diffs") and self.config.big_diffs:
+            return 24576  # 24K - manual big-diffs flag
+
+        # Auto-detect large diffs for CI/CD scenarios (adjusted for real token ratios)
+        elif (
+            diff_size_chars > 60000
+        ):  # > 60K characters (~24K tokens with 2.5 chars/token)
+            return 24576  # 24K - auto-detected large diff
+
+        else:
+            return 16384  # 16K - standard size
 
     def is_available(self) -> bool:
         """Check if Ollama server is available."""

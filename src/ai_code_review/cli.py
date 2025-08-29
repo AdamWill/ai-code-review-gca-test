@@ -102,6 +102,11 @@ logger = structlog.get_logger(__name__)
     help="Dry run mode - no actual API calls made",
 )
 @click.option(
+    "--big-diffs",
+    is_flag=True,
+    help="Force larger context window (24K) - auto-activated for diffs >60K chars",
+)
+@click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
     default=None,
@@ -130,6 +135,7 @@ def main(
     post: bool,
     with_summary: bool,
     dry_run: bool,
+    big_diffs: bool,
     log_level: str | None,
     health_check: bool,
 ) -> None:
@@ -181,6 +187,8 @@ def main(
             config_overrides["max_files"] = max_files
         if dry_run:
             config_overrides["dry_run"] = dry_run
+        if big_diffs:
+            config_overrides["big_diffs"] = big_diffs
         if log_level:
             config_overrides["log_level"] = log_level
 
@@ -335,7 +343,7 @@ async def _run_review(
         # Initialize review engine
         engine = ReviewEngine(config)
 
-        # Generate review
+        # Generate review (always uses unified approach)
         click.echo("\n📥 Fetching MR data from GitLab...")
         result = await engine.generate_review(project_id, mr_iid, include_summary)
 

@@ -14,10 +14,7 @@ from ai_code_review.models.review import CodeReview, ReviewResult, ReviewSummary
 from ai_code_review.providers.base import BaseAIProvider
 from ai_code_review.providers.ollama import OllamaProvider
 from ai_code_review.utils.exceptions import AIProviderError
-from ai_code_review.utils.prompts import (
-    create_review_chain,
-    create_summary_chain,
-)
+from ai_code_review.utils.prompts import create_review_chain
 
 logger = structlog.get_logger(__name__)
 
@@ -53,7 +50,11 @@ class ReviewEngine:
     async def generate_review(
         self, project_id: str | int, mr_iid: int, include_summary: bool = True
     ) -> ReviewResult:
-        """Generate comprehensive code review for a GitLab MR."""
+        """Generate comprehensive code review with summary in a single LLM call.
+
+        This method always generates both review and summary efficiently using
+        a unified prompt to minimize costs and improve consistency.
+        """
         logger.info(
             "Starting review generation",
             project_id=project_id,
@@ -77,20 +78,59 @@ class ReviewEngine:
                 mr_title=mr_data.info.title,
             )
 
-            # Step 2: Generate review using AI
-            review = await self._generate_code_review(mr_data)
+            # Step 2: Generate review using AI (single call)
+            if self.config.dry_run:
+                logger.info("DRY RUN: Generating mock review")
 
-            # Step 3: Generate summary if requested
-            summary = None
-            if include_summary:
-                summary = await self._generate_summary(mr_data)
+                # Even in dry-run, analyze the diff for token estimation with adaptive context
+                diff_content = self._format_diffs_for_ai(mr_data)
+                original_total_chars = sum(len(diff.diff) for diff in mr_data.diffs)
+
+                # Use adaptive context size based on diff size
+                context_window_size = getattr(
+                    self.ai_provider, "get_adaptive_context_size", lambda x: 16384
+                )(original_total_chars)
+
+                # Detect if big-diffs was auto-activated
+                manual_big_diffs = getattr(self.config, "big_diffs", False)
+                auto_big_diffs = original_total_chars > 60000 and not manual_big_diffs
+
+                estimated_input_tokens = int(
+                    len(diff_content) / 2.5
+                )  # Real ratio from codebase analysis
+                estimated_prompt_tokens = 500  # Rough estimate for prompt template
+                total_estimated_tokens = (
+                    estimated_input_tokens + estimated_prompt_tokens
+                )
+
+                logger.info(
+                    "DRY RUN: Token analysis",
+                    original_diff_length=original_total_chars,
+                    processed_diff_length=len(diff_content),
+                    context_window_size=context_window_size,
+                    manual_big_diffs=manual_big_diffs,
+                    auto_big_diffs_activated=auto_big_diffs,
+                    estimated_input_tokens=estimated_input_tokens,
+                    estimated_prompt_tokens=estimated_prompt_tokens,
+                    total_estimated_tokens=total_estimated_tokens,
+                    tokens_usage_percent=round(
+                        (total_estimated_tokens / context_window_size) * 100, 1
+                    ),
+                    truncated=False,  # No truncation with new approach
+                )
+
+                review = self._create_mock_review()
+                summary = (
+                    self._create_mock_summary(mr_data) if include_summary else None
+                )
+            else:
+                review, summary = await self._generate_review_response(
+                    mr_data, include_summary
+                )
 
             result = ReviewResult(review=review, summary=summary)
 
-            logger.info(
-                "Review generation completed successfully",
-                has_summary=summary is not None,
-            )
+            logger.info("Review generation completed successfully")
 
             return result
 
@@ -105,12 +145,10 @@ class ReviewEngine:
                 f"Failed to generate review: {e}", "review_engine"
             ) from e
 
-    async def _generate_code_review(self, mr_data: MergeRequestData) -> CodeReview:
-        """Generate detailed code review using AI."""
-        if self.config.dry_run:
-            logger.info("DRY RUN: Generating mock code review")
-            return self._create_mock_review()
-
+    async def _generate_review_response(
+        self, mr_data: MergeRequestData, include_summary: bool
+    ) -> tuple[CodeReview, ReviewSummary | None]:
+        """Generate review response using single LLM call."""
         # Check AI provider availability
         if not self.ai_provider.is_available():
             raise AIProviderError(
@@ -119,26 +157,65 @@ class ReviewEngine:
             )
 
         try:
-            # Create review chain
+            # Create review chain (uses unified prompt)
             review_chain = create_review_chain(self.ai_provider.client)
 
             # Prepare input data
             diff_content = self._format_diffs_for_ai(mr_data)
 
-            # Generate review
-            logger.debug("Invoking AI for code review", diff_length=len(diff_content))
+            # Log diff processing info with adaptive context window
+            original_total_chars = sum(len(diff.diff) for diff in mr_data.diffs)
+            context_window_size = getattr(
+                self.ai_provider, "get_adaptive_context_size", lambda x: 16384
+            )(original_total_chars)
 
-            review_response = await review_chain.ainvoke(
-                {
-                    "diff": diff_content,
-                    "language": self.config.language_hint,
-                    "context": self._get_project_context(mr_data),
-                }
+            # Detect if big-diffs was auto-activated
+            manual_big_diffs = getattr(self.config, "big_diffs", False)
+            auto_big_diffs = original_total_chars > 60000 and not manual_big_diffs
+
+            # Estimate tokens using real codebase analysis (2.5 chars/token average)
+            estimated_input_tokens = int(
+                len(diff_content) / 2.5
+            )  # Real ratio from codebase analysis
+            estimated_prompt_tokens = 500  # Rough estimate for prompt template
+            total_estimated_tokens = estimated_input_tokens + estimated_prompt_tokens
+
+            logger.debug(
+                "Invoking AI for review",
+                original_diff_length=original_total_chars,
+                processed_diff_length=len(diff_content),
+                context_window_size=context_window_size,
+                manual_big_diffs=manual_big_diffs,
+                auto_big_diffs_activated=auto_big_diffs,
+                estimated_input_tokens=estimated_input_tokens,
+                estimated_prompt_tokens=estimated_prompt_tokens,
+                total_estimated_tokens=total_estimated_tokens,
+                tokens_usage_percent=round(
+                    (total_estimated_tokens / context_window_size) * 100, 1
+                ),
+                truncated=False,  # No truncation with new approach
             )
 
-            # For MVP, we'll use general feedback as the main review
-            # TODO: Parse structured response into CodeReview model in future iterations
-            return CodeReview(
+            # Update client with adaptive context size for this specific call
+            if hasattr(self.ai_provider.client, "num_ctx"):
+                original_num_ctx = self.ai_provider.client.num_ctx
+                self.ai_provider.client.num_ctx = context_window_size
+
+            try:
+                review_response = await review_chain.ainvoke(
+                    {
+                        "diff": diff_content,
+                        "language": self.config.language_hint,
+                        "context": self._get_project_context(mr_data),
+                    }
+                )
+            finally:
+                # Restore original context size
+                if hasattr(self.ai_provider.client, "num_ctx"):
+                    self.ai_provider.client.num_ctx = original_num_ctx
+
+            # Use the LLM response directly - it's already properly structured
+            review = CodeReview(
                 general_feedback=review_response,
                 file_reviews=[],  # MVP: simplified structure
                 overall_assessment="AI Review Generated",
@@ -146,55 +223,29 @@ class ReviewEngine:
                 minor_suggestions=[],
             )
 
+            # Create summary if requested (using basic MR metadata)
+            summary = None
+            if include_summary:
+                summary = ReviewSummary(
+                    title=mr_data.info.title,
+                    key_changes=[],  # TODO: Extract from structured response in future
+                    modules_affected=[],  # TODO: Extract from file analysis
+                    user_impact="To be determined",
+                    technical_impact="Included in detailed review above",
+                    risk_level="Medium",  # TODO: Extract from AI assessment
+                    risk_justification="Automated assessment pending detailed analysis",
+                )
+
+            return review, summary
+
         except Exception as e:
             raise AIProviderError(
                 f"Failed to generate review with {self.ai_provider.provider_name}: {e}",
                 self.ai_provider.provider_name,
             ) from e
 
-    async def _generate_summary(self, mr_data: MergeRequestData) -> ReviewSummary:
-        """Generate executive summary using AI."""
-        if self.config.dry_run:
-            logger.info("DRY RUN: Generating mock summary")
-            return self._create_mock_summary(mr_data)
-
-        try:
-            # Create summary chain
-            summary_chain = create_summary_chain(self.ai_provider.client)
-
-            # Prepare input data
-            diff_content = self._format_diffs_for_ai(mr_data)
-
-            # Generate summary
-            logger.debug("Invoking AI for MR summary", diff_length=len(diff_content))
-
-            summary_response = await summary_chain.ainvoke(
-                {
-                    "diff": diff_content,
-                    "context": self._get_project_context(mr_data),
-                }
-            )
-
-            # For MVP, create a basic summary structure
-            # TODO: Parse structured response into ReviewSummary model in future iterations
-            return ReviewSummary(
-                title=mr_data.info.title,
-                key_changes=[],
-                modules_affected=[],
-                user_impact="To be determined",
-                technical_impact=summary_response,
-                risk_level="Medium",
-                risk_justification="Automated assessment pending detailed analysis",
-            )
-
-        except Exception as e:
-            raise AIProviderError(
-                f"Failed to generate summary with {self.ai_provider.provider_name}: {e}",
-                self.ai_provider.provider_name,
-            ) from e
-
     def _format_diffs_for_ai(self, mr_data: MergeRequestData) -> str:
-        """Format MR diffs for AI processing."""
+        """Format MR diffs for AI processing - no truncation, relying on 16K context window."""
         formatted_diffs = []
 
         formatted_diffs.append(f"# Merge Request: {mr_data.info.title}")
@@ -255,8 +306,26 @@ class ReviewEngine:
 
     def _create_mock_review(self) -> CodeReview:
         """Create mock review for dry-run mode."""
+        mock_content = """## AI Code Review
+
+### 📋 MR Summary
+[DRY RUN] Mock merge request for testing purposes.
+
+- **Key Changes:** Mock code modifications for testing
+- **Impact:** Testing environment only, no production impact
+- **Risk Level:** Low - Mock changes for development testing
+
+### Detailed Code Review
+
+[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution.
+
+### ✅ Summary
+- **Overall Assessment:** [MOCK] Good code quality for testing
+- **Priority Issues:** [MOCK] No critical issues identified
+- **Minor Suggestions:** [MOCK] Consider adding more comprehensive tests"""
+
         return CodeReview(
-            general_feedback="[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution.",
+            general_feedback=mock_content,
             file_reviews=[],
             overall_assessment="Mock assessment for testing purposes",
             priority_issues=["[MOCK] Example priority issue"],

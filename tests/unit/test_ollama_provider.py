@@ -67,6 +67,7 @@ class TestOllamaProvider:
                 base_url="http://localhost:11434",
                 temperature=test_config.temperature,
                 num_predict=test_config.max_tokens,
+                num_ctx=16384,  # Standard 16K context window for all models
             )
 
     def test_is_available_dry_run(self, dry_run_config: Config) -> None:

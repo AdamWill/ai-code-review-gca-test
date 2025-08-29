@@ -56,38 +56,9 @@ class ReviewResult(BaseModel):
     summary: ReviewSummary | None = None
 
     def to_markdown(self) -> str:
-        """Convert review result to markdown format."""
-        sections = []
+        """Convert review result to markdown format.
 
-        # Add MR summary FIRST if available (executive overview comes first)
-        if self.summary:
-            sections.append("## 📋 MR Executive Summary\n")
-            sections.append(f"**Headline:** {self.summary.title}\n")
-
-            if self.summary.key_changes:
-                sections.append("**Key Changes:**")
-                for change in self.summary.key_changes:
-                    sections.append(f"- {change}")
-                sections.append("")
-
-            sections.append(
-                f"**Impact:** {', '.join(self.summary.modules_affected) if self.summary.modules_affected else 'Multiple components'}"
-            )
-            if self.summary.user_impact != "To be determined":
-                sections.append(f" | User: {self.summary.user_impact}")
-            if (
-                self.summary.technical_impact
-                and self.summary.technical_impact != "To be determined"
-            ):
-                sections.append(f" | Technical: {self.summary.technical_impact}")
-            sections.append("")
-
-            sections.append(
-                f"**Risk Level:** {self.summary.risk_level} - {self.summary.risk_justification}"
-            )
-            sections.append("\n---\n")
-
-        # Add AI-generated detailed review SECOND
-        sections.append(self.review.general_feedback)
-
-        return "\n".join(sections)
+        The LLM response already contains the complete structured review
+        with summary and detailed sections, so we use it directly.
+        """
+        return self.review.general_feedback

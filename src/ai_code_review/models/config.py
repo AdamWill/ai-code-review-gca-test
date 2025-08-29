@@ -87,6 +87,10 @@ class Config(BaseSettings):
 
     # Execution options
     dry_run: bool = Field(default=False, description="Dry run mode (no API calls)")
+    big_diffs: bool = Field(
+        default=False,
+        description="Force larger context window (24K) - auto-activated for diffs >60K chars",
+    )
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")

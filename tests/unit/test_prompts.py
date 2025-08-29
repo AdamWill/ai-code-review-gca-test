@@ -11,8 +11,6 @@ from ai_code_review.utils.prompts import (
     _get_system_prompt,
     create_review_chain,
     create_review_prompt,
-    create_summary_chain,
-    create_summary_prompt,
     create_system_prompt,
 )
 
@@ -27,10 +25,10 @@ class TestPrompts:
         assert isinstance(prompt, str)
         assert len(prompt) > 0
         assert "expert senior software engineer" in prompt.lower()
-        assert "review only the changes" in prompt.lower()
+        assert "focus only on the changes" in prompt.lower()
 
     def test_create_review_prompt(self) -> None:
-        """Test code review prompt template."""
+        """Test unified review prompt template."""
         prompt = create_review_prompt()
 
         # Variables are sorted alphabetically by LangChain
@@ -44,32 +42,22 @@ class TestPrompts:
         )
         assert sorted(prompt.input_variables) == expected_vars
 
-    def test_create_summary_prompt(self) -> None:
-        """Test MR summary prompt template."""
-        prompt = create_summary_prompt()
-
-        # Variables are sorted alphabetically by LangChain
-        expected_vars = sorted(
-            ["system_prompt", "project_context_section", "diff_content"]
-        )
-        assert sorted(prompt.input_variables) == expected_vars
+        # Verify that the template contains both summary and review sections
+        template_str = str(prompt)
+        assert "## AI Code Review" in template_str
+        assert "### 📋 MR Summary" in template_str
+        assert "### Detailed Code Review" in template_str
+        assert "#### 📂 File Reviews" in template_str
+        # Should NOT contain the "Part 1" and "Part 2" titles
+        assert "Part 1:" not in template_str
+        assert "Part 2:" not in template_str
 
     def test_review_chain_creation(self) -> None:
-        """Test code review chain creation."""
+        """Test review chain creation."""
         mock_llm = MagicMock()
-        mock_llm.return_value = "Mock review response"
+        mock_llm.return_value = "Mock unified response with summary and review"
 
         chain = create_review_chain(mock_llm)
-
-        # Test that chain can be created without errors
-        assert chain is not None
-
-    def test_summary_chain_creation(self) -> None:
-        """Test summary chain creation."""
-        mock_llm = MagicMock()
-        mock_llm.return_value = "Mock summary response"
-
-        chain = create_summary_chain(mock_llm)
 
         # Test that chain can be created without errors
         assert chain is not None

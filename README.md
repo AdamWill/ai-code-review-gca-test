@@ -31,6 +31,12 @@ ai-code-review --project-id "group/project" --mr-iid 123 --provider ollama
 
 # Post review as MR comment
 ai-code-review --project-id "group/project" --mr-iid 123 --post
+
+# For large MRs (forces 24K context window)
+ai-code-review --project-id "group/project" --mr-iid 123 --big-diffs
+
+# Dry run mode (no API calls, useful for testing)
+ai-code-review --project-id "group/project" --mr-iid 123 --dry-run
 ```
 
 ## 🔧 Configuration
@@ -61,6 +67,7 @@ export MAX_FILES=100                          # Max files to process
 # Optional features
 export LANGUAGE_HINT=python                   # Programming language hint
 export DRY_RUN=false                          # Enable dry-run mode (no API calls)
+export BIG_DIFFS=false                        # Force large context (24K) - auto-activated for >60K chars
 export LOG_LEVEL=INFO                         # DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
 
@@ -69,6 +76,17 @@ export LOG_LEVEL=INFO                         # DEBUG, INFO, WARNING, ERROR, CRI
 - AI model names are validated for basic format requirements
 - Log levels are validated against standard Python logging levels
 - All invalid configurations will raise clear error messages at startup
+
+## 🧠 Adaptive Context Windows
+
+The tool automatically adapts context window sizes for optimal performance:
+
+- **Standard MRs** (≤60K chars): 16K context window for efficiency
+- **Large MRs** (>60K chars): Auto-activated 24K context window
+- **Manual override**: `--big-diffs` forces 24K context regardless of size
+- **CI/CD friendly**: Auto-detection works without human intervention
+
+This eliminates information loss from diff truncation while maintaining optimal memory usage.
 
 ## 🧪 Development
 
