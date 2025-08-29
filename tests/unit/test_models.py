@@ -172,8 +172,18 @@ DRY_RUN=true
         with pytest.raises(ValueError, match="Invalid log level"):
             Config(gitlab_token="test_token", log_level="INVALID")
 
-    def test_config_ci_mode_detection(self) -> None:
+    def test_config_ci_mode_detection(self, monkeypatch) -> None:
         """Test CI mode detection."""
+        # Clear all CI environment variables to ensure clean test
+        ci_vars_to_clear = [
+            "CI_PROJECT_PATH",
+            "CI_MERGE_REQUEST_IID",
+            "CI_SERVER_URL",
+            "GITLAB_CI",
+        ]
+        for var in ci_vars_to_clear:
+            monkeypatch.delenv(var, raising=False)
+
         # Not CI mode (missing CI variables)
         config = Config(gitlab_token="test")
         assert not config.is_ci_mode()
@@ -205,8 +215,18 @@ DRY_RUN=true
         assert config.get_effective_mr_iid() == 456
         assert config.get_effective_gitlab_url() == "https://ci-gitlab.com"
 
-    def test_config_effective_values_fallback(self) -> None:
+    def test_config_effective_values_fallback(self, monkeypatch) -> None:
         """Test fallback to regular values when CI vars not available."""
+        # Clear all CI environment variables to ensure clean test
+        ci_vars_to_clear = [
+            "CI_PROJECT_PATH",
+            "CI_MERGE_REQUEST_IID",
+            "CI_SERVER_URL",
+            "GITLAB_CI",
+        ]
+        for var in ci_vars_to_clear:
+            monkeypatch.delenv(var, raising=False)
+
         config = Config(gitlab_token="test", gitlab_url="https://gitlab.com")
 
         # Should return None for project/MR (no CI vars)
