@@ -239,8 +239,8 @@ class TestCLI:
         result = runner.invoke(main, ["test/project"])
         assert result.exit_code != 0
 
-    def test_cli_post_warning(self, runner: CliRunner) -> None:
-        """Test that --post shows warning about MVP limitation."""
+    def test_cli_post_functionality(self, runner: CliRunner) -> None:
+        """Test that --post functionality works in dry run mode."""
         with patch("ai_code_review.cli.Config") as mock_config:
             mock_config.return_value = Mock(
                 gitlab_token="test", dry_run=True, log_level="INFO"
@@ -251,6 +251,13 @@ class TestCLI:
                 mock_engine.generate_review.return_value = Mock(
                     to_markdown=lambda: "# Test Review"
                 )
+                # Mock the new post_review_to_gitlab method
+                mock_engine.post_review_to_gitlab.return_value = {
+                    "id": "mock_note_123",
+                    "url": "https://gitlab.com/mock/project/-/merge_requests/123#note_mock_123",
+                    "created_at": "2024-01-01T12:00:00Z",
+                    "author": "AI Code Review (DRY RUN)",
+                }
                 mock_engine_class.return_value = mock_engine
 
                 result = runner.invoke(
@@ -258,7 +265,9 @@ class TestCLI:
                 )
 
                 assert result.exit_code == 0
-                assert "not yet implemented (MVP)" in result.output
+                assert "DRY RUN: Review posting simulated successfully!" in result.output
+                assert "Mock Note URL:" in result.output
+                mock_engine.post_review_to_gitlab.assert_called_once()
 
     def test_cli_version(self, runner: CliRunner) -> None:
         """Test version display."""

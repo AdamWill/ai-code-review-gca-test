@@ -383,3 +383,63 @@ class ReviewEngine:
         logger.info("Health check completed", overall_status=overall_status)
 
         return health_status
+
+    async def post_review_to_gitlab(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+        review_result: ReviewResult,
+    ) -> dict[str, str]:
+        """Post generated review as a note/comment to GitLab MR.
+
+        Args:
+            project_id: GitLab project ID or path (e.g., 'group/project')
+            mr_iid: Merge request IID
+            review_result: The review result to post
+
+        Returns:
+            Dictionary containing note information (id, url, etc.)
+
+        Raises:
+            GitLabAPIError: If posting fails
+        """
+        logger.info(
+            "Posting review to GitLab",
+            project_id=project_id,
+            mr_iid=mr_iid,
+            dry_run=self.config.dry_run,
+        )
+
+        # Format review content as markdown
+        review_content = review_result.to_markdown()
+
+        # Add footer with metadata
+        footer = self._create_review_footer()
+        full_content = f"{review_content}\n\n{footer}"
+
+        # Post to GitLab (handles dry-run internally)
+        note_info = await self.gitlab_client.post_review(
+            project_id, mr_iid, full_content
+        )
+
+        logger.info(
+            "Review posted successfully",
+            note_id=note_info["id"],
+            note_url=note_info["url"],
+            dry_run=self.config.dry_run,
+        )
+
+        return note_info
+
+    def _create_review_footer(self) -> str:
+        """Create footer with review metadata."""
+        footer_parts = [
+            "---",
+            "🤖 **AI Code Review** | Generated with ai-code-review",
+            f"**Provider:** {self.config.ai_provider.value} | **Model:** {self.config.ai_model}",
+        ]
+
+        if self.config.dry_run:
+            footer_parts.append("**Mode:** DRY RUN - No actual changes were analyzed")
+
+        return "\n".join(footer_parts)
