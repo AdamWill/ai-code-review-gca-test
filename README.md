@@ -35,17 +35,40 @@ ai-code-review --project-id "group/project" --mr-iid 123 --post
 
 ## 🔧 Configuration
 
-Set your GitLab token:
+The tool supports comprehensive configuration through environment variables. Copy `env.example` to `.env` and customize as needed:
+
 ```bash
-export GITLAB_TOKEN=glpat_xxxxxxxxxxxx
+# Required
+export GITLAB_TOKEN=glpat_xxxxxxxxxxxx         # GitLab Personal Access Token
+
+# Core settings (with defaults)
+export GITLAB_URL=https://gitlab.com           # GitLab instance URL
+export AI_PROVIDER=ollama                      # ollama, openai, gemini, anthropic
+export AI_MODEL=qwen2.5-coder:7b              # AI model name
+
+# AI Model parameters (defaults optimized for code review)
+export TEMPERATURE=0.1                         # 0.0-2.0, lower = more deterministic
+export MAX_TOKENS=4096                         # Maximum response tokens
+export HTTP_TIMEOUT=5.0                       # HTTP timeout in seconds
+
+# Ollama configuration (for local development)
+export OLLAMA_BASE_URL=http://localhost:11434
+
+# Processing limits
+export MAX_CHARS=100000                        # Max characters from diff
+export MAX_FILES=100                          # Max files to process
+
+# Optional features
+export LANGUAGE_HINT=python                   # Programming language hint
+export DRY_RUN=false                          # Enable dry-run mode (no API calls)
+export LOG_LEVEL=INFO                         # DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
 
-For local development with Ollama:
-```bash
-export AI_PROVIDER=ollama
-export AI_MODEL=qwen2.5-coder:7b
-export OLLAMA_BASE_URL=http://localhost:11434
-```
+**Configuration Validation:**
+- URLs are validated for proper format
+- AI model names are validated for basic format requirements
+- Log levels are validated against standard Python logging levels
+- All invalid configurations will raise clear error messages at startup
 
 ## 🧪 Development
 

@@ -29,7 +29,14 @@ class TestPrompts:
         prompt = create_review_prompt()
 
         # Variables are sorted alphabetically by LangChain
-        expected_vars = sorted(['system_prompt', 'language_hint_section', 'project_context_section', 'diff_content'])
+        expected_vars = sorted(
+            [
+                "system_prompt",
+                "language_hint_section",
+                "project_context_section",
+                "diff_content",
+            ]
+        )
         assert sorted(prompt.input_variables) == expected_vars
 
     def test_create_summary_prompt(self) -> None:
@@ -37,7 +44,9 @@ class TestPrompts:
         prompt = create_summary_prompt()
 
         # Variables are sorted alphabetically by LangChain
-        expected_vars = sorted(['system_prompt', 'project_context_section', 'diff_content'])
+        expected_vars = sorted(
+            ["system_prompt", "project_context_section", "diff_content"]
+        )
         assert sorted(prompt.input_variables) == expected_vars
 
     def test_review_chain_creation(self) -> None:

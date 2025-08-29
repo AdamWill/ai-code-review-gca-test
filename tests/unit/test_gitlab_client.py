@@ -17,19 +17,14 @@ from ai_code_review.utils.exceptions import GitLabAPIError
 def test_config() -> Config:
     """Test configuration."""
     return Config(
-        gitlab_token="test_token",
-        gitlab_url="https://test-gitlab.com",
-        dry_run=False
+        gitlab_token="test_token", gitlab_url="https://test-gitlab.com", dry_run=False
     )
 
 
 @pytest.fixture
 def dry_run_config() -> Config:
     """Dry run configuration."""
-    return Config(
-        gitlab_token="test_token",
-        dry_run=True
-    )
+    return Config(gitlab_token="test_token", dry_run=True)
 
 
 class TestGitLabClient:
@@ -50,8 +45,7 @@ class TestGitLabClient:
             _ = client.gitlab_client
 
             mock_gitlab.assert_called_once_with(
-                url=test_config.gitlab_url,
-                private_token=test_config.gitlab_token
+                url=test_config.gitlab_url, private_token=test_config.gitlab_token
             )
 
     @pytest.mark.asyncio
@@ -94,7 +88,7 @@ class TestGitLabClient:
                     "new_file": False,
                     "renamed_file": False,
                     "deleted_file": False,
-                    "diff": "@@ -1,1 +1,1 @@\n-old\n+new"
+                    "diff": "@@ -1,1 +1,1 @@\n-old\n+new",
                 }
             ]
         }
@@ -121,7 +115,9 @@ class TestGitLabClient:
         client = GitLabClient(test_config)
 
         with patch.object(client, "_gitlab_client", mock_client := MagicMock()):
-            mock_client.projects.get.side_effect = gitlab.GitlabError("Project not found")
+            mock_client.projects.get.side_effect = gitlab.GitlabError(
+                "Project not found"
+            )
 
             with pytest.raises(GitLabAPIError, match="Failed to fetch MR data"):
                 await client.get_merge_request_data("nonexistent/project", 123)

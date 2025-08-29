@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 
 from pydantic import Field, field_validator
@@ -40,6 +41,24 @@ class Config(BaseSettings):
         default="http://localhost:11434",
         description="Ollama server URL for local development",
     )
+    http_timeout: float = Field(
+        default=5.0,
+        description="HTTP request timeout in seconds for API calls",
+        gt=0.0,
+    )
+
+    # AI model parameters
+    temperature: float = Field(
+        default=0.1,
+        description="Temperature for AI responses (0.0-2.0, lower = more deterministic)",
+        ge=0.0,
+        le=2.0,
+    )
+    max_tokens: int = Field(
+        default=4096,
+        description="Maximum tokens for AI response generation",
+        gt=0,
+    )
 
     # Content processing
     max_chars: int = Field(
@@ -59,6 +78,41 @@ class Config(BaseSettings):
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
+
+    @field_validator("gitlab_url", "ollama_base_url")
+    @classmethod
+    def validate_url(cls, v: str) -> str:
+        """Validate URL format."""
+        if not v:
+            raise ValueError("URL cannot be empty")
+
+        url_pattern = r"^https?://[^\s/$.?#].[^\s]*$"
+        if not re.match(url_pattern, v):
+            raise ValueError(f"Invalid URL format: {v}")
+
+        return v.rstrip("/")  # Remove trailing slash for consistency
+
+    @field_validator("ai_model")
+    @classmethod
+    def validate_ai_model(cls, v: str) -> str:
+        """Validate AI model name format."""
+        if not v or not v.strip():
+            raise ValueError("AI model name cannot be empty")
+
+        # Basic validation: no special characters that could cause issues
+        if any(char in v for char in ["\n", "\r", "\t", "\0"]):
+            raise ValueError("AI model name contains invalid characters")
+
+        return v.strip()
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        """Validate logging level."""
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if v.upper() not in valid_levels:
+            raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
+        return v.upper()
 
     @field_validator("ai_api_key")
     @classmethod

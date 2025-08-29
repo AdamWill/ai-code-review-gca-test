@@ -27,8 +27,8 @@ class OllamaProvider(BaseAIProvider):
             return ChatOllama(
                 model=self.config.ai_model,
                 base_url=self.config.ollama_base_url,
-                temperature=0.1,  # Low temperature for consistent reviews
-                num_predict=4096,  # Max tokens
+                temperature=self.config.temperature,
+                num_predict=self.config.max_tokens,
             )
         except Exception as e:
             raise AIProviderError(
@@ -42,7 +42,10 @@ class OllamaProvider(BaseAIProvider):
 
         try:
             # Check if Ollama server is running
-            response = httpx.get(f"{self.config.ollama_base_url}/api/tags", timeout=5.0)
+            response = httpx.get(
+                f"{self.config.ollama_base_url}/api/tags",
+                timeout=self.config.http_timeout,
+            )
             if response.status_code != 200:
                 return False
 
@@ -84,7 +87,8 @@ class OllamaProvider(BaseAIProvider):
             async with httpx.AsyncClient() as client:
                 # Check server status
                 response = await client.get(
-                    f"{self.config.ollama_base_url}/api/tags", timeout=5.0
+                    f"{self.config.ollama_base_url}/api/tags",
+                    timeout=self.config.http_timeout,
                 )
                 response.raise_for_status()
 

@@ -17,7 +17,7 @@ def test_config() -> Config:
         gitlab_token="test_token",
         ai_provider=AIProvider.OLLAMA,
         ai_model="qwen2.5-coder:7b",
-        ollama_base_url="http://localhost:11434"
+        ollama_base_url="http://localhost:11434",
     )
 
 
@@ -25,9 +25,7 @@ def test_config() -> Config:
 def dry_run_config() -> Config:
     """Dry run configuration."""
     return Config(
-        gitlab_token="test_token",
-        ai_provider=AIProvider.OLLAMA,
-        dry_run=True
+        gitlab_token="test_token", ai_provider=AIProvider.OLLAMA, dry_run=True
     )
 
 
@@ -67,8 +65,8 @@ class TestOllamaProvider:
             mock_chat.assert_called_once_with(
                 model="qwen2.5-coder:7b",
                 base_url="http://localhost:11434",
-                temperature=0.1,
-                num_predict=4096,
+                temperature=test_config.temperature,
+                num_predict=test_config.max_tokens,
             )
 
     def test_is_available_dry_run(self, dry_run_config: Config) -> None:
@@ -84,10 +82,7 @@ class TestOllamaProvider:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "models": [
-                {"name": "qwen2.5-coder:7b"},
-                {"name": "llama2:latest"}
-            ]
+            "models": [{"name": "qwen2.5-coder:7b"}, {"name": "llama2:latest"}]
         }
 
         with patch("httpx.get", return_value=mock_response):
@@ -119,10 +114,7 @@ class TestOllamaProvider:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "models": [
-                {"name": "qwen2.5-coder:7b"},
-                {"name": "llama2:latest"}
-            ]
+            "models": [{"name": "qwen2.5-coder:7b"}, {"name": "llama2:latest"}]
         }
 
         with patch("httpx.AsyncClient") as mock_client_class:
