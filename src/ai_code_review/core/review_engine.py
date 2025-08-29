@@ -132,7 +132,7 @@ class ReviewEngine:
                 {
                     "diff": diff_content,
                     "language": self.config.language_hint,
-                    "context": self._get_project_context(),
+                    "context": self._get_project_context(mr_data),
                 }
             )
 
@@ -171,7 +171,7 @@ class ReviewEngine:
             summary_response = await summary_chain.ainvoke(
                 {
                     "diff": diff_content,
-                    "context": self._get_project_context(),
+                    "context": self._get_project_context(mr_data),
                 }
             )
 
@@ -225,14 +225,24 @@ class ReviewEngine:
 
         return "\n".join(formatted_diffs)
 
-    def _get_project_context(self) -> str:
+    def _get_project_context(self, mr_data: MergeRequestData | None = None) -> str:
         """Get project context for AI review."""
         context_parts = []
 
         if self.config.language_hint:
             context_parts.append(f"Primary Language: {self.config.language_hint}")
 
-        # TODO: Implement project context discovery in future iterations
+        # Add commit context for better understanding
+        if mr_data and mr_data.commits:
+            context_parts.append("\n**Commit History:**")
+            for commit in mr_data.commits:
+                commit_info = f"- `{commit.short_id}` {commit.title}"
+                if commit.message != commit.title:
+                    # Add full message if it has more details beyond the title
+                    commit_info += f"\n  {commit.message.strip()}"
+                context_parts.append(commit_info)
+
+        # TODO: Implement additional project context discovery in future iterations
         # - Read .ai_review/project.md
         # - Auto-discover README.md, CONTRIBUTING.md, etc.
         # - Support external context URLs
