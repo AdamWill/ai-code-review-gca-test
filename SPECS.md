@@ -13,7 +13,7 @@ security vulnerabilities, and code quality improvements.
 logic issues, security concerns, performance problems, and architectural
 patterns. Focuses on high-level feedback that complements static analysis tools.
 
-**Context Integration**: Optionally reads project documentation (README,
+**Context Integration**: Planned feature to read project documentation (README,
 coding standards, architecture docs) to provide contextually relevant reviews
 that align with project-specific practices and conventions.
 
@@ -38,87 +38,112 @@ containerized environments.
 
 ## 🎯 Functional Requirements
 
-### Core Features
+### Core Features (All Implemented ✅)
 
-### FR-001: GitLab Integration
+### FR-001: GitLab Integration (Implemented)
 
-- Fetch MR diffs from GitLab API using project ID and MR IID
-- Support both numeric project IDs and URL-encoded paths (e.g., `group/subgroup/project`)
-- Handle authentication via GitLab Personal Access Token
-- Support configurable GitLab instance URLs
+- ✅ Fetch MR diffs from GitLab API using project ID and MR IID
+- ✅ Support both numeric project IDs and URL-encoded paths (e.g., `group/subgroup/project`)
+- ✅ Handle authentication via GitLab Personal Access Token
+- ✅ Support configurable GitLab instance URLs
+- ✅ Automatic CI/CD environment variable detection
 
-### FR-002: AI Code Review
+### FR-002: AI Code Review (Implemented)
 
-- Generate comprehensive code reviews using AI models
-- Focus on high-level feedback: logic, correctness, security, performance, architecture
-- Ignore trivial formatting/linting issues
-- Provide actionable suggestions with code snippets
-- Support multiple AI providers (Gemini primary, extensible architecture)
+- ✅ Generate comprehensive code reviews using AI models
+- ✅ Focus on high-level feedback: logic, correctness, security, performance, architecture
+- ✅ Ignore trivial formatting/linting issues
+- ✅ Provide actionable suggestions with code snippets
+- ✅ Support multiple AI providers (Gemini production, Ollama local)
+- ✅ Structured markdown output with collapsible sections
 
-### FR-003: MR Summary Generation
+### FR-003: MR Summary Generation (Implemented)
 
-- Generate concise, high-level summaries of merge requests
-- Business-friendly format for non-technical stakeholders
-- Include headline, key changes, and impact assessment
+- ✅ Generate unified reviews with executive summaries
+- ✅ Business-friendly format for non-technical stakeholders
+- ✅ Include headline, key changes, impact assessment, and risk level
+- ✅ Single LLM invocation for efficiency (combined review + summary)
 
-### FR-004: Output Flexibility
+### FR-004: Output Flexibility (Implemented)
 
-- Print reviews to stdout for CLI workflows
-- Post reviews directly as MR notes in GitLab
-- Support both review-only and review+summary modes
+- ✅ Print reviews to stdout for CLI workflows
+- ✅ Post reviews directly as MR notes in GitLab
+- ✅ Unified review format (combines review and summary)
+- ✅ Health check mode for connectivity testing
 
-### FR-005: Configuration Management
+### FR-005: Configuration Management (Implemented)
 
-- Environment variable configuration
-- Command-line argument overrides
-- Support for language hints and content limits
-- Dry-run mode for testing without API calls
+- ✅ Environment variable configuration with validation
+- ✅ Command-line argument overrides
+- ✅ Support for language hints and content limits
+- ✅ Dry-run mode for testing without API calls
+- ✅ Adaptive context windows and file filtering
+- ✅ Comprehensive logging configuration
 
 ### Advanced Features
 
 ### FR-006: Multi-Provider AI Support
 
-- Local Development: Ollama with qwen2.5-coder:7b (local development only,
-  cost-free)
-- Production/Container Default: Google Gemini (gemini-2.5-pro)
-- CI/CD: Cloud providers only (Gemini, OpenAI, Anthropic)
-- Extensible architecture via LangChain for cloud providers
+**Currently Implemented:**
+- **Local Development**: Ollama with qwen2.5-coder:7b (local development only, cost-free)
+- **Production/Container Default**: Google Gemini (gemini-2.5-pro)
+- **CI/CD**: Cloud providers integration (Gemini)
+
+**Planned Future Support:**
+- Additional cloud providers (OpenAI, Anthropic) via LangChain
+- Provider load balancing and fallback mechanisms
+- Extended model selection per provider
+
+**Architecture Features:**
+- Extensible provider system via LangChain abstraction
 - Provider-specific configuration and error handling
+- Adaptive context windows based on diff size and provider capabilities
 
-### FR-007: Project Context Integration (Optional)
+### FR-007: Project Context Integration (Planned)
 
-- **Standard Context File**: `.ai_review/project.md` - project info, stack,
-  architecture, style guides
-- **Auto-discovery Mode**: Automatically find README.md, CLAUDE.md,
-  .cursorrules, etc.
-- **Custom Path Mode**: Specify custom path within repo via `--context-file`
-  or env var
+**Future Implementation:**
+- **Standard Context File**: `.ai_review/project.md` - project info, stack, architecture, style guides
+- **Auto-discovery Mode**: Automatically find README.md, CLAUDE.md, .cursorrules, etc.
+- **Custom Path Mode**: Specify custom path within repo via `--context-file` or env var
 - **External URL Mode**: Fetch context from external URL (documentation sites)
 - **CI/CD Configuration**: Environment variable `ENABLE_PROJECT_CONTEXT=true/false`
 - **Token Management**: Smart truncation when context + diff exceeds token limits
 
-### FR-008: Customizable Prompt Templates (Future)
+### FR-008: Customizable Prompt Templates (Planned)
 
+**Future Implementation:**
 - Template override system via `.ai_review/templates/` directory
 - Base template inheritance with custom extensions
 - Configurable review focus areas and output formats
 - Project-specific guidelines integration
 
-### FR-009: Content Processing
+### FR-009: Content Processing (Implemented)
 
-- Handle large diffs with intelligent truncation
-- File count and character limits
+**Current Features:**
+- ✅ Handle large diffs with intelligent truncation (adaptive context windows)
+- ✅ File count and character limits (configurable via MAX_FILES/MAX_CHARS)
+- ✅ Smart file filtering (exclude lockfiles, build artifacts, minified files)
+- ✅ Adaptive context windows (16K standard, 24K for large diffs)
+- ✅ Diff parsing and formatting for AI consumption
+
+**Planned Enhancements:**
 - Context-aware content prioritization based on project context
-- Diff parsing and formatting for AI consumption
 
-### FR-010: Error Handling & Resilience
+### FR-010: Error Handling & Resilience (Partially Implemented)
 
-- Comprehensive error handling for API failures with retry logic
+**Current Features:**
+- ✅ Custom exception hierarchy for different error types
+- ✅ CI/CD specific error handling with appropriate exit codes (0-5)
+- ✅ Provider availability checks (health-check functionality)
+- ✅ Dry-run mode for testing without API calls
+- ✅ HTTP timeout configuration for API calls
+- ✅ Structured logging for troubleshooting
+
+**Planned Enhancements:**
+- API failure retry logic with backoff strategies
 - Graceful degradation on partial failures
-- Detailed logging for troubleshooting
-- CI/CD specific error handling with appropriate exit codes
-- Timeout management for long-running operations
-- Handling of edge cases (empty MRs, API rate limits, network issues)
+- Advanced rate limit handling
+- Network resilience improvements
 
 ## 🔧 Non-Functional Requirements
 
@@ -178,17 +203,25 @@ containerized environments.
 
 ### Dependencies
 
-- **CLI Framework**: `click` (replacing argparse for better UX)
-- **HTTP Client**: `aiohttp` (async HTTP for better performance)
+**Core Runtime Dependencies:**
+- **CLI Framework**: `click` (modern CLI interface with better UX)
+- **HTTP Clients**: `aiohttp` + `httpx` (async HTTP for better performance)
 - **GitLab API**: `python-gitlab` (mature GitLab integration)
 - **LLM Framework**: `langchain` + `langchain-community` (prompt management, LLM abstraction)
-- **AI Providers**:
-  - `ollama` (local development, primary for Phase 1)
-  - `langchain-google-genai` (Gemini - production default)
-  - `langchain-openai` (OpenAI - optional)
-  - `langchain-anthropic` (Claude - optional)
-- **Configuration**: `pydantic` v2+ (validation and settings)
+
+**AI Providers (Implemented):**
+- **Local Development**: `ollama` + `langchain-ollama` (cost-free local LLM)
+- **Production**: `langchain-google-genai` (Gemini integration)
+
+**Configuration & Validation:**
+- **Settings Management**: `pydantic` v2+ + `pydantic-settings` (validation and settings)
 - **Logging**: `structlog` (structured logging)
+
+**Development Dependencies:**
+- **Code Quality**: `ruff` (linting/formatting), `mypy` (type checking)
+- **Testing**: `pytest` + `pytest-asyncio` + `pytest-mock` + `pytest-cov`
+- **Security**: `bandit` (security linting)
+- **Git Hooks**: `pre-commit` (automated code quality checks)
 
 ### Development Infrastructure
 
@@ -207,256 +240,81 @@ containerized environments.
 - **Security**: Non-root user, minimal dependencies
 - **Size Target**: <500MB final image
 
-## 🎭 AI Prompts and LangChain Templates
+## 🎯 AI Review Output Requirements
 
-### System Prompt for Code Review (LangChain Template)
+The AI system must generate structured code reviews that serve both technical and business audiences. The output should follow a unified format that combines executive summary with detailed technical analysis.
 
-```python
-from langchain.prompts import SystemMessagePromptTemplate
+### Required Output Format
 
-system_template = """
-You are an expert senior software engineer and a meticulous code reviewer.
-Your goal is to provide concise, high-quality, constructive feedback on merge
-requests to help developers improve their code.
-You need to focus on review ONLY the changes in the diff, not the entire codebase.
-Your tone should be helpful, collaborative, and professional.
-You must adhere strictly to the response format requested in the user's prompt.
+The AI must generate reviews in this exact structure:
 
-Model Context: You are running on {model_name} via {provider_name}.
-"""
+```markdown
+## AI Code Review
 
-system_prompt = SystemMessagePromptTemplate.from_template(system_template)
-```
+### 📋 MR Summary
+[Single sentence describing the main change]
 
-### Code Review User Prompt Template (LangChain)
+- **Key Changes:** [List 2-3 most important changes]
+- **Impact:** [Describe affected modules/functionality]
+- **Risk Level:** [Low/Medium/High] - [Brief reason]
 
-```python
-from langchain.prompts import HumanMessagePromptTemplate
+### Detailed Code Review
+[Technical analysis focusing on logic, security, performance, architecture]
 
-review_template = """
-Please review the following code changes from a merge request.
-
-{language_hint_section}
-
-{project_context_section}
-
-## Guidelines
-
-- **Focus on High-Level Feedback:** Concentrate on logic, correctness, security
-  vulnerabilities, performance bottlenecks, architectural patterns, and
-  readability.
-- **Ignore Trivial Issues:** Do not comment on minor stylistic issues,
-  formatting, or things a linter would automatically catch.
-- **Be Actionable:** Provide clear, concise, and actionable suggestions.
-  Explain *why* a change is recommended.
-- **Provide Code Snippets:** When suggesting a change, include a small code
-  snippet to illustrate your point.
-
-## Response Format
-
-Structure your feedback in Markdown using collapsible sections as follows:
-
----
-
-### General Feedback
-
-A brief, high-level overview of the merge request. Mention the overall quality and any major architectural points.
-
-### 📂 File Reviews
-
-For each file with significant feedback, use this collapsible format:
+#### 📂 File Reviews
+[Only include if specific file feedback exists]
 
 <details>
-<summary><strong>📄 `path/to/file.ext`</strong> - Brief summary of main issues</summary>
+<summary><strong>📄 `filename`</strong> - Brief issue summary</summary>
 
-#### Reviews
-- **[Issue Type]** Brief description of the issue or suggestion
-  - **Reasoning:** Detailed explanation of why this is important
-  - **Suggestion:** Specific actionable recommendation
-
-```language
-// Code example if applicable
-suggested_improvement();
-```
-
-#### Questions (if any)
-
-- **[Question]** Clarifying question about specific implementation. ONLY if necessary
-
-#### Additional Comments (if any)
-
-- **[Note]** Any additional observations or recommendations. ONLY if necessary
+- **[Review]** Actionable review with reasoning
+- **[Question]** Clarifying questions (if needed)
+- **[Suggestion]** Improvement suggestions (if needed)
 
 </details>
 
 ### ✅ Summary
-
-- **Overall Assessment:** Quality rating and key recommendations
-- **Priority Issues:** Most critical items to address
-- **Minor Suggestions:** Optional improvements
-
----
-
-## Code Diff
-
-```diff
-{diff_content}
-```
-"""
-
-review_prompt = HumanMessagePromptTemplate.from_template(review_template)
+- **Overall Assessment:** [Quality rating + key recommendations]
+- **Priority Issues:** [Most critical items]
+- **Minor Suggestions:** [Optional improvements]
 ```
 
-### MR Summary User Prompt Template (LangChain)
+### Content Requirements
 
-```python
-from langchain.prompts import HumanMessagePromptTemplate
+#### Technical Analysis Focus Areas
 
-summary_template = """
-Based on the code diff below, please provide a concise, high-level summary of the
-merge request. The summary should be easy for a project manager or a new team
-member to understand.
+The AI must analyze and comment on:
 
-{project_context_section}
+1. **Logic & Correctness**: Algorithm correctness, edge case handling, potential bugs
+2. **Security**: Vulnerability identification, authentication/authorization issues, data validation
+3. **Performance**: Efficiency concerns, scalability implications, resource usage
+4. **Architecture**: Design patterns, code organization, maintainability
+5. **Best Practices**: Language-specific conventions, error handling, testing considerations
 
-## Response Format
+#### Quality Standards
 
-Use this collapsible markdown format:
+- **Actionable Feedback**: Every suggestion must include specific reasoning and recommended solution
+- **High-Level Focus**: Ignore trivial formatting issues that linters catch automatically
+- **Contextual Relevance**: Analysis should consider the programming language and project context when available
+- **Professional Tone**: Collaborative and constructive feedback suitable for team environments
 
-<details>
-<summary><strong>📋 MR Summary</strong> - Single sentence describing the main change</summary>
+### Input Processing
 
-### Key Changes
-- Brief bullet point of most important change
-- Another significant modification
-- Additional relevant change
+The AI system receives:
 
-### Impact Assessment
-- **Modules Affected:** List of impacted components
-- **User Impact:** Description of user-facing changes (if any)
-- **Technical Impact:** Infrastructure or architectural changes
+- **Diff Content**: Git diff showing code changes
+- **Language Hint** (optional): Primary programming language for context
+- **Project Context** (optional): Project-specific information, standards, architecture details
 
-### Risk Level
-- **Low/Medium/High** - Brief justification
+### Output Validation
 
-</details>
+Generated reviews must:
 
-## Code Diff
-
-```diff
-{diff_content}
-```
-"""
-
-summary_prompt = HumanMessagePromptTemplate.from_template(summary_template)
-```
-
-### LangChain Chain Examples
-
-```python
-from langchain.chains import LLMChain
-from langchain.schema import StrOutputParser
-
-# Code Review Chain
-review_chain = (
-    {
-        "diff_content": lambda x: x["diff"],
-        "language_hint_section": lambda x: f"**Primary Language:** `{x['language']}`" if x.get('language') else "",
-        "project_context_section": lambda x: f"## Project Context\n\n{x['context']}" if x.get('context') else ""
-    }
-    | review_prompt
-    | llm
-    | StrOutputParser()
-)
-
-# Summary Chain
-summary_chain = (
-    {
-        "diff_content": lambda x: x["diff"],
-        "project_context_section": lambda x: f"## Project Context\n\n{x['context']}" if x.get('context') else ""
-    }
-    | summary_prompt
-    | llm
-    | StrOutputParser()
-)
-```
-
-### Example Output Format
-
-#### Code Review Example
-
-```markdown
-### General Feedback
-
-This MR introduces user authentication functionality with proper security measures. The implementation follows good practices with JWT tokens and password hashing.
-
-### 📂 File Reviews
-
-<details>
-<summary><strong>📄 `src/auth/login.py`</strong> - Security improvements needed</summary>
-
-#### Reviews
-
-- **[Security]** Password validation could be strengthened
-  - **Reasoning:** Current regex allows weak passwords that could be easily compromised
-  - **Suggestion:** Implement minimum 12 characters with mixed case, numbers, and symbols
-
-```python
-# Consider using a more robust password validator
-from django.contrib.auth.password_validation import validate_password
-validate_password(password, user)
-```
-
-#### Questions
-
-- **[Question]** Should we implement rate limiting for login attempts?
-
-</details>
-
-<details>
-<summary><strong>📄 `src/auth/models.py`</strong> - Minor optimizations</summary>
-
-#### Reviews
-
-- **[Performance]** Database index missing on email field
-  - **Reasoning:** Email lookups will be frequent and should be optimized
-  - **Suggestion:** Add `db_index=True` to email field
-
-</details>
-
-### ✅ Example Summary
-
-- **Overall Assessment:** Good implementation with security best practices
-- **Priority Issues:** Strengthen password validation, add database indices
-- **Minor Suggestions:** Consider rate limiting, add more comprehensive tests
-
-```
-
-#### MR Summary Example
-
-```markdown
-<details>
-<summary><strong>📋 MR Summary</strong> - Implement user authentication system with JWT tokens</summary>
-
-### Key Changes
-
-- Add user login/logout endpoints with JWT authentication
-- Implement password hashing using bcrypt
-- Create user registration flow with email verification
-- Add authentication middleware for protected routes
-
-### Impact Assessment
-
-- **Modules Affected:** Authentication, User management, API middleware
-- **User Impact:** New login/registration functionality for end users
-- **Technical Impact:** New database tables, authentication middleware integration
-
-### Risk Level
-
-- **Medium** - Core authentication changes require thorough testing
-
-</details>
-```
+- Start with exactly "## AI Code Review"
+- Follow the specified section structure without deviation
+- Provide concise, focused analysis within reasonable length limits
+- Include specific code examples when making suggestions
+- Balance technical depth with accessibility for different stakeholders
 
 ## 🏗️ Architecture Design
 
@@ -475,21 +333,15 @@ ai-code-review/
 │   ├── core/                  # Core business logic
 │   │   ├── __init__.py
 │   │   ├── gitlab_client.py   # GitLab API client
-│   │   ├── ai_client.py       # AI provider abstraction
-│   │   ├── review_engine.py   # Review orchestration
-│   │   └── diff_processor.py  # Diff parsing and processing
+│   │   └── review_engine.py   # Review orchestration
 │   ├── providers/             # AI provider implementations via LangChain
 │   │   ├── __init__.py
 │   │   ├── base.py            # Abstract base provider using LangChain
 │   │   ├── ollama.py          # Ollama local LLM implementation
-│   │   ├── gemini.py          # Gemini implementation via langchain-google-genai
-│   │   ├── openai.py          # OpenAI implementation via langchain-openai
-│   │   └── anthropic.py       # Anthropic implementation via langchain-anthropic
+│   │   └── gemini.py          # Gemini implementation via langchain-google-genai
 │   └── utils/                 # Utility functions
 │       ├── __init__.py
-│       ├── logging.py         # Logging configuration
 │       ├── prompts.py         # LangChain prompt templates and chains
-│       ├── context.py         # Project context handling and discovery
 │       └── exceptions.py      # Custom exceptions
 ├── tests/
 │   ├── unit/
@@ -525,17 +377,18 @@ ai-code-review/
 - Easy addition of new providers through LangChain ecosystem
 - Built-in retry logic and error handling from LangChain
 
-#### Review Engine
+#### Review Engine (Implemented)
 
-- Orchestrates the review process using LangChain chains
-- LangChain prompt templates for code review and summary
-- Project context integration with smart token management
-- Template customization and inheritance system
-- Output parsers for structured review formatting
-- Async LangChain operations for better performance
+- **Core Functionality**: Orchestrates unified review and summary generation using LangChain chains
+- **Prompt Management**: LangChain prompt templates with structured output requirements
+- **Provider Integration**: Unified interface to Ollama and Gemini providers
+- **Content Processing**: Adaptive context windows and intelligent diff truncation
+- **File Filtering**: Smart exclusion of build artifacts, lockfiles, and generated content
+- **Output Generation**: Structured markdown reviews with collapsible sections
 
-#### Project Context Handler
+#### Project Context Handler (Planned)
 
+**Future Implementation:**
 - Auto-discovery of standard files (README.md, CLAUDE.md, .cursorrules)
 - Standard context file support (`.ai_review/project.md`)
 - External URL context fetching with caching
@@ -573,40 +426,48 @@ ai-code-review/
 ### Environment Variables
 
 ```bash
-# Required
-GITLAB_TOKEN=glpat_xxxxxxxxxxxx
+# Required - GitLab Personal Access Token
+GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
 
-# AI Configuration (provider-specific)
-AI_PROVIDER=ollama                      # ollama (local only), gemini (production), openai, anthropic
-AI_MODEL=qwen2.5-coder:7b               # Model name for selected provider
-AI_API_KEY=xxxxxxxxxxxx                 # Required for cloud providers (not ollama)
-OLLAMA_BASE_URL=http://localhost:11434  # Ollama server URL (local development only)
+# Core Configuration
+GITLAB_URL=https://gitlab.com           # GitLab instance URL
+AI_PROVIDER=gemini                      # gemini (production default), ollama (local dev)
+AI_MODEL=gemini-2.5-pro                 # AI model name for selected provider
+AI_API_KEY=your_gemini_api_key_here     # Required for cloud providers (not needed for ollama)
 
-# Project Context (optional)
-ENABLE_PROJECT_CONTEXT=true             # Enable/disable project context injection
-PROJECT_CONTEXT_FILE=.ai_review/project.md  # Custom context file path
-PROJECT_CONTEXT_URL=                    # External URL for project context (optional)
-ENABLE_AUTO_DISCOVERY=true              # Auto-discover README, CLAUDE.md, .cursorrules
+# AI Model Parameters (defaults optimized for code review)
+TEMPERATURE=0.1                         # 0.0-2.0, lower = more deterministic
+MAX_TOKENS=8000                         # Maximum response tokens
+HTTP_TIMEOUT=5.0                        # HTTP timeout in seconds
 
-# GitLab CI/CD (automatic variables)
-CI_PROJECT_PATH=                        # Automatically set by GitLab CI (project path)
-CI_MERGE_REQUEST_IID=                   # Automatically set by GitLab CI (MR IID)
-CI_SERVER_URL=                          # Automatically set by GitLab CI (GitLab instance URL)
+# Ollama Configuration (for local development)
+OLLAMA_BASE_URL=http://localhost:11434  # Ollama server URL
 
-# CI/CD Configuration
-CI_JOB_TIMEOUT=1800                     # Maximum job runtime in seconds (30 min)
-API_RETRY_COUNT=3                       # Number of retries for API failures
-API_RETRY_DELAY=5                       # Delay between retries in seconds
-ENABLE_CACHE=true                       # Enable caching for context files and responses
+# Processing Limits
+MAX_CHARS=100000                        # Max characters from diff
+MAX_FILES=100                           # Max files to process
 
-# Optional
-GITLAB_URL=https://gitlab.com           # Fallback if CI_SERVER_URL not available
-CODE_LANGUAGE_HINT=python
-REVIEW_MAX_CHARS=100000
-REVIEW_MAX_FILES=100
-LOG_LEVEL=INFO
-DRY_RUN=false
+# GitLab CI/CD Variables (automatically set in CI/CD environment)
+CI_PROJECT_PATH=                        # Project path (group/project)
+CI_MERGE_REQUEST_IID=                   # MR IID number
+CI_SERVER_URL=                          # GitLab instance URL
+
+# Optional Features
+LANGUAGE_HINT=python                    # Programming language hint
+DRY_RUN=false                           # Enable dry-run mode (no API calls)
+BIG_DIFFS=false                         # Force large context (24K) - auto-activated for diffs >60K chars
+LOG_LEVEL=INFO                          # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# File Filtering (comma-separated glob patterns)
+EXCLUDE_PATTERNS=*.lock,*.min.js,node_modules/**,dist/**,build/**
 ```
+
+**Configuration Notes:**
+- URLs are validated for proper format
+- AI model names are validated for basic format requirements
+- Log levels are validated against standard Python logging levels
+- `EXCLUDE_PATTERNS` can be set to empty string to disable all filtering
+- `BIG_DIFFS` is auto-activated for diffs >60K characters for optimal performance
 
 ### CLI Interface
 
@@ -614,26 +475,25 @@ DRY_RUN=false
 ai-code-review [OPTIONS] [PROJECT_ID] [MR_IID]
 
 Options:
-  --gitlab-url TEXT      GitLab instance URL (or use CI_SERVER_URL)
-  --project-id TEXT      Project ID (or use CI_PROJECT_PATH)
-  --mr-iid INTEGER       MR IID (or use CI_MERGE_REQUEST_IID)
-  --provider TEXT        AI provider (ollama, gemini, openai, anthropic)
-  --model TEXT           AI model to use (default: qwen2.5-coder:7b for ollama)
-  --ollama-url TEXT      Ollama server URL (default: http://localhost:11434)
-  --language-hint TEXT   Programming language hint
-  --max-chars INTEGER    Maximum diff characters
-  --max-files INTEGER    Maximum number of files
-  --post                 Post review as MR note
-  --enable-context       Enable project context injection
-  --context-file PATH    Custom project context file path
-  --context-url URL      External project context URL
-  --auto-discovery       Auto-discover context files (README, CLAUDE.md, etc.)
-  --timeout INTEGER      Operation timeout in seconds (default: 1800)
-  --retry-count INTEGER  API retry attempts (default: 3)
-  --dry-run              Dry run mode (no API calls)
-  --config-file PATH     Configuration file path
-  --log-level TEXT       Logging level
-  --help                 Show help message
+  --gitlab-url TEXT           GitLab instance URL (or use CI_SERVER_URL)
+  --project-id TEXT           Project ID (or use CI_PROJECT_PATH)
+  --mr-iid INTEGER            MR IID (or use CI_MERGE_REQUEST_IID)
+  --provider [ollama|gemini]  AI provider to use (gemini default)
+  --model TEXT                AI model name (gemini-2.5-pro default)
+  --ollama-url TEXT           Ollama server URL (http://localhost:11434 default)
+  --temperature FLOAT         AI temperature 0.0-2.0 (0.1 default)
+  --max-tokens INTEGER        Maximum AI response tokens (8000 default)
+  --language-hint TEXT        Programming language hint
+  --max-chars INTEGER         Maximum diff characters to process (100000 default)
+  --max-files INTEGER         Maximum number of files to process (100 default)
+  --post                      Post review as GitLab MR comment
+  --dry-run                   Dry run mode (no API calls, for testing)
+  --big-diffs                 Force large context window (24K tokens)
+  --log-level [DEBUG|INFO|WARNING|ERROR|CRITICAL]  Logging level
+  --exclude-files TEXT        Additional file patterns to exclude (can be repeated)
+  --no-file-filtering         Disable all file filtering (include lockfiles, etc.)
+  --health-check              Check AI provider connectivity and exit
+  --help                      Show help message
 
 Exit Codes:
   0    Success - Review completed successfully
@@ -644,14 +504,39 @@ Exit Codes:
   5    Empty MR (no changes to review)
 ```
 
+**CLI Usage Examples:**
+
+```bash
+# Basic usage with Gemini (production)
+AI_API_KEY=your_key ai-code-review group/project 123
+
+# Post review to GitLab (typical CI/CD usage)
+AI_API_KEY=your_key ai-code-review group/project 123 --post
+
+# Local development with Ollama (no API key needed)
+ai-code-review group/project 123 --provider ollama
+
+# Large MR with manual big-diffs flag
+ai-code-review group/project 123 --big-diffs
+
+# Custom file filtering
+ai-code-review group/project 123 --exclude-files "*.test.js" --exclude-files "docs/**"
+
+# Health check connectivity
+AI_API_KEY=your_key ai-code-review --health-check
+```
+
 ### GitLab CI Usage
 
 ```bash
 # Automatic mode (uses CI environment variables)
-ai-code-review --post --enable-context
+ai-code-review --post
 
-# Manual mode (specify parameters)
+# Manual mode (specify parameters explicitly)
 ai-code-review --project-id "$CI_PROJECT_PATH" --mr-iid "$CI_MERGE_REQUEST_IID" --post
+
+# With health check for reliability
+ai-code-review --health-check && ai-code-review --post
 ```
 
 ## 📈 Development Phases
