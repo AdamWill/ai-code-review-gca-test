@@ -8,7 +8,7 @@ AI-powered Python CLI tool that provides automated code review assistance for Gi
 
 - Python 3.12+
 - Ollama server running locally (for development)
-- GitLab Personal Access Token
+- **GitLab Personal Access Token** (REQUIRED)
 
 ### Installation
 
@@ -18,6 +18,19 @@ uv sync --dev
 
 # Or with pip
 pip install -e .
+```
+
+### Quick Setup
+
+⚠️ **IMPORTANT: You MUST configure your GitLab token before using the tool:**
+
+```bash
+# Set your GitLab token (REQUIRED)
+export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+
+# Or create a .env file (recommended)
+cp env.example .env
+# Then edit .env and set your GITLAB_TOKEN
 ```
 
 ### Usage
@@ -41,11 +54,33 @@ ai-code-review --project-id "group/project" --mr-iid 123 --dry-run
 
 ## 🔧 Configuration
 
-The tool supports comprehensive configuration through environment variables. Copy `env.example` to `.env` and customize as needed:
+The tool supports comprehensive configuration through environment variables.
+
+### ⚠️ REQUIRED Configuration
+
+**You MUST set your GitLab Personal Access Token before using the tool:**
 
 ```bash
-# Required
-export GITLAB_TOKEN=glpat_xxxxxxxxxxxx         # GitLab Personal Access Token
+# Option 1: Environment variable (for quick testing)
+export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+
+# Option 2: .env file (RECOMMENDED for permanent setup)
+cp env.example .env
+# Edit .env and set your token
+```
+
+**How to get a GitLab token:**
+1. Go to GitLab → Settings → Access Tokens
+2. Create a token with scopes: `api`, `read_user`, `read_repository`
+3. Copy the token and use it in your configuration
+
+### 📝 All Configuration Options
+
+Copy `env.example` to `.env` and customize as needed:
+
+```bash
+# Required - GitLab Personal Access Token
+export GITLAB_TOKEN=glpat_xxxxxxxxxxxx
 
 # Core settings (with defaults)
 export GITLAB_URL=https://gitlab.com           # GitLab instance URL

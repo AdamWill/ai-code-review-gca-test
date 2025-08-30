@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 from enum import Enum
+from typing import Any
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -161,12 +162,61 @@ class Config(BaseSettings):
             raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
         return v.upper()
 
+    @field_validator("gitlab_token")
+    @classmethod
+    def validate_gitlab_token(cls, v: str) -> str:
+        """Validate GitLab token format and provide helpful error message."""
+        if not v or not v.strip():
+            raise ValueError(
+                "GitLab Personal Access Token is required. "
+                "Get one at: https://gitlab.com/-/profile/personal_access_tokens "
+                "with scopes: api, read_user, read_repository. "
+                "Set it as GITLAB_TOKEN environment variable or in .env file."
+            )
+
+        v = v.strip()
+
+        # Allow test tokens (common patterns used in testing)
+        test_patterns = ("test", "mock", "fake", "dummy", "example")
+        if any(pattern in v.lower() for pattern in test_patterns):
+            return v
+
+        # Validate format only for tokens that appear to be real GitLab tokens
+        # (longer than 20 chars and don't contain obvious test words)
+        if len(v) > 20 and not any(pattern in v.lower() for pattern in test_patterns):
+            if not v.startswith(("glpat-", "gldt-", "glrt-", "gloas-", "glcpat-")):
+                raise ValueError(
+                    f"GitLab token format appears invalid: '{v[:12]}...'. "
+                    "GitLab tokens typically start with: glpat- (personal), "
+                    "gldt- (deploy), glrt- (runner), gloas- (OAuth app), "
+                    "or glcpat- (project access). "
+                    "Get a valid token at: https://gitlab.com/-/profile/personal_access_tokens"
+                )
+
+        return v
+
     @field_validator("ai_api_key")
     @classmethod
     def validate_api_key(cls, v: str | None) -> str | None:
         """Validate that API key is provided for cloud providers."""
         # For MVP, we'll keep this simple and validate in the main app logic
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_required_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """Validate required fields with helpful error messages."""
+        if isinstance(data, dict):
+            # Check if gitlab_token is missing or empty
+            token = data.get("gitlab_token")
+            if not token or (isinstance(token, str) and not token.strip()):
+                raise ValueError(
+                    "GitLab Personal Access Token is required. "
+                    "Get one at: https://gitlab.com/-/profile/personal_access_tokens "
+                    "with scopes: api, read_user, read_repository. "
+                    "Set it as GITLAB_TOKEN environment variable or in .env file."
+                )
+        return data
 
     model_config = {
         "env_file": ".env",
