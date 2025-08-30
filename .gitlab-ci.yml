@@ -1,6 +1,7 @@
 stages:
   - static-analysis
   - build
+  - review
 
 workflow:
   rules:
@@ -110,3 +111,16 @@ build-container:
     - if: '$CI_COMMIT_REF_NAME == $CI_DEFAULT_BRANCH'
       variables:
         CONTAINER_TAG: "latest"
+
+# Code Review
+
+ai-review:
+  stage: review
+  image: "${CI_REGISTRY_IMAGE}:latest"
+  allow_failure: true
+  script:
+    - ai-code-review --post
+  variables:
+    AI_API_KEY: $GEMINI_API_KEY
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
