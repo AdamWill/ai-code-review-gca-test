@@ -133,3 +133,18 @@ dev = [
     "ruff>=0.12.11",
     "types-requests>=2.32.4.20250809",
 ]
+
+# PyMarkdown configuration
+[tool.pymarkdown]
+# Disable problematic rules for documentation with code examples
+disable-rules = [
+    "MD013",  # Line length - too restrictive for code examples and long URLs
+    "MD031",  # Fenced code blocks surrounded by blank lines - too strict for specs
+    "MD040",  # Fenced code blocks should have language - examples don't always need it
+    "MD033",  # Inline HTML - sometimes needed for complex formatting
+]
+
+# Configure specific rules
+[tool.pymarkdown.plugins.md013]
+# Allow longer lines in SPECS.md for technical documentation
+line_length = 100
