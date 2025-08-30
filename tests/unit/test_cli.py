@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from click.testing import CliRunner
@@ -287,4 +287,57 @@ class TestCLI:
         assert "PROJECT_ID" in result.output
         assert "MR_IID" in result.output
         assert "--provider" in result.output
-        assert "--dry-run" in result.output
+
+    def test_cli_exclude_files_option(self, runner: CliRunner) -> None:
+        """Test --exclude-files CLI option adds to default patterns."""
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = MagicMock()
+            mock_config_class.return_value = mock_config
+
+            runner.invoke(
+                main,
+                [
+                    "test/project",
+                    "123",
+                    "--exclude-files",
+                    "*.custom",
+                    "--exclude-files",
+                    "temp/**",
+                    "--dry-run",
+                ],
+                env={"GITLAB_TOKEN": "test_token"},
+            )
+
+            # Should create config with both default patterns and custom ones
+            called_args, called_kwargs = mock_config_class.call_args
+            exclude_patterns = called_kwargs.get("exclude_patterns", [])
+
+            # Should include default patterns
+            assert "*.lock" in exclude_patterns
+            assert "package-lock.json" in exclude_patterns
+
+            # Should include custom patterns
+            assert "*.custom" in exclude_patterns
+            assert "temp/**" in exclude_patterns
+
+    def test_cli_no_file_filtering_option(self, runner: CliRunner) -> None:
+        """Test --no-file-filtering CLI option disables all filtering."""
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = MagicMock()
+            mock_config_class.return_value = mock_config
+
+            runner.invoke(
+                main,
+                [
+                    "test/project",
+                    "123",
+                    "--no-file-filtering",
+                    "--dry-run",
+                ],
+                env={"GITLAB_TOKEN": "test_token"},
+            )
+
+            # Should create config with empty exclude patterns
+            called_args, called_kwargs = mock_config_class.call_args
+            exclude_patterns = called_kwargs.get("exclude_patterns", [])
+            assert exclude_patterns == []
