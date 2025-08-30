@@ -158,16 +158,21 @@ def main(
     \b
     Examples:
         # Manual mode
+
         ai-code-review group/project 123
+
         ai-code-review --project-id group/project --mr-iid 123 --post
 
         # CI/CD mode (uses CI environment variables)
+
         ai-code-review --post
 
         # Health check
+
         ai-code-review --health-check
 
         # Local testing
+
         ai-code-review group/project 123 --provider ollama --dry-run
     """
     try:
