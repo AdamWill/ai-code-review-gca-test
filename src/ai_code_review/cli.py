@@ -113,6 +113,16 @@ logger = structlog.get_logger(__name__)
     help="Logging level (default: from config or INFO)",
 )
 @click.option(
+    "--exclude-files",
+    multiple=True,
+    help="Additional glob patterns for files to exclude from AI review (can be used multiple times)",
+)
+@click.option(
+    "--no-file-filtering",
+    is_flag=True,
+    help="Disable all file filtering (include lockfiles, build artifacts, etc.)",
+)
+@click.option(
     "--health-check",
     is_flag=True,
     help="Perform health check on all components and exit",
@@ -137,6 +147,8 @@ def main(
     dry_run: bool,
     big_diffs: bool,
     log_level: str | None,
+    exclude_files: tuple[str, ...],
+    no_file_filtering: bool,
     health_check: bool,
 ) -> None:
     """
@@ -191,6 +203,18 @@ def main(
             config_overrides["big_diffs"] = big_diffs
         if log_level:
             config_overrides["log_level"] = log_level
+
+        # Handle file filtering options
+        if no_file_filtering:
+            config_overrides["exclude_patterns"] = []
+        elif exclude_files:
+            # Start with defaults and add user patterns
+            from ai_code_review.models.config import get_default_exclude_patterns
+
+            default_patterns = get_default_exclude_patterns()
+            config_overrides["exclude_patterns"] = default_patterns + list(
+                exclude_files
+            )
 
         config = Config(**config_overrides)
 

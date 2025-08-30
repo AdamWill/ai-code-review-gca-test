@@ -213,3 +213,69 @@ class TestGitLabClient:
 
             with pytest.raises(GitLabAPIError, match="Unexpected error posting review"):
                 await client.post_review("test/project", 123, review_content)
+
+    def test_should_exclude_file_lockfiles(self, test_config: Config) -> None:
+        """Test that lockfiles are excluded from AI review."""
+        client = GitLabClient(test_config)
+
+        # Test various lockfiles
+        assert client._should_exclude_file("uv.lock")
+        assert client._should_exclude_file("package-lock.json")
+        assert client._should_exclude_file("yarn.lock")
+        assert client._should_exclude_file("poetry.lock")
+        assert client._should_exclude_file("Pipfile.lock")
+        assert client._should_exclude_file("pnpm-lock.yaml")
+
+    def test_should_exclude_file_build_artifacts(self, test_config: Config) -> None:
+        """Test that build artifacts are excluded from AI review."""
+        client = GitLabClient(test_config)
+
+        # Test build artifacts
+        assert client._should_exclude_file("dist/bundle.js")
+        assert client._should_exclude_file("build/app.js")
+        assert client._should_exclude_file("src/app.min.js")
+        assert client._should_exclude_file("styles.min.css")
+        assert client._should_exclude_file("app.js.map")
+
+    def test_should_exclude_file_dependency_dirs(self, test_config: Config) -> None:
+        """Test that dependency directories are excluded."""
+        client = GitLabClient(test_config)
+
+        # Test dependency directories
+        assert client._should_exclude_file("node_modules/package/index.js")
+        assert client._should_exclude_file("src/__pycache__/module.pyc")
+        assert client._should_exclude_file("package.egg-info/metadata.txt")
+
+    def test_should_not_exclude_source_files(self, test_config: Config) -> None:
+        """Test that normal source files are not excluded."""
+        client = GitLabClient(test_config)
+
+        # Test normal source files
+        assert not client._should_exclude_file("src/main.py")
+        assert not client._should_exclude_file("tests/test_client.py")
+        assert not client._should_exclude_file("README.md")
+        assert not client._should_exclude_file("pyproject.toml")
+        assert not client._should_exclude_file("package.json")
+
+    def test_custom_exclude_patterns(self) -> None:
+        """Test custom exclude patterns."""
+        custom_config = Config(
+            gitlab_token="test", exclude_patterns=["*.test.js", "**/temp/**"]
+        )
+        client = GitLabClient(custom_config)
+
+        # Test custom patterns
+        assert client._should_exclude_file("app.test.js")
+        assert client._should_exclude_file("src/temp/file.txt")
+        assert not client._should_exclude_file("app.js")
+        assert not client._should_exclude_file("src/main.py")
+
+    def test_no_file_filtering(self) -> None:
+        """Test disabling all file filtering."""
+        no_filter_config = Config(gitlab_token="test", exclude_patterns=[])
+        client = GitLabClient(no_filter_config)
+
+        # With no patterns, nothing should be excluded
+        assert not client._should_exclude_file("uv.lock")
+        assert not client._should_exclude_file("node_modules/package.json")
+        assert not client._should_exclude_file("dist/bundle.js")

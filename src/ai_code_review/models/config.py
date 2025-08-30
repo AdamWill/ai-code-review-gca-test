@@ -9,6 +9,31 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings
 
 
+def get_default_exclude_patterns() -> list[str]:
+    """Get the default list of file patterns to exclude from AI review."""
+    return [
+        "*.lock",  # All lockfiles (uv.lock, pdm.lock, etc.)
+        "package-lock.json",  # npm lockfile
+        "yarn.lock",  # Yarn lockfile
+        "Pipfile.lock",  # Pipenv lockfile
+        "poetry.lock",  # Poetry lockfile
+        "pnpm-lock.yaml",  # PNPM lockfile
+        "*.min.js",  # Minified JS files
+        "*.min.css",  # Minified CSS files
+        "*.map",  # Source map files
+        "node_modules/**",  # Node modules (top level)
+        "**/node_modules/**",  # Node modules (nested)
+        "__pycache__/**",  # Python cache (top level)
+        "**/__pycache__/**",  # Python cache (nested)
+        "dist/**",  # Build distributions (top level)
+        "**/dist/**",  # Build distributions (nested)
+        "build/**",  # Build directories (top level)
+        "**/build/**",  # Build directories (nested)
+        "*.egg-info/**",  # Python egg info (top level)
+        "**/*.egg-info/**",  # Python egg info (nested)
+    ]
+
+
 class AIProvider(str, Enum):
     """Supported AI providers."""
 
@@ -94,6 +119,12 @@ class Config(BaseSettings):
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
+
+    # File filtering
+    exclude_patterns: list[str] = Field(
+        default_factory=get_default_exclude_patterns,
+        description="Glob patterns for files to exclude from AI review",
+    )
 
     @field_validator("gitlab_url", "ollama_base_url")
     @classmethod

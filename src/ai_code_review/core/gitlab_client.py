@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import fnmatch
+from pathlib import PurePath
+
 import gitlab
 from gitlab.v4.objects import Project, ProjectMergeRequest
 
@@ -89,6 +92,8 @@ class GitLabClient:
     ) -> list[MergeRequestDiff]:
         """Fetch diffs for a merge request."""
         diffs: list[MergeRequestDiff] = []
+        excluded_files: list[str] = []
+        excluded_chars = 0
 
         try:
             # Get changes from the MR
@@ -103,14 +108,27 @@ class GitLabClient:
                     changes_response.json() if hasattr(changes_response, "json") else {}
                 )
 
+            # Track files skipped due to missing diff content (common for large lockfiles)
+            skipped_no_diff = []
+
             for change in changes_data.get("changes", []):
+                file_path = change["new_path"] or change["old_path"]
+                diff_content = change.get("diff", "")
+
                 # Skip binary files or files without diffs
-                if not change.get("diff"):
+                if not diff_content:
+                    skipped_no_diff.append(file_path)
                     continue
+
+                # Check if file should be excluded from AI review
+                if self._should_exclude_file(file_path):
+                    excluded_files.append(file_path)
+                    excluded_chars += len(diff_content)
+                    continue  # Skip excluded files
 
                 # Create diff object
                 diff = MergeRequestDiff(
-                    file_path=change["new_path"] or change["old_path"],
+                    file_path=file_path,
                     new_file=change["new_file"],
                     renamed_file=change["renamed_file"],
                     deleted_file=change["deleted_file"],
@@ -122,6 +140,28 @@ class GitLabClient:
                 # Check limits
                 if len(diffs) >= self.config.max_files:
                     break
+
+            # Log filtering and skipping statistics
+            import structlog
+
+            logger = structlog.get_logger()
+
+            if excluded_files:
+                logger.info(
+                    "Files excluded from AI review",
+                    excluded_files=len(excluded_files),
+                    excluded_chars=excluded_chars,
+                    included_files=len(diffs),
+                    examples=excluded_files[:3],  # Show first 3 examples
+                )
+
+            if skipped_no_diff:
+                logger.info(
+                    "Files skipped - no diff content from GitLab API",
+                    skipped_files=len(skipped_no_diff),
+                    reason="GitLab omits diff content for large files (e.g., lockfiles)",
+                    examples=skipped_no_diff[:3],  # Show first 3 examples
+                )
 
             return self._apply_content_limits(diffs)
 
@@ -187,6 +227,30 @@ class GitLabClient:
             total_chars += diff_chars
 
         return limited_diffs
+
+    def _should_exclude_file(self, file_path: str) -> bool:
+        """Check if file should be excluded from AI review based on patterns.
+
+        Args:
+            file_path: Path of the file to check
+
+        Returns:
+            True if file should be excluded, False otherwise
+        """
+        path = PurePath(file_path)
+        for pattern in self.config.exclude_patterns:
+            try:
+                # Use PurePath.match() for glob patterns with ** support
+                if path.match(pattern):
+                    return True
+                # Also try fnmatch for simple patterns (fallback)
+                if fnmatch.fnmatch(file_path, pattern):
+                    return True
+            except (ValueError, TypeError):
+                # If pattern is invalid, try fnmatch as fallback
+                if fnmatch.fnmatch(file_path, pattern):
+                    return True
+        return False
 
     def _create_mock_mr_data(
         self, project_id: str | int, mr_iid: int

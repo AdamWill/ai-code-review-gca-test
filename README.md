@@ -88,6 +88,65 @@ The tool automatically adapts context window sizes for optimal performance:
 
 This eliminates information loss from diff truncation while maintaining optimal memory usage.
 
+## 🗂️ File Filtering
+
+The tool automatically excludes common non-reviewable files from AI analysis to reduce noise and token usage:
+
+### Default Exclusions
+
+By default, the following file patterns are excluded:
+- **Lockfiles**: `*.lock`, `package-lock.json`, `yarn.lock`, `poetry.lock`, etc.
+- **Minified files**: `*.min.js`, `*.min.css`, `*.map`
+- **Build outputs**: `dist/**`, `build/**`
+- **Dependencies**: `node_modules/**`, `__pycache__/**`
+- **Generated files**: `*.egg-info/**`
+
+### Configuration Options
+
+#### Environment Variable
+```bash
+# Comma-separated list of glob patterns
+export EXCLUDE_PATTERNS="*.lock,*.min.js,node_modules/**,dist/**"
+
+# Disable all filtering (include everything)
+export EXCLUDE_PATTERNS=""
+```
+
+#### CLI Options
+```bash
+# Add additional exclusion patterns
+ai-code-review --exclude-files "*.test.js" --exclude-files "**/temp/**" group/project 123
+
+# Disable all file filtering (include lockfiles, build artifacts, etc.)
+ai-code-review --no-file-filtering group/project 123
+
+# Example: Review only source code, exclude tests and docs
+ai-code-review --exclude-files "**/*test*" --exclude-files "docs/**" group/project 123
+```
+
+#### Pattern Format
+- **Simple wildcards**: `*.js`, `*.lock`
+- **Directory patterns**: `dist/**`, `node_modules/**`
+- **Recursive matching**: `**/build/**` (matches nested build dirs)
+- **Exact files**: `package-lock.json`
+
+### Benefits
+
+File filtering provides several advantages:
+- **🚀 Faster reviews**: Skip irrelevant generated files
+- **💰 Lower costs**: Reduce token usage significantly
+- **🎯 Better focus**: AI reviews only meaningful code changes
+- **⚡ Improved performance**: Less processing overhead
+
+### Example Impact
+
+For a typical JavaScript project MR:
+```
+Without filtering: 45,000 chars (18K tokens) → $0.54 cost
+With filtering:     8,500 chars (3.4K tokens) → $0.10 cost
+Savings:           ~81% reduction in tokens and cost
+```
+
 ## 🧪 Development
 
 ### Setup
