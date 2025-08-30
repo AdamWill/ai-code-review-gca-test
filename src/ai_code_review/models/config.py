@@ -6,7 +6,7 @@ import re
 from enum import Enum
 from typing import Any
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -44,6 +44,14 @@ class AIProvider(str, Enum):
     ANTHROPIC = "anthropic"
 
 
+# Cloud AI providers that require API keys
+CLOUD_PROVIDERS = {
+    AIProvider.GEMINI,
+    AIProvider.OPENAI,
+    AIProvider.ANTHROPIC,
+}
+
+
 class Config(BaseSettings):
     """Main configuration for AI Code Review tool."""
 
@@ -55,9 +63,9 @@ class Config(BaseSettings):
 
     # AI provider configuration
     ai_provider: AIProvider = Field(
-        default=AIProvider.OLLAMA, description="AI provider to use"
+        default=AIProvider.GEMINI, description="AI provider to use"
     )
-    ai_model: str = Field(default="qwen2.5-coder:7b", description="AI model name")
+    ai_model: str = Field(default="gemini-2.5-pro", description="AI model name")
     ai_api_key: str | None = Field(
         default=None, description="API key for cloud AI providers"
     )
@@ -81,7 +89,7 @@ class Config(BaseSettings):
         le=2.0,
     )
     max_tokens: int = Field(
-        default=4096,
+        default=8000,
         description="Maximum tokens for AI response generation",
         gt=0,
     )
@@ -197,9 +205,26 @@ class Config(BaseSettings):
 
     @field_validator("ai_api_key")
     @classmethod
-    def validate_api_key(cls, v: str | None) -> str | None:
+    def validate_api_key(cls, v: str | None, info: ValidationInfo) -> str | None:
         """Validate that API key is provided for cloud providers."""
-        # For MVP, we'll keep this simple and validate in the main app logic
+        # Get the provider from validation context
+        if info.data and "ai_provider" in info.data:
+            provider = info.data["ai_provider"]
+
+            if provider in CLOUD_PROVIDERS:
+                if not v or (isinstance(v, str) and not v.strip()):
+                    provider_urls = {
+                        AIProvider.GEMINI: "https://makersuite.google.com/app/apikey",
+                        AIProvider.OPENAI: "https://platform.openai.com/api-keys",
+                        AIProvider.ANTHROPIC: "https://console.anthropic.com/",
+                    }
+                    url = provider_urls.get(provider, "provider website")
+                    raise ValueError(
+                        f"API key is required for cloud provider '{provider.value}'. "
+                        f"Get one at: {url} "
+                        f"Set it as AI_API_KEY environment variable or in .env file."
+                    )
+
         return v
 
     @model_validator(mode="before")
@@ -216,7 +241,41 @@ class Config(BaseSettings):
                     "with scopes: api, read_user, read_repository. "
                     "Set it as GITLAB_TOKEN environment variable or in .env file."
                 )
+
         return data
+
+    @model_validator(mode="after")
+    @classmethod
+    def validate_model_provider_compatibility(cls, config: Any) -> Any:
+        """Validate that the AI model is compatible with the selected provider."""
+        provider = config.ai_provider
+        model = config.ai_model
+
+        # Check for obvious mismatches
+        if provider == AIProvider.OLLAMA:
+            # Ollama shouldn't use cloud provider model names
+            if model.startswith(("gemini-", "gpt-", "claude-")):
+                suggested_model = "qwen2.5-coder:7b"
+                raise ValueError(
+                    f"AI model '{model}' appears to be for a cloud provider, "
+                    f"but you selected Ollama provider. "
+                    f"For Ollama, try a model like '{suggested_model}'. "
+                    f"Or change ai_provider to match your model choice."
+                )
+        elif provider == AIProvider.GEMINI:
+            # Gemini should use gemini models
+            if not model.startswith("gemini-") and model not in [
+                "gemini-pro",
+                "gemini-pro-vision",
+            ]:
+                suggested_model = "gemini-2.5-pro"
+                raise ValueError(
+                    f"AI model '{model}' may not be compatible with Gemini provider. "
+                    f"For Gemini, try a model like '{suggested_model}'. "
+                    f"Or change ai_provider to match your model choice."
+                )
+
+        return config
 
     model_config = {
         "env_file": ".env",

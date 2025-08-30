@@ -40,8 +40,12 @@ class ReviewEngine:
         """Create AI provider instance based on configuration."""
         if self.config.ai_provider == AIProvider.OLLAMA:
             return OllamaProvider(self.config)
+        elif self.config.ai_provider == AIProvider.GEMINI:
+            from ai_code_review.providers.gemini import GeminiProvider
 
-        # TODO: Implement other providers in future iterations
+            return GeminiProvider(self.config)
+
+        # TODO: Implement other providers (OpenAI, Anthropic) in future iterations
         raise AIProviderError(
             f"AI provider '{self.config.ai_provider}' not yet implemented",
             self.config.ai_provider.value,

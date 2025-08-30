@@ -25,7 +25,10 @@ def test_config() -> Config:
 def dry_run_config() -> Config:
     """Dry run configuration."""
     return Config(
-        gitlab_token="test_token", ai_provider=AIProvider.OLLAMA, dry_run=True
+        gitlab_token="test_token",
+        ai_provider=AIProvider.OLLAMA,
+        ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+        dry_run=True,
     )
 
 

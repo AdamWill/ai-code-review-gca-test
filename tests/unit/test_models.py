@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
+from _pytest.monkeypatch import MonkeyPatch
+
 from ai_code_review.models.config import AIProvider, Config
 from ai_code_review.models.gitlab import (
     MergeRequestCommit,
@@ -16,14 +21,19 @@ class TestConfig:
     """Test configuration model."""
 
     def test_config_creation_with_minimal_required_fields(self) -> None:
-        """Test creating config with only required fields."""
-        config = Config(gitlab_token="test_token")
+        """Test creating config with only required fields for Ollama."""
+        # Use Ollama to avoid API key requirement
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+        )
 
         assert config.gitlab_token == "test_token"
         assert config.gitlab_url == "https://gitlab.com"
         assert config.ai_provider == AIProvider.OLLAMA
-        assert config.ai_model == "qwen2.5-coder:7b"
-        assert config.ai_api_key is None
+        assert config.ai_model == "qwen2.5-coder:7b"  # Specified model for Ollama
+        # API key may be set from environment, that's fine for Ollama
 
     def test_config_custom_values(self) -> None:
         """Test config with custom values."""
@@ -45,6 +55,8 @@ class TestConfig:
         """Test AI model parameter configuration."""
         config = Config(
             gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
             temperature=0.5,
             max_tokens=2048,
         )
@@ -54,13 +66,20 @@ class TestConfig:
 
     def test_dry_run_defaults_false(self) -> None:
         """Test that dry_run defaults to False."""
-        config = Config(gitlab_token="test_token")
+        # Use Ollama to avoid API key requirement
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
         assert config.dry_run is False
         # Test default values for new fields
         assert config.temperature == 0.1
-        assert config.max_tokens == 4096
+        assert config.max_tokens == 8000
 
-    def test_config_env_file_loading(self, tmp_path, monkeypatch) -> None:
+    def test_config_env_file_loading(
+        self, tmp_path: Path, monkeypatch: MonkeyPatch
+    ) -> None:
         """Test that config can load from .env file."""
         import os
 
@@ -93,6 +112,7 @@ class TestConfig:
         env_content = """
 GITLAB_TOKEN=env-token
 AI_PROVIDER=openai
+AI_API_KEY=test-openai-key
 TEMPERATURE=0.7
 MAX_TOKENS=2048
 DRY_RUN=true
@@ -104,9 +124,9 @@ DRY_RUN=true
         os.chdir(str(tmp_path))
 
         try:
-            config = Config()
+            config = Config()  # type: ignore[call-arg] # Config loads from .env file
             assert config.gitlab_token == "env-token"
-            assert config.ai_provider == "openai"
+            assert config.ai_provider.value == "openai"
             assert config.temperature == 0.7
             assert config.max_tokens == 2048
             assert config.dry_run is True
@@ -115,11 +135,12 @@ DRY_RUN=true
 
     def test_config_url_validation(self) -> None:
         """Test URL validation for gitlab_url and ollama_base_url."""
-        import pytest
 
         # Valid URLs should work
         config = Config(
             gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
             gitlab_url="https://gitlab.example.com",
             ollama_base_url="http://localhost:11434",
         )
@@ -128,51 +149,94 @@ DRY_RUN=true
 
         # Invalid URLs should raise ValueError
         with pytest.raises(ValueError, match="Invalid URL format"):
-            Config(gitlab_token="test_token", gitlab_url="not-a-url")
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+                ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+                gitlab_url="not-a-url",
+            )
 
         with pytest.raises(ValueError, match="Invalid URL format"):
-            Config(gitlab_token="test_token", ollama_base_url="ftp://invalid")
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+                ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+                ollama_base_url="ftp://invalid",
+            )
 
     def test_config_ai_model_validation(self) -> None:
         """Test AI model name validation."""
-        import pytest
 
         # Valid model names should work
-        config = Config(gitlab_token="test_token", ai_model="gpt-4")
-        assert config.ai_model == "gpt-4"
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Changed to valid Ollama model
+        )
+        assert config.ai_model == "qwen2.5-coder:7b"
 
-        config2 = Config(gitlab_token="test_token", ai_model=" qwen2.5-coder:7b ")
+        config2 = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model=" qwen2.5-coder:7b ",
+        )
         assert config2.ai_model == "qwen2.5-coder:7b"  # Should be trimmed
 
         # Invalid model names should raise ValueError
         with pytest.raises(ValueError, match="AI model name cannot be empty"):
-            Config(gitlab_token="test_token", ai_model="")
+            Config(
+                gitlab_token="test_token", ai_provider=AIProvider.OLLAMA, ai_model=""
+            )
 
         with pytest.raises(ValueError, match="AI model name cannot be empty"):
-            Config(gitlab_token="test_token", ai_model="   ")
+            Config(
+                gitlab_token="test_token", ai_provider=AIProvider.OLLAMA, ai_model="   "
+            )
 
         with pytest.raises(ValueError, match="invalid characters"):
-            Config(gitlab_token="test_token", ai_model="model\nwith\nnewlines")
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                ai_model="model\nwith\nnewlines",
+            )
 
         with pytest.raises(ValueError, match="invalid characters"):
-            Config(gitlab_token="test_token", ai_model="model\twith\ttabs")
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                ai_model="model\twith\ttabs",
+            )
 
     def test_config_log_level_validation(self) -> None:
         """Test log level validation."""
-        import pytest
 
         # Valid log levels should work and be normalized to uppercase
-        config = Config(gitlab_token="test_token", log_level="debug")
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+            log_level="debug",
+        )
         assert config.log_level == "DEBUG"
 
-        config2 = Config(gitlab_token="test_token", log_level="INFO")
+        config2 = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+            log_level="INFO",
+        )
         assert config2.log_level == "INFO"
 
         # Invalid log level should raise ValueError
         with pytest.raises(ValueError, match="Invalid log level"):
-            Config(gitlab_token="test_token", log_level="INVALID")
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                ai_model="qwen2.5-coder:7b",
+                log_level="INVALID",
+            )
 
-    def test_config_ci_mode_detection(self, monkeypatch) -> None:
+    def test_config_ci_mode_detection(self, monkeypatch: MonkeyPatch) -> None:
         """Test CI mode detection."""
         # Clear all CI environment variables to ensure clean test
         ci_vars_to_clear = [
@@ -185,16 +249,27 @@ DRY_RUN=true
             monkeypatch.delenv(var, raising=False)
 
         # Not CI mode (missing CI variables)
-        config = Config(gitlab_token="test")
+        config = Config(
+            gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
         assert not config.is_ci_mode()
 
         # Not CI mode (only project path)
-        config = Config(gitlab_token="test", ci_project_path="group/project")
+        config = Config(
+            gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            ci_project_path="group/project",
+        )
         assert not config.is_ci_mode()
 
         # CI mode (both variables present)
         config = Config(
             gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
             ci_project_path="group/project",
             ci_merge_request_iid=123,
         )
@@ -204,6 +279,8 @@ DRY_RUN=true
         """Test effective value getters for CI integration."""
         config = Config(
             gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
             gitlab_url="https://gitlab.com",
             ci_project_path="group/ci-project",
             ci_merge_request_iid=456,
@@ -215,7 +292,7 @@ DRY_RUN=true
         assert config.get_effective_mr_iid() == 456
         assert config.get_effective_gitlab_url() == "https://ci-gitlab.com"
 
-    def test_config_effective_values_fallback(self, monkeypatch) -> None:
+    def test_config_effective_values_fallback(self, monkeypatch: MonkeyPatch) -> None:
         """Test fallback to regular values when CI vars not available."""
         # Clear all CI environment variables to ensure clean test
         ci_vars_to_clear = [
@@ -227,13 +304,56 @@ DRY_RUN=true
         for var in ci_vars_to_clear:
             monkeypatch.delenv(var, raising=False)
 
-        config = Config(gitlab_token="test", gitlab_url="https://gitlab.com")
+        config = Config(
+            gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+            gitlab_url="https://gitlab.com",
+        )
 
         # Should return None for project/MR (no CI vars)
         assert config.get_effective_project_id() is None
         assert config.get_effective_mr_iid() is None
         # Should fallback to regular gitlab_url
         assert config.get_effective_gitlab_url() == "https://gitlab.com"
+
+    def test_model_provider_compatibility_validation(self) -> None:
+        """Test model/provider compatibility validation."""
+        # Valid combinations should work
+        config_ollama = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+        assert config_ollama.ai_provider == AIProvider.OLLAMA
+        assert config_ollama.ai_model == "qwen2.5-coder:7b"
+
+        config_gemini = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.GEMINI,
+            ai_model="gemini-2.5-pro",
+            ai_api_key="test_key",
+        )
+        assert config_gemini.ai_provider == AIProvider.GEMINI
+        assert config_gemini.ai_model == "gemini-2.5-pro"
+
+        # Invalid combinations should raise ValueError
+        with pytest.raises(
+            ValueError, match="appears to be for a cloud provider.*Ollama"
+        ):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                ai_model="gemini-2.5-pro",  # Wrong model for Ollama
+            )
+
+        with pytest.raises(ValueError, match="may not be compatible with Gemini"):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.GEMINI,
+                ai_model="qwen2.5-coder:7b",  # Wrong model for Gemini
+                ai_api_key="test_key",
+            )
 
 
 class TestGitLabModels:

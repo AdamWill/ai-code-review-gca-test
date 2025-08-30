@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import MagicMock
 
 from ai_code_review.utils.prompts import (
@@ -76,7 +77,7 @@ class TestPrompts:
 
     def test_create_language_hint_section_without_language(self) -> None:
         """Test language hint section creation without language."""
-        input_data = {}
+        input_data: dict[str, Any] = {}
         result = _create_language_hint_section(input_data)
         assert result == ""
 
@@ -88,7 +89,7 @@ class TestPrompts:
 
     def test_create_project_context_section_without_context(self) -> None:
         """Test project context section creation without context."""
-        input_data = {}
+        input_data: dict[str, Any] = {}
         result = _create_project_context_section(input_data)
         assert result == ""
 

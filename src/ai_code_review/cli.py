@@ -45,12 +45,12 @@ logger = structlog.get_logger(__name__)
     "--provider",
     type=click.Choice([p.value for p in AIProvider]),
     default=None,
-    help="AI provider to use (default: from config or ollama)",
+    help="AI provider to use (default: from config or gemini)",
 )
 @click.option(
     "--model",
     default=None,
-    help="AI model name (default: from config or qwen2.5-coder:7b)",
+    help="AI model name (default: from config or gemini-2.5-pro)",
 )
 @click.option(
     "--ollama-url",
@@ -67,7 +67,7 @@ logger = structlog.get_logger(__name__)
     "--max-tokens",
     type=int,
     default=None,
-    help="Maximum AI response tokens (default: from config or 4096)",
+    help="Maximum AI response tokens (default: from config or 8000)",
 )
 @click.option(
     "--language-hint",

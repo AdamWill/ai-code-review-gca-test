@@ -9,8 +9,9 @@ structured feedback to support human reviewers.
 ### Prerequisites
 
 - Python 3.12+
-- Ollama server running locally (for development)
 - **GitLab Personal Access Token** (REQUIRED)
+- **For Production/CI**: Google Gemini API key (default provider)
+- **For Local Development**: Ollama server running locally (optional)
 
 ### Installation
 
@@ -38,20 +39,36 @@ cp env.example .env
 ### Usage
 
 ```bash
-# Review a GitLab MR
-ai-code-review --project-id "group/project" --mr-iid 123
+# Review a GitLab MR (uses Gemini by default)
+AI_API_KEY=your_gemini_key ai-code-review --project-id "group/project" --mr-iid 123
 
-# With Ollama (default for local development)
+# Post review as MR comment (typical CI/CD usage)
+AI_API_KEY=your_gemini_key ai-code-review --project-id "group/project" --mr-iid 123 --post
+
+# Use Ollama for local development (no API key needed)
 ai-code-review --project-id "group/project" --mr-iid 123 --provider ollama
-
-# Post review as MR comment
-ai-code-review --project-id "group/project" --mr-iid 123 --post
 
 # For large MRs (forces 24K context window)
 ai-code-review --project-id "group/project" --mr-iid 123 --big-diffs
 
 # Dry run mode (no API calls, useful for testing)
 ai-code-review --project-id "group/project" --mr-iid 123 --dry-run
+```
+
+### GitLab CI/CD Usage
+
+```yaml
+# .gitlab-ci.yml
+ai-review:
+  stage: test
+  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  variables:
+    AI_API_KEY: $GEMINI_API_KEY  # Set as masked/protected variable
+  script:
+    - ai-code-review --post
+  allow_failure: true  # Do not block the pipeline if the API fails
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 ```
 
 ## 🔧 Configuration
@@ -87,12 +104,13 @@ export GITLAB_TOKEN=glpat_xxxxxxxxxxxx
 
 # Core settings (with defaults)
 export GITLAB_URL=https://gitlab.com           # GitLab instance URL
-export AI_PROVIDER=ollama                      # ollama, openai, gemini, anthropic
-export AI_MODEL=qwen2.5-coder:7b               # AI model name
+export AI_PROVIDER=gemini                      # gemini, openai, anthropic, ollama
+export AI_MODEL=gemini-2.5-pro                # AI model name
+export AI_API_KEY=your_gemini_api_key_here     # Required for cloud providers
 
 # AI Model parameters (defaults optimized for code review)
 export TEMPERATURE=0.1                         # 0.0-2.0, lower = more deterministic
-export MAX_TOKENS=4096                         # Maximum response tokens
+export MAX_TOKENS=8000                         # Maximum response tokens
 export HTTP_TIMEOUT=5.0                        # HTTP timeout in seconds
 
 # Ollama configuration (for local development)
@@ -196,6 +214,122 @@ With filtering:     8,500 chars (3.4K tokens) → $0.10 cost
 Savings:           ~81% reduction in tokens and cost
 ```
 
+## 🧪 Testing the New Gemini Integration
+
+### Local Testing
+
+#### 1. **Test with Gemini (Production Default)**
+
+```bash
+# Get your Gemini API key from: https://makersuite.google.com/app/apikey
+export AI_API_KEY="your_gemini_api_key_here"
+export GITLAB_TOKEN="your_gitlab_token"
+
+# Test dry-run first (no API costs)
+ai-code-review group/project 123 --dry-run
+
+# Test real review generation
+ai-code-review group/project 123
+
+# Test posting to GitLab
+ai-code-review group/project 123 --post
+```
+
+#### 2. **Test with Ollama (Local Development)**
+
+```bash
+# Start Ollama server first
+ollama serve
+
+# Pull recommended model
+ollama pull qwen2.5-coder:7b
+
+# Test with Ollama (no API key needed)
+ai-code-review group/project 123 --provider ollama --dry-run
+ai-code-review group/project 123 --provider ollama
+```
+
+#### 3. **Health Check**
+
+```bash
+# Check Gemini connectivity
+AI_API_KEY="your_key" ai-code-review --health-check
+
+# Check Ollama connectivity
+ai-code-review --provider ollama --health-check
+```
+
+### GitLab CI/CD Testing
+
+#### 1. **Setup CI/CD Variables**
+
+In your GitLab project, go to **Settings → CI/CD → Variables** and add:
+
+```bash
+# Required - Add as Protected + Masked variable
+GEMINI_API_KEY = your_google_gemini_api_key_here
+
+# Optional - Override defaults if needed
+AI_PROVIDER = gemini
+AI_MODEL = gemini-2.5-pro
+```
+
+#### 2. **Add CI Job to `.gitlab-ci.yml`**
+
+```yaml
+stages:
+  - test
+  - review
+
+# Your existing tests...
+
+ai-code-review:
+  stage: review
+  image: $CI_REGISTRY_IMAGE:latest  # Uses your built container
+  script:
+    - ai-code-review --post --health-check
+  variables:
+    AI_API_KEY: $GEMINI_API_KEY
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  allow_failure: true  # Don't block MRs on review failures
+```
+
+#### 3. **Test the Pipeline**
+
+1. **Create a test MR** in your project
+2. **Push changes** to trigger the pipeline
+3. **Check the job logs** for successful API connection
+4. **Verify the review** appears as MR comment
+
+### Expected Output
+
+#### Successful Gemini Review
+
+```
+🚀 Starting AI code review...
+  Project: group/project
+  MR IID: 123
+  Provider: gemini
+  Model: gemini-2.5-pro
+
+📥 Fetching MR data from GitLab...
+🧠 Generating AI review with gemini...
+📝 Review generated successfully!
+✅ Review posted to GitLab MR
+```
+
+#### Health Check Success
+
+```json
+{
+  "status": "healthy",
+  "provider": "gemini",
+  "model": "gemini-2.5-pro",
+  "api_key_configured": true
+}
+```
+
 ## 🧪 Development
 
 ### Setup
@@ -260,12 +394,13 @@ uv run pytest --cov=src --cov-report=html
 
 ## 📚 Documentation
 
-This is an MVP (Phase 1) implementation focusing on:
-
+This is an MVP implementation focusing on:
 - Basic GitLab MR diff fetching
-- Local AI processing with Ollama
+- Production AI processing with Google Gemini (default)
+- Local development with Ollama (optional)
 - Structured review generation
 - Simple CLI interface
+- Ready for GitLab CI/CD integration
 
 ## 🤖 AI Tools Disclaimer
 

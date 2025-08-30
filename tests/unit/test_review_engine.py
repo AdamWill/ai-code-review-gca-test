@@ -90,6 +90,7 @@ class TestReviewEngine:
         config = Config(
             gitlab_token="test_token",
             ai_provider=AIProvider.OPENAI,  # Not yet implemented
+            ai_api_key="test_openai_key",  # Need API key for cloud provider validation
         )
 
         with pytest.raises(AIProviderError, match="not yet implemented"):

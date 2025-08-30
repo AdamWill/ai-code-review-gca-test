@@ -16,15 +16,28 @@ from ai_code_review.utils.exceptions import GitLabAPIError
 @pytest.fixture
 def test_config() -> Config:
     """Test configuration."""
+    from ai_code_review.models.config import AIProvider
+
     return Config(
-        gitlab_token="test_token", gitlab_url="https://test-gitlab.com", dry_run=False
+        gitlab_token="test_token",
+        gitlab_url="https://test-gitlab.com",
+        ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+        ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+        dry_run=False,
     )
 
 
 @pytest.fixture
 def dry_run_config() -> Config:
     """Dry run configuration."""
-    return Config(gitlab_token="test_token", dry_run=True)
+    from ai_code_review.models.config import AIProvider
+
+    return Config(
+        gitlab_token="test_token",
+        ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+        ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+        dry_run=True,
+    )
 
 
 class TestGitLabClient:
@@ -259,8 +272,13 @@ class TestGitLabClient:
 
     def test_custom_exclude_patterns(self) -> None:
         """Test custom exclude patterns."""
+        from ai_code_review.models.config import AIProvider
+
         custom_config = Config(
-            gitlab_token="test", exclude_patterns=["*.test.js", "**/temp/**"]
+            gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+            exclude_patterns=["*.test.js", "**/temp/**"],
         )
         client = GitLabClient(custom_config)
 
@@ -272,7 +290,14 @@ class TestGitLabClient:
 
     def test_no_file_filtering(self) -> None:
         """Test disabling all file filtering."""
-        no_filter_config = Config(gitlab_token="test", exclude_patterns=[])
+        from ai_code_review.models.config import AIProvider
+
+        no_filter_config = Config(
+            gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
+            ai_model="qwen2.5-coder:7b",  # Specify appropriate model for Ollama
+            exclude_patterns=[],
+        )
         client = GitLabClient(no_filter_config)
 
         # With no patterns, nothing should be excluded
