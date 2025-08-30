@@ -88,6 +88,7 @@ warn_redundant_casts = true
 warn_unused_ignores = true
 warn_no_return = true
 warn_unreachable = true
+exclude = "tests/"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -124,6 +125,7 @@ exclude_lines = [
 dev = [
     "bandit>=1.8.6",
     "mypy>=1.17.1",
+    "pre-commit>=4.3.0",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.2.1",

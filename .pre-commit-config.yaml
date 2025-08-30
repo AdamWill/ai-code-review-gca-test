@@ -1,0 +1,47 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+    -   id: check-yaml
+    -   id: check-added-large-files
+    -   id: detect-private-key
+- repo: https://github.com/jackdewinter/pymarkdown
+  rev: v0.9.32
+  hooks:
+    - id: pymarkdown
+# Require `uv sync --dev` to have the dependencies installed.
+- repo: local
+  hooks:
+  - id: ruff-check
+    name: Ruff linting
+    entry: ./.venv/bin/ruff check
+    language: system
+    types: [python]
+    pass_filenames: true
+    always_run: false
+  - id: ruff-format
+    name: Ruff formating
+    entry: ./.venv/bin/ruff format --check
+    language: system
+    types: [python]
+    pass_filenames: true
+    always_run: false
+  - id: pytest
+    name: Pytests
+    entry: ./.venv/bin/pytest tests
+    language: system
+    types: [python]
+    pass_filenames: false
+    always_run: false
+  - id: mypy
+    name: Check types
+    entry: ./.venv/bin/mypy
+    args: ['--exclude', 'tests/']
+    language: system
+    types: [python]
+    pass_filenames: true
+    always_run: false
