@@ -15,13 +15,11 @@ workflow:
         PIPELINE_NAME: "Deploy image witht the tag :${CI_COMMIT_TAG}"
   name: $PIPELINE_NAME
 
-# Template
+
+# Templates
 
 .static-analysis-base:
   stage: static-analysis
-  image: quay.io/automotive-toolchain/python3-uv:latest
-  before_script:
-    - uv sync --dev
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       when: always
@@ -34,20 +32,34 @@ workflow:
     - if:  '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_TAG'
       when: always
 
+.static-analysis-base-ruff:
+  stage: static-analysis
+  image: ghcr.io/astral-sh/ruff:0.12.11-alpine
+  before_script:
+    - cd $CI_PROJECT_DIR
+    - ruff --version
+
+.static-analysis-base-uv:
+  stage: static-analysis
+  image: quay.io/automotive-toolchain/python3-uv:latest
+  before_script:
+    - uv sync --dev
+
+
 # Static Analisys
 
 check-formatting:
-  extends: .static-analysis-base
+  extends: .static-analysis-base-ruff
   script:
-    - uv run ruff format --diff .
+    - ruff format --diff .
 
 lint-source:
-  extends: .static-analysis-base
+  extends: .static-analysis-base-ruff
   script:
-    - uv run ruff check .
+    - ruff check .
 
 type-check:
-  extends: .static-analysis-base
+  extends: .static-analysis-base-uv
   script:
     - uv run mypy src/
   artifacts:
@@ -55,12 +67,12 @@ type-check:
       junit: reports/mypy.xml
 
 security-scan:
-  extends: .static-analysis-base
+  extends: .static-analysis-base-uv
   script:
     - uv run bandit -r src/
 
 unit-tests:
-  extends: .static-analysis-base
+  extends: .static-analysis-base-uv
   script:
     - echo "Running unit tests"
     - uv run pytest --cov=src --cov-report=html
@@ -72,6 +84,7 @@ unit-tests:
         coverage_format: cobertura
         path: coverage.xml
       junit: report.xml
+
 
 # Container
 
