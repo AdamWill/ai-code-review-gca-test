@@ -35,6 +35,16 @@ def get_default_exclude_patterns() -> list[str]:
     ]
 
 
+def get_default_model_for_provider(provider: AIProvider) -> str:
+    """Get default model name for each AI provider."""
+    defaults = {
+        AIProvider.OLLAMA: "qwen2.5-coder:7b",
+        AIProvider.GEMINI: "gemini-2.5-pro",
+        AIProvider.ANTHROPIC: "claude-sonnet-4-20250514",
+    }
+    return defaults.get(provider, "gemini-2.5-pro")  # Fallback to gemini default
+
+
 class AIProvider(str, Enum):
     """Supported AI providers."""
 
@@ -65,7 +75,7 @@ class Config(BaseSettings):
     ai_provider: AIProvider = Field(
         default=AIProvider.GEMINI, description="AI provider to use"
     )
-    ai_model: str = Field(default="gemini-2.5-pro", description="AI model name")
+    ai_model: str | None = Field(default=None, description="AI model name")
     ai_api_key: str | None = Field(
         default=None, description="API key for cloud AI providers"
     )
@@ -150,8 +160,11 @@ class Config(BaseSettings):
 
     @field_validator("ai_model")
     @classmethod
-    def validate_ai_model(cls, v: str) -> str:
+    def validate_ai_model(cls, v: str | None) -> str | None:
         """Validate AI model name format."""
+        if v is None:
+            return None  # Will be set by model validator
+
         if not v or not v.strip():
             raise ValueError("AI model name cannot be empty")
 
@@ -230,7 +243,7 @@ class Config(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def validate_required_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """Validate required fields with helpful error messages."""
+        """Validate required fields and set default models per provider."""
         if isinstance(data, dict):
             # Check if gitlab_token is missing or empty
             token = data.get("gitlab_token")
@@ -242,6 +255,20 @@ class Config(BaseSettings):
                     "Set it as GITLAB_TOKEN environment variable or in .env file."
                 )
 
+                # Set default model based on provider if model not explicitly set
+            provider_str = data.get("ai_provider")
+            model = data.get("ai_model")
+
+            # Only set default if model is None (not provided at all)
+            if provider_str and model is None:
+                if isinstance(provider_str, str):
+                    try:
+                        provider = AIProvider(provider_str)
+                        data["ai_model"] = get_default_model_for_provider(provider)
+                    except ValueError:
+                        # Invalid provider, let other validators handle it
+                        pass
+
         return data
 
     @model_validator(mode="after")
@@ -250,6 +277,12 @@ class Config(BaseSettings):
         """Validate that the AI model is compatible with the selected provider."""
         provider = config.ai_provider
         model = config.ai_model
+
+        # Ensure ai_model is set (should have been set by validate_required_fields)
+        if model is None:
+            raise ValueError(
+                f"AI model is required but was not set for provider {provider.value}"
+            )
 
         # Check for obvious mismatches
         if provider == AIProvider.OLLAMA:

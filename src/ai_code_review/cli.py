@@ -50,7 +50,7 @@ logger = structlog.get_logger(__name__)
 @click.option(
     "--model",
     default=None,
-    help="AI model name (default: from config or gemini-2.5-pro)",
+    help="AI model name (default: provider-specific - gemini-2.5-pro, claude-sonnet-4-20250514, qwen2.5-coder:7b)",
 )
 @click.option(
     "--ollama-url",

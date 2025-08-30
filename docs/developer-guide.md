@@ -205,7 +205,7 @@ ai-code-review group/project 123 --language-hint python --exclude-files "test_*"
 #### Step 1: Create Provider Implementation
 
 ```python
-# src/ai_code_review/providers/anthropic.py
+# src/ai_code_review/providers/anthropic.py (ALREADY IMPLEMENTED!)
 from langchain_anthropic import ChatAnthropic
 from ai_code_review.providers.base import BaseAIProvider
 
@@ -232,13 +232,13 @@ class AIProvider(str, Enum):
     ANTHROPIC = "anthropic"  # Add new provider
 
 # Update default model mapping if needed
-def get_default_model(provider: AIProvider) -> str:
+def get_default_model_for_provider(provider: AIProvider) -> str:
     defaults = {
         AIProvider.OLLAMA: "qwen2.5-coder:7b",
         AIProvider.GEMINI: "gemini-2.5-pro",
-        AIProvider.ANTHROPIC: "claude-3-5-sonnet-20241022",  # Add default
+        AIProvider.ANTHROPIC: "claude-sonnet-4-20250514",  # Already implemented!
     }
-    return defaults.get(provider, "")
+    return defaults.get(provider, "gemini-2.5-pro")
 ```
 
 #### Step 3: Update Provider Factory

@@ -33,13 +33,13 @@ class OllamaProvider(BaseAIProvider):
 
             logger.info(
                 "Creating Ollama client",
-                model=self.config.ai_model,
+                model=self.model_name,
                 context_window_size=context_size,
                 max_tokens=self.config.max_tokens,
             )
 
             return ChatOllama(
-                model=self.config.ai_model,
+                model=self.model_name,
                 base_url=self.config.ollama_base_url,
                 temperature=self.config.temperature,
                 num_predict=self.config.max_tokens,
@@ -98,7 +98,7 @@ class OllamaProvider(BaseAIProvider):
             model_names = [model["name"] for model in tags.get("models", [])]
 
             # Case-insensitive exact model matching
-            target_model = self.config.ai_model.lower()
+            target_model = self.model_name.lower()
             return any(target_model == model.lower() for model in model_names)
 
         except Exception:
@@ -121,7 +121,7 @@ class OllamaProvider(BaseAIProvider):
             return {
                 "status": "healthy",
                 "dry_run": True,
-                "model": self.config.ai_model,
+                "model": self.model_name,
                 "provider": "ollama",
             }
 
@@ -138,7 +138,7 @@ class OllamaProvider(BaseAIProvider):
                 models = [model["name"] for model in tags.get("models", [])]
 
                 # Case-insensitive exact model matching
-                target_model = self.config.ai_model.lower()
+                target_model = self.model_name.lower()
                 model_available = any(target_model == model.lower() for model in models)
 
                 # Find similar models for better error messages
@@ -158,7 +158,7 @@ class OllamaProvider(BaseAIProvider):
                     "server_reachable": True,
                     "model_available": model_available,
                     "available_models": models[:5],  # Show first 5 models
-                    "requested_model": self.config.ai_model,
+                    "requested_model": self.model_name,
                     "base_url": self.config.ollama_base_url,
                 }
 
@@ -166,12 +166,12 @@ class OllamaProvider(BaseAIProvider):
                 if not model_available and similar_models:
                     result["similar_models"] = similar_models
                     result["suggestion"] = (
-                        f"Model '{self.config.ai_model}' not found. "
+                        f"Model '{self.model_name}' not found. "
                         f"Similar available models: {', '.join(similar_models)}"
                     )
                 elif not model_available:
                     result["suggestion"] = (
-                        f"Model '{self.config.ai_model}' not found. "
+                        f"Model '{self.model_name}' not found. "
                         f"Available models: {', '.join(models[:3])}"
                     )
 

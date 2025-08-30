@@ -44,8 +44,12 @@ class ReviewEngine:
             from ai_code_review.providers.gemini import GeminiProvider
 
             return GeminiProvider(self.config)
+        elif self.config.ai_provider == AIProvider.ANTHROPIC:
+            from ai_code_review.providers.anthropic import AnthropicProvider
 
-        # TODO: Implement other providers (OpenAI, Anthropic) in future iterations
+            return AnthropicProvider(self.config)
+
+        # TODO: Implement other providers (OpenAI) in future iterations
         raise AIProviderError(
             f"AI provider '{self.config.ai_provider}' not yet implemented",
             self.config.ai_provider.value,

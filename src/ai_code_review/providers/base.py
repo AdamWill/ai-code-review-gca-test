@@ -27,6 +27,8 @@ class BaseAIProvider(ABC):
     @property
     def model_name(self) -> str:
         """Get model name."""
+        if self.config.ai_model is None:
+            raise ValueError("AI model is not set")
         return self.config.ai_model
 
     @property

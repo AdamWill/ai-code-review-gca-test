@@ -1,26 +1,45 @@
-"""Gemini provider implementation using LangChain."""
+"""Anthropic provider implementation using LangChain."""
 
 from __future__ import annotations
 
 from typing import Any
 
+from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import SecretStr
 
 from ai_code_review.models.config import Config
 from ai_code_review.providers.base import BaseAIProvider
 from ai_code_review.utils.exceptions import AIProviderError
 
 
-class GeminiProvider(BaseAIProvider):
-    """Google Gemini AI provider implementation."""
+class AnthropicProvider(BaseAIProvider):
+    """Anthropic Claude AI provider implementation."""
+
+    # Claude needs more time for processing than other providers
+    DEFAULT_TIMEOUT = 30.0  # Increased for Claude Sonnet 4 reliability
 
     def __init__(self, config: Config) -> None:
-        """Initialize Gemini provider."""
+        """Initialize Anthropic provider."""
         super().__init__(config)
 
+    def _log_rate_limit_headers(self, headers: dict[str, str]) -> None:
+        """Log Anthropic rate limit headers for debugging."""
+        import structlog
+
+        logger = structlog.get_logger()
+
+        # Extract relevant rate limit headers
+        rate_limit_info = {}
+        for key, value in headers.items():
+            if key.lower().startswith("anthropic-ratelimit-"):
+                rate_limit_info[key] = value
+
+        if rate_limit_info:
+            logger.info("Anthropic rate limit status", **rate_limit_info)
+
     def _create_client(self) -> BaseChatModel:
-        """Create ChatGoogleGenerativeAI client instance."""
+        """Create ChatAnthropic client instance."""
         try:
             # Import logger here to avoid circular imports
             import structlog
@@ -28,25 +47,27 @@ class GeminiProvider(BaseAIProvider):
             logger = structlog.get_logger()
 
             logger.info(
-                "Creating Gemini client",
+                "Creating Anthropic client",
                 model=self.model_name,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
             )
 
-            return ChatGoogleGenerativeAI(
-                model=self.model_name,
-                google_api_key=self.config.ai_api_key,
+            return ChatAnthropic(
+                model_name=self.model_name,
+                api_key=SecretStr(self.config.ai_api_key or ""),
                 temperature=self.config.temperature,
-                max_tokens=self.config.max_tokens,
+                max_tokens_to_sample=self.config.max_tokens,
+                timeout=max(self.config.http_timeout, self.DEFAULT_TIMEOUT),
+                stop=None,
             )
         except Exception as e:
             raise AIProviderError(
-                f"Failed to create Gemini client: {e}", "gemini"
+                f"Failed to create Anthropic client: {e}", "anthropic"
             ) from e
 
     def is_available(self) -> bool:
-        """Check if Gemini API is available."""
+        """Check if Anthropic API is available."""
         if self.config.dry_run:
             return True
 
@@ -57,34 +78,34 @@ class GeminiProvider(BaseAIProvider):
     def get_adaptive_context_size(self, diff_size_chars: int) -> int:
         """Get context size adaptively based on diff size and config.
 
-        Gemini 2.5 Pro has much higher limits than local models:
-        - Input: ~2 million tokens
-        - Output: ~8K tokens
+        Claude 3.5 Sonnet has excellent context handling:
+        - Input: ~200K tokens (Claude 3.5 Sonnet)
+        - Output: ~4K tokens
 
-        We can be much more generous than Ollama's 16K/24K limits.
+        We can be generous with context but not as much as Gemini.
         """
         # Manual override always takes precedence
         if hasattr(self.config, "big_diffs") and self.config.big_diffs:
-            return 512_000  # 512K - manual big-diffs flag (massive context)
+            return 200_000  # 200K - manual big-diffs flag (max context)
 
-        # Auto-detect based on diff size (more generous than Ollama)
-        elif diff_size_chars > 200_000:  # > 200K chars (~80K tokens)
-            return 512_000  # 512K - very large diff
-        elif diff_size_chars > 100_000:  # > 100K chars (~40K tokens)
-            return 256_000  # 256K - large diff
+        # Auto-detect based on diff size (generous but not as much as Gemini)
+        elif diff_size_chars > 150_000:  # > 150K chars (~60K tokens)
+            return 200_000  # 200K - very large diff (max context)
+        elif diff_size_chars > 75_000:  # > 75K chars (~30K tokens)
+            return 150_000  # 150K - large diff
         elif diff_size_chars > 30_000:  # > 30K chars (~12K tokens)
-            return 128_000  # 128K - medium diff
+            return 100_000  # 100K - medium diff
         else:
-            return 64_000  # 64K - standard (still 4x larger than Ollama)
+            return 64_000  # 64K - standard (still generous)
 
     async def health_check(self) -> dict[str, Any]:
-        """Perform health check on Gemini service."""
+        """Perform health check on Anthropic service."""
         if self.config.dry_run:
             return {
                 "status": "healthy",
                 "dry_run": True,
                 "model": self.model_name,
-                "provider": "gemini",
+                "provider": "anthropic",
             }
 
         try:
@@ -92,8 +113,8 @@ class GeminiProvider(BaseAIProvider):
             if not self.config.ai_api_key:
                 return {
                     "status": "unhealthy",
-                    "error": "Missing Google API key",
-                    "provider": "gemini",
+                    "error": "Missing Anthropic API key",
+                    "provider": "anthropic",
                 }
 
             # Perform actual API health check with a minimal call
@@ -115,7 +136,7 @@ class GeminiProvider(BaseAIProvider):
                     "api_key_configured": True,
                     "api_connectivity": True,
                     "model": self.model_name,
-                    "provider": "gemini",
+                    "provider": "anthropic",
                 }
 
             except Exception as api_error:
@@ -124,13 +145,13 @@ class GeminiProvider(BaseAIProvider):
                     "status": "unhealthy",
                     "api_key_configured": True,
                     "api_connectivity": False,
-                    "error": f"Gemini API test failed: {str(api_error)}",
-                    "provider": "gemini",
+                    "error": f"Anthropic API test failed: {str(api_error)}",
+                    "provider": "anthropic",
                 }
 
         except Exception as e:
             return {
                 "status": "unhealthy",
                 "error": str(e),
-                "provider": "gemini",
+                "provider": "anthropic",
             }

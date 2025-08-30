@@ -10,7 +10,10 @@ structured feedback to support human reviewers.
 
 - Python 3.12+
 - **GitLab Personal Access Token** (REQUIRED)
-- **For Production/CI**: Google Gemini API key (default provider)
+- **For Production/CI**: AI API key from supported providers:
+  - Google Gemini API key (default provider)
+  - Anthropic Claude API key (recommended alternative)
+  - OpenAI API key (supported)
 - **For Local Development**: Ollama server running locally (optional)
 
 ### Installation
@@ -45,6 +48,9 @@ AI_API_KEY=your_gemini_key ai-code-review --project-id "group/project" --mr-iid 
 # Post review as MR comment (typical CI/CD usage)
 AI_API_KEY=your_gemini_key ai-code-review --project-id "group/project" --mr-iid 123 --post
 
+# Use Anthropic Claude for high-quality reviews
+AI_API_KEY=your_claude_key ai-code-review --project-id "group/project" --mr-iid 123 --provider anthropic
+
 # Use Ollama for local development (no API key needed)
 ai-code-review --project-id "group/project" --mr-iid 123 --provider ollama
 
@@ -64,6 +70,7 @@ ai-review:
   image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY  # Set as masked/protected variable
+    # Alternative: AI_API_KEY: $ANTHROPIC_API_KEY  # For Claude
   script:
     - ai-code-review --post
   allow_failure: true  # Do not block the pipeline if the API fails
@@ -94,6 +101,18 @@ cp env.example .env
 2. Create a token with scopes: `api`, `read_user`, `read_repository`
 3. Copy the token and use it in your configuration
 
+### 🤖 AI Provider API Keys
+
+**For Anthropic Claude (recommended):**
+1. Go to [Anthropic Console](https://console.anthropic.com/account/keys)
+2. Create an API key
+3. Set as `AI_API_KEY` environment variable
+
+**For Google Gemini:**
+1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Create an API key
+3. Set as `AI_API_KEY` environment variable
+
 ### 📝 All Configuration Options
 
 Copy `env.example` to `.env` and customize as needed:
@@ -104,8 +123,8 @@ export GITLAB_TOKEN=glpat_xxxxxxxxxxxx
 
 # Core settings (with defaults)
 export GITLAB_URL=https://gitlab.com           # GitLab instance URL
-export AI_PROVIDER=gemini                      # gemini, openai, anthropic, ollama
-export AI_MODEL=gemini-2.5-pro                # AI model name
+export AI_PROVIDER=gemini                      # gemini, anthropic, openai, ollama
+export AI_MODEL=gemini-2.5-pro                 # Provider-specific model name
 export AI_API_KEY=your_gemini_api_key_here     # Required for cloud providers
 
 # AI Model parameters (defaults optimized for code review)
@@ -235,7 +254,18 @@ ai-code-review group/project 123
 ai-code-review group/project 123 --post
 ```
 
-#### 2. **Test with Ollama (Local Development)**
+#### 2. **Test with Anthropic Claude**
+
+```bash
+# Test with Anthropic (requires API key)
+AI_API_KEY=your_claude_key ai-code-review group/project 123 --provider anthropic --dry-run
+AI_API_KEY=your_claude_key ai-code-review group/project 123 --provider anthropic
+
+# Check Anthropic connectivity
+AI_API_KEY=your_claude_key ai-code-review --provider anthropic --health-check
+```
+
+#### 3. **Test with Ollama (Local Development)**
 
 ```bash
 # Start Ollama server first
@@ -249,7 +279,7 @@ ai-code-review group/project 123 --provider ollama --dry-run
 ai-code-review group/project 123 --provider ollama
 ```
 
-#### 3. **Health Check**
+#### 4. **Health Check**
 
 ```bash
 # Check Gemini connectivity

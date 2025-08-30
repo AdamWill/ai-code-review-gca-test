@@ -125,7 +125,9 @@ Set these in **Settings → CI/CD → Variables**:
 GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
 
 # AI Provider (set as Protected + Masked in project variables)
-GEMINI_API_KEY=your_google_gemini_api_key_here
+GEMINI_API_KEY=your_google_gemini_api_key_here   # For Gemini
+# OR
+ANTHROPIC_API_KEY=your_anthropic_api_key_here    # For Anthropic
 ```
 
 **Note:** `GITLAB_TOKEN` is automatically available in CI/CD jobs when set as project variable. Only `AI_API_KEY` needs explicit assignment in job variables.
@@ -134,16 +136,16 @@ GEMINI_API_KEY=your_google_gemini_api_key_here
 
 ```bash
 # AI Configuration
-AI_PROVIDER=gemini              # Always gemini for CI/CD (no local models)
-AI_MODEL=gemini-2.5-pro        # Model name (gemini-2.5-pro default)
+AI_PROVIDER=gemini              # gemini, anthropic (cloud providers only for CI/CD - no local models)
+AI_MODEL=gemini-2.5-pro         # Model name (gemini-2.5-pro, claude-sonnet-4-20250514)
 TEMPERATURE=0.1                 # Response randomness (0.1 default)
-MAX_TOKENS=8000                # Max response tokens (8000 default)
+MAX_TOKENS=8000                 # Max response tokens (8000 default)
 
 # Processing Configuration
 MAX_CHARS=100000               # Max diff characters (100K default)
 MAX_FILES=100                  # Max files to process (100 default)
-BIG_DIFFS=false               # Force 24K context (false default)
-LANGUAGE_HINT=python          # Language hint for better analysis
+BIG_DIFFS=false                # Force 24K context (false default)
+LANGUAGE_HINT=python           # Language hint for better analysis
 
 # File Filtering
 EXCLUDE_PATTERNS="*.lock,*.min.js,node_modules/**,dist/**"
@@ -198,8 +200,9 @@ pip install git+https://gitlab.com/juanjeojeda/ai-code-review.git
 # Required: GitLab Personal Access Token
 export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
 
-# Optional: AI provider (Gemini for production, Ollama for local)
-export AI_API_KEY=your_gemini_api_key  # For Gemini
+# Optional: AI provider (Gemini/Anthropic for production, Ollama for local)
+export AI_API_KEY=your_gemini_api_key     # For Gemini
+export AI_API_KEY=your_anthropic_api_key  # For Anthropic
 # OR use Ollama (no API key needed)
 ```
 
@@ -212,6 +215,9 @@ Analyze an MR and see the review output:
 ```bash
 # Using Gemini (production quality)
 AI_API_KEY=your_key ai-code-review group/project 123
+
+# Using Anthropic Claude (production quality)
+AI_API_KEY=your_key ai-code-review group/project 123 --provider anthropic
 
 # Using Ollama (local, free)
 ai-code-review group/project 123 --provider ollama
