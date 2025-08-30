@@ -92,11 +92,6 @@ logger = structlog.get_logger(__name__)
     help="Post review as MR comment to GitLab",
 )
 @click.option(
-    "--with-summary/--no-summary",
-    default=True,
-    help="Include MR summary in review (default: true)",
-)
-@click.option(
     "--dry-run",
     is_flag=True,
     help="Dry run mode - no actual API calls made",
@@ -143,7 +138,6 @@ def main(
     max_chars: int | None,
     max_files: int | None,
     post: bool,
-    with_summary: bool,
     dry_run: bool,
     big_diffs: bool,
     log_level: str | None,
@@ -168,7 +162,7 @@ def main(
         ai-code-review --project-id group/project --mr-iid 123 --post
 
         # CI/CD mode (uses CI environment variables)
-        ai-code-review --post --with-summary
+        ai-code-review --post
 
         # Health check
         ai-code-review --health-check
@@ -266,7 +260,6 @@ def main(
                 project_id=effective_project_id,
                 mr_iid=effective_mr_iid,
                 post_review=post,
-                include_summary=with_summary,
             )
         )
 
@@ -339,7 +332,6 @@ async def _run_review(
     project_id: str,
     mr_iid: int,
     post_review: bool,
-    include_summary: bool,
 ) -> None:
     """Run the review generation process."""
     logger.info(
@@ -369,7 +361,7 @@ async def _run_review(
 
         # Generate review (always uses unified approach)
         click.echo("\n📥 Fetching MR data from GitLab...")
-        result = await engine.generate_review(project_id, mr_iid, include_summary)
+        result = await engine.generate_review(project_id, mr_iid)
 
         # Display results
         click.echo("\n📝 Review generated successfully!")

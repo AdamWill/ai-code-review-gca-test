@@ -119,10 +119,10 @@ class TestReviewEngine:
             assert "[DRY RUN]" in result.summary.title
 
     @pytest.mark.asyncio
-    async def test_generate_review_without_summary(
+    async def test_generate_review_always_includes_summary(
         self, dry_run_config: Config, sample_mr_data: MergeRequestData
     ) -> None:
-        """Test review generation without summary."""
+        """Test that review generation always includes summary (unified approach)."""
         engine = ReviewEngine(dry_run_config)
 
         with patch.object(
@@ -130,12 +130,16 @@ class TestReviewEngine:
         ) as mock_gitlab:
             mock_gitlab.return_value = sample_mr_data
 
-            result = await engine.generate_review(
-                "test/project", 123, include_summary=False
-            )
+            result = await engine.generate_review("test/project", 123)
 
             assert isinstance(result, ReviewResult)
-            assert result.summary is None
+            assert isinstance(result.review, CodeReview)
+            assert "[DRY RUN]" in result.review.general_feedback
+
+            # Summary should always be included now
+            assert result.summary is not None
+            assert isinstance(result.summary, ReviewSummary)
+            assert "[DRY RUN]" in result.summary.title
 
     @pytest.mark.asyncio
     async def test_generate_review_with_ai(

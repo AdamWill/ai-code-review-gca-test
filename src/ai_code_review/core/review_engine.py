@@ -47,9 +47,7 @@ class ReviewEngine:
             self.config.ai_provider.value,
         )
 
-    async def generate_review(
-        self, project_id: str | int, mr_iid: int, include_summary: bool = True
-    ) -> ReviewResult:
+    async def generate_review(self, project_id: str | int, mr_iid: int) -> ReviewResult:
         """Generate comprehensive code review with summary in a single LLM call.
 
         This method always generates both review and summary efficiently using
@@ -120,13 +118,9 @@ class ReviewEngine:
                 )
 
                 review = self._create_mock_review()
-                summary = (
-                    self._create_mock_summary(mr_data) if include_summary else None
-                )
+                summary = self._create_mock_summary(mr_data)
             else:
-                review, summary = await self._generate_review_response(
-                    mr_data, include_summary
-                )
+                review, summary = await self._generate_review_response(mr_data)
 
             result = ReviewResult(review=review, summary=summary)
 
@@ -146,8 +140,8 @@ class ReviewEngine:
             ) from e
 
     async def _generate_review_response(
-        self, mr_data: MergeRequestData, include_summary: bool
-    ) -> tuple[CodeReview, ReviewSummary | None]:
+        self, mr_data: MergeRequestData
+    ) -> tuple[CodeReview, ReviewSummary]:
         """Generate review response using single LLM call."""
         # Check AI provider availability
         if not self.ai_provider.is_available():
@@ -223,18 +217,17 @@ class ReviewEngine:
                 minor_suggestions=[],
             )
 
-            # Create summary if requested (using basic MR metadata)
-            summary = None
-            if include_summary:
-                summary = ReviewSummary(
-                    title=mr_data.info.title,
-                    key_changes=[],  # TODO: Extract from structured response in future
-                    modules_affected=[],  # TODO: Extract from file analysis
-                    user_impact="To be determined",
-                    technical_impact="Included in detailed review above",
-                    risk_level="Medium",  # TODO: Extract from AI assessment
-                    risk_justification="Automated assessment pending detailed analysis",
-                )
+            # Always create summary (using basic MR metadata for now)
+            # TODO: Extract from structured AI response in future
+            summary = ReviewSummary(
+                title=mr_data.info.title,
+                key_changes=[],  # TODO: Extract from structured response in future
+                modules_affected=[],  # TODO: Extract from file analysis
+                user_impact="To be determined",
+                technical_impact="Included in detailed review above",
+                risk_level="Medium",  # TODO: Extract from AI assessment
+                risk_justification="Automated assessment pending detailed analysis",
+            )
 
             return review, summary
 

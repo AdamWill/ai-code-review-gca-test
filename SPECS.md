@@ -550,7 +550,6 @@ Options:
   --max-chars INTEGER    Maximum diff characters
   --max-files INTEGER    Maximum number of files
   --post                 Post review as MR note
-  --with-summary         Include MR summary
   --enable-context       Enable project context injection
   --context-file PATH    Custom project context file path
   --context-url URL      External project context URL
@@ -574,7 +573,7 @@ Exit Codes:
 ### GitLab CI Usage
 ```bash
 # Automatic mode (uses CI environment variables)
-ai-code-review --post --with-summary --enable-context
+ai-code-review --post --enable-context
 
 # Manual mode (specify parameters)
 ai-code-review --project-id "$CI_PROJECT_PATH" --mr-iid "$CI_MERGE_REQUEST_IID" --post
