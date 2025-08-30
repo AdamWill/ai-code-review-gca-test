@@ -204,11 +204,48 @@ Savings:           ~81% reduction in tokens and cost
 # Install dependencies
 uv sync --dev
 
-# Run pre-commit checks
+# Install pre-commit hooks
+uv run pre-commit install
+
+# Run manual checks
 uv run ruff check . --fix
 uv run ruff format .
 uv run mypy src/
 uv run pytest
+```
+
+### Pre-commit
+
+This project uses pre-commit to automatically validate code before commits.
+
+#### Setup Pre-commit
+
+```bash
+# Install hooks (one time only)
+uv run pre-commit install
+```
+
+#### Running Pre-commit
+
+```bash
+# Run all checks manually
+uv run pre-commit run --all-files
+
+# Run on modified files only
+uv run pre-commit run
+```
+
+#### Common errors
+
+```bash
+# Auto-fix linting/formatting
+uv run ruff check . --fix && uv run ruff format .
+
+# Check types
+uv run mypy src/
+
+# Skip hooks (exceptional cases only)
+git commit --no-verify -m "message"
 ```
 
 ### Testing
