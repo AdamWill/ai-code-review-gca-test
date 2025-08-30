@@ -466,6 +466,6 @@ MIT License - see LICENSE file for details.
 
 ## 👥 Author
 
-**Author:** Juanje Ojeda
-**Email:** juanje@redhat.com
+**Author:** Juanje Ojeda\
+**Email:** juanje@redhat.com\
 **URL:** <https://gitlab.com/juanjeojeda/ai-code-review>
