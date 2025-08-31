@@ -89,14 +89,14 @@ class TestConfig:
             gitlab_token="custom_token",
             gitlab_url="https://custom-gitlab.com",
             ai_provider=AIProvider.GEMINI,
-            ai_model="gemini-pro",
+            ai_model="gemini-2.5-pro",
             ai_api_key="test_api_key",
         )
 
         assert config.gitlab_token == "custom_token"
         assert config.gitlab_url == "https://custom-gitlab.com"
         assert config.ai_provider == AIProvider.GEMINI
-        assert config.ai_model == "gemini-pro"
+        assert config.ai_model == "gemini-2.5-pro"
         assert config.ai_api_key == "test_api_key"
 
     def test_config_ai_model_parameters(self, monkeypatch: MonkeyPatch) -> None:
@@ -399,11 +399,28 @@ DRY_RUN=true
                 ai_model="gemini-2.5-pro",  # Wrong model for Ollama
             )
 
-        with pytest.raises(ValueError, match="may not be compatible with Gemini"):
+        with pytest.raises(ValueError, match="is not a valid Gemini model"):
             Config(
                 gitlab_token="test_token",
                 ai_provider=AIProvider.GEMINI,
                 ai_model="qwen2.5-coder:7b",  # Wrong model for Gemini
+                ai_api_key="test_key",
+            )
+
+        # Obsolete Gemini models should also be rejected
+        with pytest.raises(ValueError, match="is not a valid Gemini model"):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.GEMINI,
+                ai_model="gemini-pro",  # Obsolete model
+                ai_api_key="test_key",
+            )
+
+        with pytest.raises(ValueError, match="is not a valid Gemini model"):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.GEMINI,
+                ai_model="gemini-pro-vision",  # Obsolete model
                 ai_api_key="test_key",
             )
 

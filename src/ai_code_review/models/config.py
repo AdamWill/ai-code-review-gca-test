@@ -342,15 +342,38 @@ class Config(BaseSettings):
                     f"Or change ai_provider to match your model choice."
                 )
         elif provider == AIProvider.GEMINI:
-            # Gemini should use gemini models
-            if not model.startswith("gemini-") and model not in [
-                "gemini-pro",
-                "gemini-pro-vision",
-            ]:
+            # Gemini should use valid gemini models
+            # Valid models based on https://ai.google.dev/gemini-api/docs/models
+            valid_gemini_models = {
+                # Current models
+                "gemini-2.5-pro",
+                "gemini-2.5-flash",
+                "gemini-2.5-flash-lite",
+                "gemini-2.0-flash",
+                "gemini-2.0-flash-lite",
+                # Deprecated but still available
+                "gemini-1.5-pro",
+                "gemini-1.5-flash",
+                "gemini-1.5-flash-8b",
+            }
+
+            # Also allow versioned models (e.g., gemini-2.5-pro-001) and preview models
+            is_valid_model = (
+                model in valid_gemini_models
+                or any(
+                    model.startswith(valid_model + "-")
+                    for valid_model in valid_gemini_models
+                )
+                or "preview" in model
+                or "exp" in model  # Preview/experimental variants
+            )
+
+            if not is_valid_model:
                 suggested_model = "gemini-2.5-pro"
                 raise ValueError(
-                    f"AI model '{model}' may not be compatible with Gemini provider. "
-                    f"For Gemini, try a model like '{suggested_model}'. "
+                    f"AI model '{model}' is not a valid Gemini model. "
+                    f"Valid models include: {', '.join(sorted(valid_gemini_models))}. "
+                    f"For current recommendation, try '{suggested_model}'. "
                     f"Or change ai_provider to match your model choice."
                 )
 
