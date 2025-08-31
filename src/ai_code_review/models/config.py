@@ -138,6 +138,10 @@ class Config(BaseSettings):
     language_hint: str | None = Field(
         default=None, description="Programming language hint"
     )
+    enable_project_context: bool = Field(
+        default=True,
+        description="Enable loading project context from .ai_review/project.md file",
+    )
 
     # Execution options
     dry_run: bool = Field(default=False, description="Dry run mode (no API calls)")

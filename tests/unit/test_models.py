@@ -41,6 +41,7 @@ def clear_config_env_vars(monkeypatch: MonkeyPatch) -> None:
         "DRY_RUN",
         "BIG_DIFFS",
         "LOG_LEVEL",
+        "ENABLE_PROJECT_CONTEXT",
     ]
     for var in env_vars_to_clear:
         monkeypatch.delenv(var, raising=False)
@@ -510,6 +511,43 @@ DRY_RUN=true
         # Should auto-assign model for Anthropic
         assert config.ai_provider == AIProvider.ANTHROPIC
         assert config.ai_model == "claude-sonnet-4-20250514"
+
+    def test_enable_project_context_defaults_true(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test that enable_project_context defaults to True."""
+        clear_config_env_vars(monkeypatch)
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+        assert config.enable_project_context is True
+
+    def test_enable_project_context_can_be_disabled(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test that enable_project_context can be disabled."""
+        clear_config_env_vars(monkeypatch)
+
+        # Via constructor
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            enable_project_context=False,
+        )
+        assert config.enable_project_context is False
+
+        # Via environment variable
+        monkeypatch.setenv("ENABLE_PROJECT_CONTEXT", "false")
+        config2 = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+        assert config2.enable_project_context is False
 
 
 class TestGitLabModels:

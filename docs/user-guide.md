@@ -147,6 +147,9 @@ MAX_FILES=100                  # Max files to process (100 default)
 BIG_DIFFS=false                # Force 24K context (false default)
 LANGUAGE_HINT=python           # Language hint for better analysis
 
+# Project Context
+ENABLE_PROJECT_CONTEXT=true    # Load project context from .ai_review/project.md (default: true)
+
 # File Filtering
 EXCLUDE_PATTERNS="*.lock,*.min.js,node_modules/**,dist/**"
 
@@ -236,6 +239,89 @@ ai-code-review:
     # Optional: Health check first
     - ai-code-review --health-check
     # Generate and post review
+    - ai-code-review --post
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+```
+
+### 🎯 Project Context Configuration
+
+Enhance AI review quality by providing project-specific context. The AI can give more targeted and relevant feedback when it understands your project's architecture, conventions, and goals.
+
+#### Setup Project Context
+
+1. **Create the context file** in your repository root:
+
+    ```bash
+    mkdir -p .ai_review
+    cp .ai_review/project.md.example .ai_review/project.md
+    ```
+
+1. **Customize** `.ai_review/project.md` with your project information:
+
+    ```markdown
+    # Project Context for AI Code Review
+
+    ## Project Overview
+    Web API for user management built with FastAPI and PostgreSQL.
+
+    ## Technology Stack
+    - **Language:** Python 3.12+
+    - **Framework:** FastAPI + SQLAlchemy
+    - **Database:** PostgreSQL
+    - **Testing:** pytest + httpx
+    - **Deployment:** Docker + Kubernetes
+
+    ## Code Style & Guidelines
+    - **Style:** PEP 8 + Black formatting
+    - **Type Hints:** Mandatory with mypy validation
+    - **Async:** Use async/await for all I/O operations
+    - **Error Handling:** Custom exception classes with detailed messages
+
+    ## Review Focus Areas
+     - **Security:** Validate all input parameters and SQL injection prevention
+     - **Performance:** Check for N+1 queries and proper async usage
+     - **API Design:** RESTful conventions and OpenAPI documentation
+     - **Testing:** Verify test coverage for new endpoints
+
+    ## Common Issues & Gotchas
+     - **Intentional Patterns:** `# noqa` comments are legitimate for SQLAlchemy models
+     - **External Dependencies:** Redis client is injected via dependency injection container
+     - **Domain Logic:** Complex VAT calculations are required by EU regulations
+     - **Performance:** Deliberate caching in user service for authentication speed
+    ```
+
+1. **Control the feature** via environment variable or CLI flag:
+
+    ```bash
+    # Environment variable (default: enabled if file exists)
+    ENABLE_PROJECT_CONTEXT=true/false
+
+    # CLI flag
+    ai-code-review --project-context project/123     # Enable explicitly
+    ai-code-review --no-project-context project/123  # Disable explicitly
+    ```
+
+#### Best Practices
+
+- **Keep it concise**: AI has limited context window, focus on most important information
+- **Update regularly**: Keep context current as your project evolves
+- **Be specific**: Generic advice like "write good code" is less helpful than specific patterns
+- **Include examples**: Show code examples for important conventions
+- **Test the impact**: Compare reviews with and without context to measure improvement
+
+#### Example CI/CD with Project Context
+
+```yaml
+ai-code-review:
+  stage: review
+  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  variables:
+    AI_API_KEY: $GEMINI_API_KEY
+    LANGUAGE_HINT: python
+    ENABLE_PROJECT_CONTEXT: "true"  # Explicitly enable (default: true if file exists)
+  script:
     - ai-code-review --post
   allow_failure: true
   rules:

@@ -198,7 +198,115 @@ ai-code-review group/project 123
 ai-code-review group/project 123 --language-hint python --exclude-files "test_*"
 ```
 
-### 2. Adding New AI Providers
+### 2. Project Context Integration
+
+**Files:** `src/ai_code_review/core/review_engine.py`, `src/ai_code_review/models/config.py`, `src/ai_code_review/cli.py`
+
+The **Project Context** feature allows AI reviews to understand project-specific patterns, architecture, and "gotchas".
+
+#### How It Works
+
+1. **Configuration** (`models/config.py`):
+   ```python
+   enable_project_context: bool = Field(
+       default=True,
+       description="Enable loading project context from .ai_review/project.md file",
+   )
+   ```
+
+2. **CLI Integration** (`cli.py`):
+   ```python
+   @click.option(
+       "--project-context/--no-project-context",
+       default=None,
+       help="Enable/disable loading project context",
+   )
+   ```
+
+3. **Context Loading** (`core/review_engine.py`):
+   ```python
+   def _load_project_context_file(self) -> str | None:
+       """Load project context from .ai_review/project.md file."""
+       context_file_path = ".ai_review/project.md"
+       # Safe file loading with error handling...
+
+   def _get_project_context(self, mr_data: MergeRequestData | None = None) -> str:
+       """Get project context for AI review."""
+       if self.config.enable_project_context:
+           project_context_content = self._load_project_context_file()
+           if project_context_content:
+               context_parts.append("**Project Context:**")
+               context_parts.append(project_context_content)
+   ```
+
+4. **Prompt Integration** (`utils/prompts.py`):
+   ```python
+   def _create_project_context_section(input_data: dict[str, Any]) -> str:
+       """Create project context section if context is provided."""
+       context = input_data.get("context")  # From _get_project_context()
+       if context and context.strip():
+           return f"## Project Context\n{context}"
+       return ""
+   ```
+
+#### Key Design Decisions
+
+- **Default Enabled**: Automatically loads if `.ai_review/project.md` exists
+- **Safe Loading**: Graceful fallback if file doesn't exist or can't be read
+- **Environment Control**: Can be disabled via `ENABLE_PROJECT_CONTEXT=false`
+- **CLI Override**: Explicit control with `--project-context`/`--no-project-context`
+- **Context Position**: Injected between language hint and diff content in prompts
+
+#### Extending the Feature
+
+**Add new context sources:**
+```python
+def _load_additional_context(self) -> str:
+    """Load context from other sources (README.md, etc.)"""
+    # Implementation for README.md, .cursorrules, etc.
+
+def _get_project_context(self, mr_data: MergeRequestData | None = None) -> str:
+    context_parts = []
+
+    if self.config.enable_project_context:
+        # Existing .ai_review/project.md loading
+        project_context = self._load_project_context_file()
+        if project_context:
+            context_parts.append(project_context)
+
+        # NEW: Additional context sources
+        additional_context = self._load_additional_context()
+        if additional_context:
+            context_parts.append(additional_context)
+```
+
+**Add external context URLs:**
+```python
+enable_external_context: bool = Field(default=False)
+external_context_url: str | None = Field(default=None)
+
+async def _fetch_external_context(self) -> str | None:
+    """Fetch context from external URL (docs site, wiki, etc.)"""
+    if not self.config.enable_external_context or not self.config.external_context_url:
+        return None
+    # HTTP fetch implementation...
+```
+
+#### Testing
+
+The feature has comprehensive test coverage in `tests/unit/test_review_engine.py`:
+
+- ✅ Context loading (file exists, not exists, empty)
+- ✅ Configuration integration (enabled/disabled)
+- ✅ CLI flag handling
+- ✅ Integration with review generation
+
+Run specific tests:
+```bash
+uv run pytest tests/unit/test_review_engine.py -k "project_context" -v
+```
+
+### 3. Adding New AI Providers
 
 **Files:** `src/ai_code_review/providers/`
 

@@ -295,14 +295,24 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
         assert "Primary Language: python" in context
 
-    def test_get_project_context_without_hint(self, test_config: Config) -> None:
+    def test_get_project_context_without_hint(
+        self, test_config: Config, tmp_path
+    ) -> None:
         """Test project context without language hint."""
+        import os
+
         test_config.language_hint = None
-        engine = ReviewEngine(test_config)
 
-        context = engine._get_project_context()
+        # Change to temporary directory where no project context file exists
+        original_dir = os.getcwd()
+        os.chdir(str(tmp_path))
 
-        assert "No additional project context available" in context
+        try:
+            engine = ReviewEngine(test_config)
+            context = engine._get_project_context()
+            assert "No additional project context available" in context
+        finally:
+            os.chdir(original_dir)
 
     @pytest.mark.asyncio
     async def test_post_review_to_gitlab_success(self, test_config: Config) -> None:
@@ -424,3 +434,163 @@ AI generated review feedback for test purposes. The code changes appear well-str
         assert f"**Provider:** {dry_run_config.ai_provider.value}" in footer
         assert f"**Model:** {dry_run_config.ai_model}" in footer
         assert "**Mode:** DRY RUN" in footer
+
+    def test_load_project_context_file_exists(
+        self, test_config: Config, tmp_path
+    ) -> None:
+        """Test loading project context when file exists."""
+        import os
+
+        # Create a project context file
+        project_dir = tmp_path / ".ai_review"
+        project_dir.mkdir()
+        context_file = project_dir / "project.md"
+        context_content = "# Project Context\nThis is a test project."
+        context_file.write_text(context_content)
+
+        # Change to test directory
+        original_dir = os.getcwd()
+        os.chdir(str(tmp_path))
+
+        try:
+            engine = ReviewEngine(test_config)
+            result = engine._load_project_context_file()
+
+            assert result == context_content
+        finally:
+            os.chdir(original_dir)
+
+    def test_load_project_context_file_not_exists(
+        self, test_config: Config, tmp_path
+    ) -> None:
+        """Test loading project context when file doesn't exist."""
+        import os
+
+        # Change to temporary directory where no project context file exists
+        original_dir = os.getcwd()
+        os.chdir(str(tmp_path))
+
+        try:
+            engine = ReviewEngine(test_config)
+            result = engine._load_project_context_file()
+            assert result is None
+        finally:
+            os.chdir(original_dir)
+
+    def test_load_project_context_file_empty(
+        self, test_config: Config, tmp_path
+    ) -> None:
+        """Test loading empty project context file."""
+        import os
+
+        # Create an empty project context file
+        project_dir = tmp_path / ".ai_review"
+        project_dir.mkdir()
+        context_file = project_dir / "project.md"
+        context_file.write_text("")
+
+        # Change to test directory
+        original_dir = os.getcwd()
+        os.chdir(str(tmp_path))
+
+        try:
+            engine = ReviewEngine(test_config)
+            result = engine._load_project_context_file()
+
+            assert result is None
+        finally:
+            os.chdir(original_dir)
+
+    def test_get_project_context_with_enabled_context(self, tmp_path) -> None:
+        """Test getting project context when enabled and file exists."""
+        import os
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            enable_project_context=True,
+        )
+
+        # Create a project context file
+        project_dir = tmp_path / ".ai_review"
+        project_dir.mkdir()
+        context_file = project_dir / "project.md"
+        context_content = "This is project context."
+        context_file.write_text(context_content)
+
+        # Change to test directory
+        original_dir = os.getcwd()
+        os.chdir(str(tmp_path))
+
+        try:
+            engine = ReviewEngine(config)
+            result = engine._get_project_context()
+
+            assert "**Project Context:**" in result
+            assert context_content in result
+        finally:
+            os.chdir(original_dir)
+
+    def test_get_project_context_with_disabled_context(self, tmp_path) -> None:
+        """Test getting project context when disabled."""
+        import os
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            enable_project_context=False,
+        )
+
+        # Create a project context file (should be ignored)
+        project_dir = tmp_path / ".ai_review"
+        project_dir.mkdir()
+        context_file = project_dir / "project.md"
+        context_file.write_text("This is project context.")
+
+        # Change to test directory
+        original_dir = os.getcwd()
+        os.chdir(str(tmp_path))
+
+        try:
+            engine = ReviewEngine(config)
+            result = engine._get_project_context()
+
+            assert "**Project Context:**" not in result
+            assert "This is project context." not in result
+        finally:
+            os.chdir(original_dir)
+
+    def test_get_project_context_with_language_hint_and_context(self, tmp_path) -> None:
+        """Test getting project context with both language hint and project context."""
+        import os
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            enable_project_context=True,
+            language_hint="Python",
+        )
+
+        # Create a project context file
+        project_dir = tmp_path / ".ai_review"
+        project_dir.mkdir()
+        context_file = project_dir / "project.md"
+        context_content = "Python web application"
+        context_file.write_text(context_content)
+
+        # Change to test directory
+        original_dir = os.getcwd()
+        os.chdir(str(tmp_path))
+
+        try:
+            engine = ReviewEngine(config)
+            result = engine._get_project_context()
+
+            assert "Primary Language: Python" in result
+            assert "**Project Context:**" in result
+            assert context_content in result
+        finally:
+            os.chdir(original_dir)

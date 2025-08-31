@@ -341,3 +341,61 @@ class TestCLI:
             called_args, called_kwargs = mock_config_class.call_args
             exclude_patterns = called_kwargs.get("exclude_patterns", [])
             assert exclude_patterns == []
+
+    def test_cli_project_context_flag(self, runner: CliRunner) -> None:
+        """Test --project-context/--no-project-context CLI flags."""
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = MagicMock()
+            mock_config_class.return_value = mock_config
+
+            # Test --project-context enables feature
+            runner.invoke(
+                main,
+                [
+                    "test/project",
+                    "123",
+                    "--project-context",
+                    "--dry-run",
+                ],
+                env={"GITLAB_TOKEN": "test_token"},
+            )
+
+            called_args, called_kwargs = mock_config_class.call_args
+            assert called_kwargs.get("enable_project_context") is True
+
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = MagicMock()
+            mock_config_class.return_value = mock_config
+
+            # Test --no-project-context disables feature
+            runner.invoke(
+                main,
+                [
+                    "test/project",
+                    "123",
+                    "--no-project-context",
+                    "--dry-run",
+                ],
+                env={"GITLAB_TOKEN": "test_token"},
+            )
+
+            called_args, called_kwargs = mock_config_class.call_args
+            assert called_kwargs.get("enable_project_context") is False
+
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = MagicMock()
+            mock_config_class.return_value = mock_config
+
+            # Test default (no flag) doesn't set override
+            runner.invoke(
+                main,
+                [
+                    "test/project",
+                    "123",
+                    "--dry-run",
+                ],
+                env={"GITLAB_TOKEN": "test_token"},
+            )
+
+            called_args, called_kwargs = mock_config_class.call_args
+            assert "enable_project_context" not in called_kwargs

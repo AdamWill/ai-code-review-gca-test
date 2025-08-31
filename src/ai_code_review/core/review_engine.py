@@ -284,6 +284,13 @@ class ReviewEngine:
         if self.config.language_hint:
             context_parts.append(f"Primary Language: {self.config.language_hint}")
 
+        # Load project context from .ai_review/project.md if enabled
+        if self.config.enable_project_context:
+            project_context_content = self._load_project_context_file()
+            if project_context_content:
+                context_parts.append("\n**Project Context:**")
+                context_parts.append(project_context_content)
+
         # Add commit context for better understanding
         if mr_data and mr_data.commits:
             context_parts.append("\n**Commit History:**")
@@ -295,7 +302,6 @@ class ReviewEngine:
                 context_parts.append(commit_info)
 
         # TODO: Implement additional project context discovery in future iterations
-        # - Read .ai_review/project.md
         # - Auto-discover README.md, CONTRIBUTING.md, etc.
         # - Support external context URLs
 
@@ -304,6 +310,46 @@ class ReviewEngine:
             if context_parts
             else "No additional project context available."
         )
+
+    def _load_project_context_file(self) -> str | None:
+        """Load project context from .ai_review/project.md file.
+
+        Returns:
+            The content of the file if it exists and is readable, None otherwise
+        """
+        import os.path
+
+        context_file_path = ".ai_review/project.md"
+
+        try:
+            if os.path.isfile(context_file_path):
+                with open(context_file_path, encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        logger.debug(
+                            "Loaded project context",
+                            file_path=context_file_path,
+                            content_length=len(content),
+                        )
+                        return content
+                    else:
+                        logger.debug(
+                            "Project context file exists but is empty",
+                            file_path=context_file_path,
+                        )
+                        return None
+            else:
+                logger.debug(
+                    "Project context file not found", file_path=context_file_path
+                )
+                return None
+        except Exception as e:
+            logger.warning(
+                "Failed to load project context file",
+                file_path=context_file_path,
+                error=str(e),
+            )
+            return None
 
     def _create_mock_review(self) -> CodeReview:
         """Create mock review for dry-run mode."""

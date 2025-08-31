@@ -99,14 +99,19 @@ containerized environments.
 - Provider-specific configuration and error handling
 - Adaptive context windows based on diff size and provider capabilities
 
-### FR-007: Project Context Integration (Planned)
+### FR-007: Project Context Integration ✅
+
+**Implemented:**
+- **Standard Context File**: `.ai_review/project.md` - project info, stack, architecture, style guides
+- **CI/CD Configuration**: Environment variable `ENABLE_PROJECT_CONTEXT=true/false` (default: true)
+- **CLI Configuration**: `--project-context` / `--no-project-context` flags
+- **Automatic Loading**: Context loaded automatically if file exists and feature enabled
+- **Safe Error Handling**: Graceful fallback if file can't be read
 
 **Future Implementation:**
-- **Standard Context File**: `.ai_review/project.md` - project info, stack, architecture, style guides
 - **Auto-discovery Mode**: Automatically find README.md, CLAUDE.md, .cursorrules, etc.
 - **Custom Path Mode**: Specify custom path within repo via `--context-file` or env var
 - **External URL Mode**: Fetch context from external URL (documentation sites)
-- **CI/CD Configuration**: Environment variable `ENABLE_PROJECT_CONTEXT=true/false`
 - **Token Management**: Smart truncation when context + diff exceeds token limits
 
 ### FR-008: Customizable Prompt Templates (Planned)

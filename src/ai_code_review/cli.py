@@ -118,6 +118,11 @@ logger = structlog.get_logger(__name__)
     help="Disable all file filtering (include lockfiles, build artifacts, etc.)",
 )
 @click.option(
+    "--project-context/--no-project-context",
+    default=None,
+    help="Enable/disable loading project context from .ai_review/project.md (default: enabled if file exists)",
+)
+@click.option(
     "--health-check",
     is_flag=True,
     help="Perform health check on all components and exit",
@@ -143,6 +148,7 @@ def main(
     log_level: str | None,
     exclude_files: tuple[str, ...],
     no_file_filtering: bool,
+    project_context: bool | None,
     health_check: bool,
 ) -> None:
     """
@@ -202,6 +208,8 @@ def main(
             config_overrides["big_diffs"] = big_diffs
         if log_level:
             config_overrides["log_level"] = log_level
+        if project_context is not None:
+            config_overrides["enable_project_context"] = project_context
 
         # Handle file filtering options
         if no_file_filtering:
