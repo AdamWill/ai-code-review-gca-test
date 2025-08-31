@@ -594,3 +594,31 @@ AI generated review feedback for test purposes. The code changes appear well-str
             assert context_content in result
         finally:
             os.chdir(original_dir)
+
+    def test_load_project_context_uses_config_path(self, tmp_path) -> None:
+        """Test that context loading uses the configured path."""
+        import os
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            project_context_file="custom-context.md",
+        )
+
+        # Create context file with custom name
+        context_content = "Custom context file content"
+        context_file = tmp_path / "custom-context.md"
+        context_file.write_text(context_content)
+
+        # Change to test directory
+        original_dir = os.getcwd()
+        os.chdir(str(tmp_path))
+
+        try:
+            engine = ReviewEngine(config)
+            result = engine._load_project_context_file()
+
+            assert result == context_content
+        finally:
+            os.chdir(original_dir)

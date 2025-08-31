@@ -212,6 +212,10 @@ The **Project Context** feature allows AI reviews to understand project-specific
        default=True,
        description="Enable loading project context from .ai_review/project.md file",
    )
+   project_context_file: str = Field(
+       default=".ai_review/project.md",
+       description="Path to project context file (relative to repository root)",
+   )
    ```
 
 2. **CLI Integration** (`cli.py`):
@@ -226,8 +230,8 @@ The **Project Context** feature allows AI reviews to understand project-specific
 3. **Context Loading** (`core/review_engine.py`):
    ```python
    def _load_project_context_file(self) -> str | None:
-       """Load project context from .ai_review/project.md file."""
-       context_file_path = ".ai_review/project.md"
+       """Load project context from configured project context file."""
+       context_file_path = self.config.project_context_file
        # Safe file loading with error handling...
 
    def _get_project_context(self, mr_data: MergeRequestData | None = None) -> str:
@@ -290,6 +294,21 @@ async def _fetch_external_context(self) -> str | None:
     if not self.config.enable_external_context or not self.config.external_context_url:
         return None
     # HTTP fetch implementation...
+```
+
+**Use custom context file paths:**
+```python
+# Via environment variable
+PROJECT_CONTEXT_FILE=docs/ai-context.md
+
+# Via CLI (future implementation)
+ai-code-review --context-file docs/ai-context.md project/123
+
+# Via config object
+config = Config(
+    gitlab_token="token",
+    project_context_file="custom/path/context.md"
+)
 ```
 
 #### Testing

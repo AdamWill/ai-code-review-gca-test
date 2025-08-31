@@ -42,6 +42,7 @@ def clear_config_env_vars(monkeypatch: MonkeyPatch) -> None:
         "BIG_DIFFS",
         "LOG_LEVEL",
         "ENABLE_PROJECT_CONTEXT",
+        "PROJECT_CONTEXT_FILE",
     ]
     for var in env_vars_to_clear:
         monkeypatch.delenv(var, raising=False)
@@ -548,6 +549,43 @@ DRY_RUN=true
             ai_model="qwen2.5-coder:7b",
         )
         assert config2.enable_project_context is False
+
+    def test_project_context_file_defaults_correctly(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test that project_context_file has correct default value."""
+        clear_config_env_vars(monkeypatch)
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+        assert config.project_context_file == ".ai_review/project.md"
+
+    def test_project_context_file_can_be_customized(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test that project_context_file can be customized."""
+        clear_config_env_vars(monkeypatch)
+
+        # Via constructor
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            project_context_file="custom/path/context.md",
+        )
+        assert config.project_context_file == "custom/path/context.md"
+
+        # Via environment variable
+        monkeypatch.setenv("PROJECT_CONTEXT_FILE", "env/context.md")
+        config2 = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+        assert config2.project_context_file == "env/context.md"
 
 
 class TestGitLabModels:

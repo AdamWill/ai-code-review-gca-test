@@ -142,6 +142,10 @@ class Config(BaseSettings):
         default=True,
         description="Enable loading project context from .ai_review/project.md file",
     )
+    project_context_file: str = Field(
+        default=".ai_review/project.md",
+        description="Path to project context file (relative to repository root)",
+    )
 
     # Execution options
     dry_run: bool = Field(default=False, description="Dry run mode (no API calls)")

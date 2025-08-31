@@ -149,6 +149,7 @@ LANGUAGE_HINT=python           # Language hint for better analysis
 
 # Project Context
 ENABLE_PROJECT_CONTEXT=true    # Load project context from .ai_review/project.md (default: true)
+PROJECT_CONTEXT_FILE=.ai_review/project.md  # Path to project context file (default: .ai_review/project.md)
 
 # File Filtering
 EXCLUDE_PATTERNS="*.lock,*.min.js,node_modules/**,dist/**"

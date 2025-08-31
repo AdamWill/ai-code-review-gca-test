@@ -312,14 +312,14 @@ class ReviewEngine:
         )
 
     def _load_project_context_file(self) -> str | None:
-        """Load project context from .ai_review/project.md file.
+        """Load project context from configured project context file.
 
         Returns:
             The content of the file if it exists and is readable, None otherwise
         """
         import os.path
 
-        context_file_path = ".ai_review/project.md"
+        context_file_path = self.config.project_context_file
 
         try:
             if os.path.isfile(context_file_path):
