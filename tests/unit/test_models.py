@@ -355,6 +355,31 @@ DRY_RUN=true
                 ai_api_key="test_key",
             )
 
+    def test_auto_model_assignment_gemini_default(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test that Gemini model is assigned automatically when no provider/model specified."""
+        # Gemini is a cloud provider, so it needs an API key
+        config = Config(gitlab_token="test_token", ai_api_key="test_api_key")
+
+        # Should default to Gemini provider and auto-assign model
+        assert config.ai_provider == AIProvider.GEMINI
+        assert config.ai_model == "gemini-2.5-pro"
+
+    def test_auto_model_assignment_explicit_provider(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test that model is assigned automatically for explicitly specified provider."""
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.ANTHROPIC,
+            ai_api_key="test_key",
+        )
+
+        # Should auto-assign model for Anthropic
+        assert config.ai_provider == AIProvider.ANTHROPIC
+        assert config.ai_model == "claude-sonnet-4-20250514"
+
 
 class TestGitLabModels:
     """Test GitLab data models."""

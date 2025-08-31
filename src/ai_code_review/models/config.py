@@ -255,19 +255,27 @@ class Config(BaseSettings):
                     "Set it as GITLAB_TOKEN environment variable or in .env file."
                 )
 
-                # Set default model based on provider if model not explicitly set
+            # Set default model based on provider if model not explicitly set
             provider_str = data.get("ai_provider")
             model = data.get("ai_model")
 
             # Only set default if model is None (not provided at all)
-            if provider_str and model is None:
-                if isinstance(provider_str, str):
+            if model is None:
+                # If no provider specified, use the default provider (GEMINI)
+                if provider_str is None:
+                    provider = AIProvider.GEMINI  # Default provider
+                elif isinstance(provider_str, str):
                     try:
                         provider = AIProvider(provider_str)
-                        data["ai_model"] = get_default_model_for_provider(provider)
                     except ValueError:
                         # Invalid provider, let other validators handle it
-                        pass
+                        provider = None
+                else:
+                    provider = provider_str  # Already an AIProvider enum
+
+                # Set default model for the provider
+                if provider is not None:
+                    data["ai_model"] = get_default_model_for_provider(provider)
 
         return data
 
