@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import gitlab
@@ -85,7 +86,7 @@ class TestGitLabClient:
                 ssl_verify=False,
             )
 
-    def test_gitlab_client_ssl_cert_path(self, tmp_path) -> None:
+    def test_gitlab_client_ssl_cert_path(self, tmp_path: Path) -> None:
         """Test GitLab client with custom SSL certificate path."""
         from ai_code_review.models.config import AIProvider
 
@@ -356,3 +357,284 @@ class TestGitLabClient:
         assert not client._should_exclude_file("uv.lock")
         assert not client._should_exclude_file("node_modules/package.json")
         assert not client._should_exclude_file("dist/bundle.js")
+
+    @pytest.mark.asyncio
+    async def test_fetch_merge_request_commits_success(
+        self, test_config: Config
+    ) -> None:
+        """Test successful commits fetching and processing."""
+        client = GitLabClient(test_config)
+
+        # Mock merge request with commits
+        mock_mr = MagicMock()
+        mock_commit_data = [
+            MagicMock(
+                id="abc123456789",
+                title="Add new feature",
+                message="Add new feature\n\nDetailed description of the feature.",
+                author_name="Test Author",
+                author_email="test@example.com",
+                committed_date="2024-01-01T10:00:00Z",
+                short_id="abc1234",
+            ),
+            MagicMock(
+                id="def987654321",
+                title="Fix bug in component",
+                message="Fix bug in component",
+                author_name="Another Author",
+                author_email="another@example.com",
+                committed_date="2024-01-01T11:00:00Z",
+                short_id="def9876",
+            ),
+        ]
+        mock_mr.commits.return_value = mock_commit_data
+
+        commits = await client._fetch_merge_request_commits(mock_mr)
+
+        # Verify commits were processed correctly
+        assert len(commits) == 2
+
+        # Check first commit
+        assert commits[0].id == "abc123456789"
+        assert commits[0].title == "Add new feature"
+        assert (
+            commits[0].message
+            == "Add new feature\n\nDetailed description of the feature."
+        )
+        assert commits[0].author_name == "Test Author"
+        assert commits[0].author_email == "test@example.com"
+        assert commits[0].committed_date == "2024-01-01T10:00:00Z"
+        assert commits[0].short_id == "abc1234"
+
+        # Check second commit
+        assert commits[1].id == "def987654321"
+        assert commits[1].title == "Fix bug in component"
+        assert commits[1].author_name == "Another Author"
+
+    @pytest.mark.asyncio
+    async def test_fetch_commits_error_handling(self, test_config: Config) -> None:
+        """Test error handling in commits fetching."""
+        client = GitLabClient(test_config)
+
+        # Mock merge request that throws exception
+        mock_mr = MagicMock()
+        mock_mr.commits.side_effect = Exception("API timeout")
+
+        with pytest.raises(GitLabAPIError, match="Failed to fetch commits"):
+            await client._fetch_merge_request_commits(mock_mr)
+
+    def test_apply_content_limits_with_truncation(self, test_config: Config) -> None:
+        """Test content truncation when exceeding max_chars limit."""
+        # Create config with small max_chars for testing
+        from ai_code_review.models.config import AIProvider
+
+        small_limit_config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            max_chars=50,  # Very small limit to trigger truncation
+        )
+        client = GitLabClient(small_limit_config)
+
+        # Create diffs that exceed the limit
+        large_diff = "@@ -1,10 +1,10 @@\n" + "A" * 100  # 118 chars total
+        diffs = [
+            MergeRequestDiff(file_path="file1.py", diff="small"),  # 5 chars
+            MergeRequestDiff(
+                file_path="file2.py", diff=large_diff
+            ),  # Would exceed limit
+        ]
+
+        limited = client._apply_content_limits(diffs)
+
+        # Should have both files, but second one truncated
+        assert len(limited) == 2
+        assert limited[0].file_path == "file1.py"
+        assert limited[0].diff == "small"  # Not truncated
+
+        assert limited[1].file_path == "file2.py"
+        assert limited[1].diff != large_diff  # Should be truncated
+        assert limited[1].diff.endswith("... (diff truncated)")
+
+        # Verify the function applied truncation logic correctly
+        # The truncation should include the suffix, so the original large_diff should have been truncated
+        remaining_chars = small_limit_config.max_chars - len(
+            limited[0].diff
+        )  # 50 - 5 = 45
+        assert len(limited[1].diff) > remaining_chars  # Has suffix added
+        assert len(limited[1].diff) < len(large_diff)  # Was truncated from original
+
+    def test_apply_content_limits_skip_small_remaining(
+        self, test_config: Config
+    ) -> None:
+        """Test that files with very small remaining space are skipped."""
+        from ai_code_review.models.config import AIProvider
+
+        tight_limit_config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            max_chars=25,  # Small limit
+        )
+        client = GitLabClient(tight_limit_config)
+
+        diffs = [
+            MergeRequestDiff(
+                file_path="file1.py", diff="A" * 24
+            ),  # 24 chars, leaves 1 char
+            MergeRequestDiff(
+                file_path="file2.py", diff="B" * 50
+            ),  # Would need truncation to 1 char
+        ]
+
+        limited = client._apply_content_limits(diffs)
+
+        # Should only have first file, second skipped due to insufficient remaining space
+        assert len(limited) == 1
+        assert limited[0].file_path == "file1.py"
+
+    @pytest.mark.asyncio
+    async def test_file_filtering_no_diff_content(self, test_config: Config) -> None:
+        """Test file filtering for files without diff content."""
+        client = GitLabClient(test_config)
+
+        # Mock merge request
+        mock_mr = MagicMock()
+        mock_mr.changes.return_value = {
+            "changes": [
+                {
+                    "old_path": "has_diff.py",
+                    "new_path": "has_diff.py",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1 +1,1 @@\n-old\n+new",
+                },
+                {
+                    "old_path": "no_diff.lock",
+                    "new_path": "no_diff.lock",
+                    "new_file": True,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "",  # No diff content (common for large/binary files)
+                },
+                {
+                    "old_path": None,
+                    "new_path": "binary_file.png",
+                    "new_file": True,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": None,  # None diff (binary file)
+                },
+            ]
+        }
+
+        diffs = await client._fetch_merge_request_diffs(mock_mr)
+
+        # Should only include file with actual diff content
+        assert len(diffs) == 1
+        assert diffs[0].file_path == "has_diff.py"
+        assert "@@ -1,1 +1,1 @@" in diffs[0].diff
+
+    @pytest.mark.asyncio
+    async def test_file_filtering_excluded_patterns(self, test_config: Config) -> None:
+        """Test file filtering for excluded patterns."""
+        client = GitLabClient(test_config)
+
+        # Mock merge request with mix of included/excluded files
+        mock_mr = MagicMock()
+        mock_mr.changes.return_value = {
+            "changes": [
+                {
+                    "old_path": "src/app.py",
+                    "new_path": "src/app.py",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1 +1,1 @@\n-old\n+new",
+                },
+                {
+                    "old_path": "package-lock.json",
+                    "new_path": "package-lock.json",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1000 +1,1000 @@\nlarge lockfile diff...",
+                },
+                {
+                    "old_path": "dist/bundle.js",
+                    "new_path": "dist/bundle.js",
+                    "new_file": True,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -0,0 +1,500 @@\nminified js content...",
+                },
+            ]
+        }
+
+        diffs = await client._fetch_merge_request_diffs(mock_mr)
+
+        # Should only include source file, exclude lockfile and build artifact
+        assert len(diffs) == 1
+        assert diffs[0].file_path == "src/app.py"
+
+    @pytest.mark.asyncio
+    async def test_max_files_limit_enforced(self, test_config: Config) -> None:
+        """Test that max_files limit is enforced."""
+        # Create config with small max_files for testing
+        from ai_code_review.models.config import AIProvider
+
+        limited_files_config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            max_files=2,  # Very small limit
+        )
+        client = GitLabClient(limited_files_config)
+
+        # Mock merge request with more files than limit
+        mock_mr = MagicMock()
+        mock_mr.changes.return_value = {
+            "changes": [
+                {
+                    "old_path": "file1.py",
+                    "new_path": "file1.py",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1 +1,1 @@\n-old1\n+new1",
+                },
+                {
+                    "old_path": "file2.py",
+                    "new_path": "file2.py",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1 +1,1 @@\n-old2\n+new2",
+                },
+                {
+                    "old_path": "file3.py",
+                    "new_path": "file3.py",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1 +1,1 @@\n-old3\n+new3",
+                },
+                {
+                    "old_path": "file4.py",
+                    "new_path": "file4.py",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1 +1,1 @@\n-old4\n+new4",
+                },
+            ]
+        }
+
+        diffs = await client._fetch_merge_request_diffs(mock_mr)
+
+        # Should only process first 2 files due to max_files limit
+        assert len(diffs) == 2
+        assert diffs[0].file_path == "file1.py"
+        assert diffs[1].file_path == "file2.py"
+        # file3.py and file4.py should be skipped
