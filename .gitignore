@@ -130,3 +130,7 @@ Thumbs.db
 .ai_review/
 temp/
 logs/
+
+# Certs
+*.pem
+*.crt

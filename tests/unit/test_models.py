@@ -17,11 +17,57 @@ from ai_code_review.models.gitlab import (
 from ai_code_review.models.review import CodeReview, FileReview, ReviewResult
 
 
+def clear_config_env_vars(monkeypatch: MonkeyPatch) -> None:
+    """Clear all configuration-related environment variables and disable .env file for test isolation."""
+    # Clear environment variables
+    env_vars_to_clear = [
+        "GITLAB_URL",
+        "GITLAB_TOKEN",
+        "AI_PROVIDER",
+        "AI_MODEL",
+        "AI_API_KEY",
+        "SSL_VERIFY",
+        "SSL_CERT_PATH",
+        "CI_PROJECT_PATH",
+        "CI_MERGE_REQUEST_IID",
+        "CI_SERVER_URL",
+        "TEMPERATURE",
+        "MAX_TOKENS",
+        "HTTP_TIMEOUT",
+        "OLLAMA_BASE_URL",
+        "MAX_CHARS",
+        "MAX_FILES",
+        "LANGUAGE_HINT",
+        "DRY_RUN",
+        "BIG_DIFFS",
+        "LOG_LEVEL",
+    ]
+    for var in env_vars_to_clear:
+        monkeypatch.delenv(var, raising=False)
+
+    # Disable .env file loading by pointing to a non-existent file
+    # This prevents pydantic_settings from reading the actual .env file
+    monkeypatch.setattr(
+        "ai_code_review.models.config.Config.model_config",
+        {
+            "env_file": ".env.nonexistent",
+            "env_file_encoding": "utf-8",
+            "case_sensitive": False,
+            "env_prefix": "",
+        },
+    )
+
+
 class TestConfig:
     """Test configuration model."""
 
-    def test_config_creation_with_minimal_required_fields(self) -> None:
+    def test_config_creation_with_minimal_required_fields(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
         """Test creating config with only required fields for Ollama."""
+        # Clear environment variables that could interfere with test isolation
+        clear_config_env_vars(monkeypatch)
+
         # Use Ollama to avoid API key requirement
         config = Config(
             gitlab_token="test_token",
@@ -51,8 +97,10 @@ class TestConfig:
         assert config.ai_model == "gemini-pro"
         assert config.ai_api_key == "test_api_key"
 
-    def test_config_ai_model_parameters(self) -> None:
+    def test_config_ai_model_parameters(self, monkeypatch: MonkeyPatch) -> None:
         """Test AI model parameter configuration."""
+        clear_config_env_vars(monkeypatch)
+
         config = Config(
             gitlab_token="test_token",
             ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
@@ -64,8 +112,10 @@ class TestConfig:
         assert config.temperature == 0.5
         assert config.max_tokens == 2048
 
-    def test_dry_run_defaults_false(self) -> None:
+    def test_dry_run_defaults_false(self, monkeypatch: MonkeyPatch) -> None:
         """Test that dry_run defaults to False."""
+        clear_config_env_vars(monkeypatch)
+
         # Use Ollama to avoid API key requirement
         config = Config(
             gitlab_token="test_token",
@@ -355,10 +405,89 @@ DRY_RUN=true
                 ai_api_key="test_key",
             )
 
+    def test_ssl_configuration_defaults(self, monkeypatch: MonkeyPatch) -> None:
+        """Test SSL configuration defaults."""
+        clear_config_env_vars(monkeypatch)
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+
+        assert config.ssl_verify is True
+        assert config.ssl_cert_path is None
+
+    def test_ssl_configuration_custom_values(self, monkeypatch: MonkeyPatch) -> None:
+        """Test SSL configuration with custom values."""
+        clear_config_env_vars(monkeypatch)
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            ssl_verify=False,
+        )
+
+        assert config.ssl_verify is False
+        assert config.ssl_cert_path is None
+
+    def test_ssl_cert_path_validation_nonexistent_file(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test SSL cert path validation with non-existent file."""
+        clear_config_env_vars(monkeypatch)
+
+        with pytest.raises(ValueError, match="SSL certificate file not found"):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                ai_model="qwen2.5-coder:7b",
+                ssl_cert_path="/path/to/nonexistent/cert.pem",
+            )
+
+    def test_ssl_cert_path_validation_empty_path(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test SSL cert path validation with empty path."""
+        clear_config_env_vars(monkeypatch)
+
+        with pytest.raises(ValueError, match="SSL certificate path cannot be empty"):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                ai_model="qwen2.5-coder:7b",
+                ssl_cert_path="",
+            )
+
+    def test_ssl_cert_path_validation_valid_file(
+        self, tmp_path: Path, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test SSL cert path validation with valid file."""
+        clear_config_env_vars(monkeypatch)
+
+        # Create a temporary certificate file
+        cert_file = tmp_path / "test_cert.pem"
+        cert_file.write_text(
+            "-----BEGIN CERTIFICATE-----\nMockCertificateContent\n-----END CERTIFICATE-----\n"
+        )
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            ssl_cert_path=str(cert_file),
+        )
+
+        assert config.ssl_verify is True  # default
+        assert config.ssl_cert_path == str(cert_file)
+
     def test_auto_model_assignment_gemini_default(
         self, monkeypatch: MonkeyPatch
     ) -> None:
         """Test that Gemini model is assigned automatically when no provider/model specified."""
+        clear_config_env_vars(monkeypatch)
+
         # Gemini is a cloud provider, so it needs an API key
         config = Config(gitlab_token="test_token", ai_api_key="test_api_key")
 
@@ -370,6 +499,8 @@ DRY_RUN=true
         self, monkeypatch: MonkeyPatch
     ) -> None:
         """Test that model is assigned automatically for explicitly specified provider."""
+        clear_config_env_vars(monkeypatch)
+
         config = Config(
             gitlab_token="test_token",
             ai_provider=AIProvider.ANTHROPIC,

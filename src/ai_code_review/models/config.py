@@ -71,6 +71,16 @@ class Config(BaseSettings):
         default="https://gitlab.com", description="GitLab instance URL"
     )
 
+    # SSL configuration
+    ssl_verify: bool = Field(
+        default=True,
+        description="Verify SSL certificates (disable only for development)",
+    )
+    ssl_cert_path: str | None = Field(
+        default=None,
+        description="Path to SSL certificate file for custom CA or self-signed certificates",
+    )
+
     # AI provider configuration
     ai_provider: AIProvider = Field(
         default=AIProvider.GEMINI, description="AI provider to use"
@@ -157,6 +167,26 @@ class Config(BaseSettings):
             raise ValueError(f"Invalid URL format: {v}")
 
         return v.rstrip("/")  # Remove trailing slash for consistency
+
+    @field_validator("ssl_cert_path")
+    @classmethod
+    def validate_ssl_cert_path(cls, v: str | None) -> str | None:
+        """Validate SSL certificate file path."""
+        if v is None:
+            return None
+
+        if not v.strip():
+            raise ValueError("SSL certificate path cannot be empty")
+
+        import os
+
+        if not os.path.isfile(v):
+            raise ValueError(f"SSL certificate file not found: {v}")
+
+        if not os.access(v, os.R_OK):
+            raise ValueError(f"SSL certificate file is not readable: {v}")
+
+        return v
 
     @field_validator("ai_model")
     @classmethod

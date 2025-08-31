@@ -30,8 +30,16 @@ class GitLabClient:
     def gitlab_client(self) -> gitlab.Gitlab:
         """Get or create GitLab client instance."""
         if self._gitlab_client is None:
+            # Configure SSL verification
+            ssl_verify: bool | str = self.config.ssl_verify
+            if self.config.ssl_cert_path is not None:
+                # Use custom certificate file
+                ssl_verify = self.config.ssl_cert_path
+
             self._gitlab_client = gitlab.Gitlab(
-                url=self.config.gitlab_url, private_token=self.config.gitlab_token
+                url=self.config.gitlab_url,
+                private_token=self.config.gitlab_token,
+                ssl_verify=ssl_verify,
             )
         return self._gitlab_client
 

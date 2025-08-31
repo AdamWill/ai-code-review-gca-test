@@ -58,7 +58,59 @@ class TestGitLabClient:
             _ = client.gitlab_client
 
             mock_gitlab.assert_called_once_with(
-                url=test_config.gitlab_url, private_token=test_config.gitlab_token
+                url=test_config.gitlab_url,
+                private_token=test_config.gitlab_token,
+                ssl_verify=True,  # Default value
+            )
+
+    def test_gitlab_client_ssl_verify_false(self) -> None:
+        """Test GitLab client with SSL verification disabled."""
+        from ai_code_review.models.config import AIProvider
+
+        config = Config(
+            gitlab_token="test_token",
+            gitlab_url="https://test-gitlab.com",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            ssl_verify=False,
+        )
+        client = GitLabClient(config)
+
+        with patch("gitlab.Gitlab") as mock_gitlab:
+            _ = client.gitlab_client
+
+            mock_gitlab.assert_called_once_with(
+                url=config.gitlab_url,
+                private_token=config.gitlab_token,
+                ssl_verify=False,
+            )
+
+    def test_gitlab_client_ssl_cert_path(self, tmp_path) -> None:
+        """Test GitLab client with custom SSL certificate path."""
+        from ai_code_review.models.config import AIProvider
+
+        # Create a temporary certificate file
+        cert_file = tmp_path / "test_cert.pem"
+        cert_file.write_text(
+            "-----BEGIN CERTIFICATE-----\nMockCertificateContent\n-----END CERTIFICATE-----\n"
+        )
+
+        config = Config(
+            gitlab_token="test_token",
+            gitlab_url="https://test-gitlab.com",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            ssl_cert_path=str(cert_file),
+        )
+        client = GitLabClient(config)
+
+        with patch("gitlab.Gitlab") as mock_gitlab:
+            _ = client.gitlab_client
+
+            mock_gitlab.assert_called_once_with(
+                url=config.gitlab_url,
+                private_token=config.gitlab_token,
+                ssl_verify=str(cert_file),  # Path to certificate file
             )
 
     @pytest.mark.asyncio

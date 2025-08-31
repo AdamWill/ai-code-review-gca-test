@@ -154,6 +154,61 @@ EXCLUDE_PATTERNS="*.lock,*.min.js,node_modules/**,dist/**"
 LOG_LEVEL=INFO                # DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
 
+#### SSL Configuration for Internal GitLab Instances
+
+For internal GitLab instances using self-signed certificates or custom CA certificates:
+
+```bash
+# SSL Configuration
+SSL_VERIFY=true                # Enable SSL verification (recommended)
+SSL_CERT_PATH=/path/to/company-ca.crt  # Path to your company's CA certificate
+
+# Alternative for development/testing (NOT recommended for production)
+SSL_VERIFY=false               # Disable SSL verification completely
+```
+
+##### Setting up SSL Certificates in CI/CD
+
+1. **Upload your company's CA certificate** to your project:
+   - **Settings** → **CI/CD** → **Variables**
+   - Create a **File** variable named `COMPANY_CA_CERT`
+   - Upload your `.crt` or `.pem` certificate file
+
+2. **Configure the job to use the certificate:**
+
+```yaml
+ai-code-review:
+  stage: review
+  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  variables:
+    AI_API_KEY: $GEMINI_API_KEY
+    # SSL configuration for internal GitLab
+    SSL_VERIFY: "true"
+    SSL_CERT_PATH: $COMPANY_CA_CERT  # References the uploaded certificate file
+  script:
+    - ai-code-review --post
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+```
+
+##### Quick setup for development environments
+
+```yaml
+ai-code-review:
+  stage: review
+  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  variables:
+    AI_API_KEY: $GEMINI_API_KEY
+    # CAUTION: Only for development - disables SSL verification
+    SSL_VERIFY: "false"
+  script:
+    - ai-code-review --post
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+```
+
 ### Complete CI/CD Example
 
 ```yaml
@@ -244,14 +299,61 @@ AI_API_KEY=your_key ai-code-review group/project 123 --post
 
 #### 3. Custom GitLab Instance
 
-For private GitLab instances:
+For private or internal GitLab instances:
 
 ```bash
-# Custom GitLab URL
+# Basic custom GitLab URL
 GITLAB_TOKEN=your_token \
 AI_API_KEY=your_key \
 ai-code-review --gitlab-url https://gitlab.company.com \
   --project-id "internal/project" --mr-iid 456 --post
+```
+
+**For Internal GitLab with SSL Certificates:**
+
+```bash
+# Option 1: Using custom CA certificate file
+GITLAB_TOKEN=your_token \
+AI_API_KEY=your_key \
+SSL_VERIFY=true \
+SSL_CERT_PATH=/path/to/company-ca.crt \
+ai-code-review --gitlab-url https://gitlab.company.com \
+  internal/project 456 --post
+
+# Option 2: Create .env file for repeated use
+cat > .env << 'EOF'
+GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+GITLAB_URL=https://gitlab.company.com
+AI_API_KEY=your_gemini_key
+SSL_VERIFY=true
+SSL_CERT_PATH=/path/to/company-ca.crt
+EOF
+
+# Then simply run:
+ai-code-review internal/project 456 --post
+```
+
+**For Development/Testing (Disable SSL verification):**
+
+⚠️ **CAUTION**: Only for development environments where security is not critical.
+
+```bash
+# Temporarily disable SSL verification
+GITLAB_TOKEN=your_token \
+AI_API_KEY=your_key \
+SSL_VERIFY=false \
+ai-code-review --gitlab-url https://gitlab.company.com \
+  internal/project 456 --post
+
+# Or with .env file
+cat > .env << 'EOF'
+GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+GITLAB_URL=https://gitlab.company.com
+AI_API_KEY=your_gemini_key
+SSL_VERIFY=false
+EOF
+
+ai-code-review internal/project 456 --post
 ```
 
 ### Local Development Workflow
@@ -299,6 +401,51 @@ ollama pull qwen2.5-coder:7b
 # Verify project path and MR number
 ai-code-review --gitlab-url https://gitlab.com group/project 123
 ```
+
+#### SSL Certificate Errors
+
+**Error**: `SSL: CERTIFICATE_VERIFY_FAILED` or `certificate verify failed: self-signed certificate`
+
+This occurs when connecting to internal GitLab instances with custom or self-signed certificates.
+
+##### Solutions
+
+1. **Use your company's CA certificate (recommended):**
+
+    ```bash
+    # Download your company's certificate first
+    curl -k https://gitlab.company.com > company-ca.crt
+
+    # Then use it
+    SSL_VERIFY=true SSL_CERT_PATH=./company-ca.crt \
+    ai-code-review --gitlab-url https://gitlab.company.com internal/project 456
+    ```
+
+1. **Temporarily disable SSL verification (development only):**
+
+    ```bash
+    # ⚠️ CAUTION: Only for development/testing
+    SSL_VERIFY=false \
+    ai-code-review --gitlab-url https://gitlab.company.com internal/project 456
+    ```
+
+1. **For CI/CD pipelines:**
+
+    ```yaml
+    # Add to your .gitlab-ci.yml
+    ai-code-review:
+    variables:
+        SSL_VERIFY: "true"
+        SSL_CERT_PATH: $COMPANY_CA_CERT  # Upload as File variable in CI/CD settings
+    # ... rest of job configuration
+    ```
+
+##### Common certificate issues
+
+- **Wrong certificate path**: Check the file exists and is readable
+- **Certificate format**: Use `.crt` or `.pem` format
+- **Permission issues**: Ensure the certificate file is readable by the process
+- **Expired certificates**: Check certificate validity with `openssl x509 -in cert.crt -text -noout`
 
 ### Debug Mode
 
