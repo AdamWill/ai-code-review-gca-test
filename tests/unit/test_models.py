@@ -698,3 +698,55 @@ class TestReviewModels:
         assert "Good code overall" in markdown
         assert "General Feedback" in markdown
         assert "Overall good quality" in markdown
+
+
+class TestGetDefaultModelForProvider:
+    """Test the get_default_model_for_provider function."""
+
+    def test_get_default_model_for_all_providers(self) -> None:
+        """Test that all AIProvider enum values have default models."""
+        from ai_code_review.models.config import (
+            AIProvider,
+            get_default_model_for_provider,
+        )
+
+        # Test each provider has a default model
+        assert get_default_model_for_provider(AIProvider.OLLAMA) == "qwen2.5-coder:7b"
+        assert get_default_model_for_provider(AIProvider.GEMINI) == "gemini-2.5-pro"
+        assert (
+            get_default_model_for_provider(AIProvider.ANTHROPIC)
+            == "claude-sonnet-4-20250514"
+        )
+        assert get_default_model_for_provider(AIProvider.OPENAI) == "gpt-5-mini"
+
+        # Ensure all enum members are covered (no missing providers)
+        all_providers = set(AIProvider)
+        tested_providers = {
+            AIProvider.OLLAMA,
+            AIProvider.GEMINI,
+            AIProvider.ANTHROPIC,
+            AIProvider.OPENAI,
+        }
+        assert all_providers == tested_providers, (
+            f"Missing tests for providers: {all_providers - tested_providers}"
+        )
+
+    def test_get_default_model_fails_for_undefined_provider(self) -> None:
+        """Test that function fails explicitly for undefined providers (future-proofing)."""
+        from unittest.mock import patch
+
+        from ai_code_review.models.config import (
+            get_default_model_for_provider,
+        )
+
+        # Create a mock provider that's not in the defaults
+        with patch("ai_code_review.models.config.AIProvider"):
+            # Create a fake provider instance that's not in defaults
+            fake_provider = type("MockProvider", (), {"value": "fake_provider"})()
+            fake_provider.value = "fake_provider"
+
+            with pytest.raises(
+                ValueError,
+                match="No default model defined for provider 'fake_provider'",
+            ):
+                get_default_model_for_provider(fake_provider)  # type: ignore

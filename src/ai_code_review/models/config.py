@@ -36,13 +36,26 @@ def get_default_exclude_patterns() -> list[str]:
 
 
 def get_default_model_for_provider(provider: AIProvider) -> str:
-    """Get default model name for each AI provider."""
+    """Get default model name for each AI provider.
+
+    Raises:
+        ValueError: If no default model is defined for the provider.
+    """
     defaults = {
         AIProvider.OLLAMA: "qwen2.5-coder:7b",
         AIProvider.GEMINI: "gemini-2.5-pro",
         AIProvider.ANTHROPIC: "claude-sonnet-4-20250514",
+        AIProvider.OPENAI: "gpt-5-mini",  # Default for future OpenAI implementation
     }
-    return defaults.get(provider, "gemini-2.5-pro")  # Fallback to gemini default
+
+    if provider not in defaults:
+        raise ValueError(
+            f"No default model defined for provider '{provider.value}'. "
+            f"Please add a default model in get_default_model_for_provider() "
+            f"for provider {provider}."
+        )
+
+    return defaults[provider]
 
 
 class AIProvider(str, Enum):
