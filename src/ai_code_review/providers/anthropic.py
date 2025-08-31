@@ -85,7 +85,7 @@ class AnthropicProvider(BaseAIProvider):
         We can be generous with context but not as much as Gemini.
         """
         # Manual override always takes precedence
-        if hasattr(self.config, "big_diffs") and self.config.big_diffs:
+        if self.config.big_diffs:
             return 200_000  # 200K - manual big-diffs flag (max context)
 
         # Auto-detect based on diff size (generous but not as much as Gemini)

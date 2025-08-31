@@ -98,7 +98,7 @@ class ReviewEngine:
                 )(original_total_chars)
 
                 # Detect if big-diffs was auto-activated
-                manual_big_diffs = getattr(self.config, "big_diffs", False)
+                manual_big_diffs = self.config.big_diffs
                 auto_big_diffs = original_total_chars > 60000 and not manual_big_diffs
 
                 estimated_input_tokens = int(

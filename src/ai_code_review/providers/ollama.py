@@ -59,7 +59,7 @@ class OllamaProvider(BaseAIProvider):
     def _get_context_size_for_config(self) -> int:
         """Get context size based on configuration flags."""
         # Check if big-diffs flag is manually enabled
-        if hasattr(self.config, "big_diffs") and self.config.big_diffs:
+        if self.config.big_diffs:
             return 24576  # 24K for manually requested large diffs
         else:
             return 16384  # 16K standard - optimal balance
@@ -67,7 +67,7 @@ class OllamaProvider(BaseAIProvider):
     def get_adaptive_context_size(self, diff_size_chars: int) -> int:
         """Get context size adaptively based on diff size and config."""
         # Manual override always takes precedence
-        if hasattr(self.config, "big_diffs") and self.config.big_diffs:
+        if self.config.big_diffs:
             return 24576  # 24K - manual big-diffs flag
 
         # Auto-detect large diffs for CI/CD scenarios (adjusted for real token ratios)

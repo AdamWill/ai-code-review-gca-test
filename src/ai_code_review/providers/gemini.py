@@ -64,7 +64,7 @@ class GeminiProvider(BaseAIProvider):
         We can be much more generous than Ollama's 16K/24K limits.
         """
         # Manual override always takes precedence
-        if hasattr(self.config, "big_diffs") and self.config.big_diffs:
+        if self.config.big_diffs:
             return 512_000  # 512K - manual big-diffs flag (massive context)
 
         # Auto-detect based on diff size (more generous than Ollama)
