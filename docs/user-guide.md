@@ -1,10 +1,10 @@
 # User Guide: AI Code Review
 
-Simple guide to get AI-powered code reviews for your GitLab Merge Requests.
+Simple guide to get AI-powered code reviews for your **GitLab Merge Requests** and **GitHub Pull Requests**.
 
 ## 🚀 Quick Setup Options
 
-### Option 1: Using Pre-built Container (Recommended)
+### Option 1: GitLab CI/CD (Pre-built Container)
 
 Add this job to your `.gitlab-ci.yml`:
 
@@ -19,24 +19,67 @@ ai-code-review:
   variables:
     AI_API_KEY: $GEMINI_API_KEY   # Set as protected/masked variable
   script:
-    - ai-code-review --post
+    - ai-code-review --platform gitlab --post
   allow_failure: true  # Don't block MRs if review fails
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 ```
 
+### Option 2: GitHub Actions (Using GitLab Container)
+
+Add this workflow to `.github/workflows/ai-review.yml`:
+
+```yaml
+name: AI Code Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    # ⚠️ IMPORTANT: Add write permissions for PR comments
+    permissions:
+      contents: read
+      pull-requests: write
+    container:
+      image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+    steps:
+      - name: Run AI Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          ai-code-review --platform github --pr-number ${{ github.event.pull_request.number }} --post
+```
+
 **Setup Requirements:**
 
-1. **Create GitLab Personal Access Token:**
-   - Go to GitLab → **Settings → Access Tokens**
-   - Create token with scope: `api`
-   - Copy the generated token (starts with `glpat_`)
+1. **Create Platform Access Token:**
 
-2. **Configure CI/CD Variables:**
-   - In your project: **Settings → CI/CD → Variables**
-   - Add `GITLAB_TOKEN` as **Protected + Masked** variable (your GitLab token)
-   - Add `GEMINI_API_KEY` as **Protected + Masked** variable
-   - Get your Gemini key from: <https://makersuite.google.com/app/apikey>
+**For GitLab:**
+- Go to GitLab → **Settings → Access Tokens**
+- Create token with scope: `api`, `read_user`, `read_repository`
+- Copy the generated token (starts with `glpat_`)
+
+**For GitHub:**
+- Go to GitHub → **Settings → Developer Settings → Personal Access Tokens → Tokens (classic)**
+- Create token with scopes: `repo`, `read:org`
+- Copy the generated token (starts with `ghp_`)
+
+1. **Configure CI/CD Variables:**
+
+**For GitLab CI/CD:**
+- In your project: **Settings → CI/CD → Variables**
+- Add `GITLAB_TOKEN` as **Protected + Masked** variable (your GitLab token)
+- Add `GEMINI_API_KEY` as **Protected + Masked** variable
+- Get your Gemini key from: <https://makersuite.google.com/app/apikey>
+
+**For GitHub Actions:**
+- In your repository: **Settings → Secrets and Variables → Actions**
+- Add `GITHUB_TOKEN` (automatically available, no need to set manually)
+- Add `GEMINI_API_KEY` as **Repository Secret**
+- Get your Gemini key from: <https://makersuite.google.com/app/apikey>
 
 ### Option 2: Build Your Own Container
 
@@ -90,9 +133,11 @@ ai-code-review:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 ```
 
-### Option 3: Install from GitLab Repository
+### Option 3: Install from Repository
 
-Install directly from the GitLab repository in your CI job:
+Install directly from the repository in your CI job:
+
+#### GitLab Installation
 
 ```yaml
 ai-code-review:
@@ -104,21 +149,56 @@ ai-code-review:
     # Install from GitLab repository (not published on PyPI yet)
     - pip install git+https://gitlab.com/juanjeojeda/ai-code-review.git
   script:
-    - ai-code-review --post
+    - ai-code-review --platform gitlab --post
   allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 ```
 
-**Note:** The package is not yet published on PyPI, so you must install from the GitLab repository.
+#### GitHub Installation (Alternative Method)
+
+```yaml
+name: AI Code Review (Install from Source)
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+      - name: Install from repository
+        run: |
+          pip install git+https://gitlab.com/juanjeojeda/ai-code-review.git
+      - name: Run AI Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          ai-code-review --platform github --pr-number ${{ github.event.pull_request.number }} --post
+```
+
+**Note:** Using the GitLab container image (Option 2) is **recommended** as it's faster and more reliable than installing from source.
+
+**Why use the GitLab container image?**
+- ✅ **Faster execution** - Pre-built image, no installation time
+- ✅ **Same environment** - Identical to GitLab CI/CD usage
+- ✅ **No PyPI dependency** - Package not yet published on PyPI
+- ✅ **Public access** - GitLab registry image is publicly accessible
+
+**Note:** The package is not yet published on PyPI, so you must either use the container image or install from the GitLab repository.
 
 ## ⚙️ Advanced Configuration
 
-### GitLab CI/CD Variables
+### CI/CD Variables Configuration
+
+#### GitLab CI/CD Variables
 
 Set these in **Settings → CI/CD → Variables**:
-
-#### Required Variables
 
 ```bash
 # GitLab Access (set as Protected + Masked in project variables)
@@ -130,7 +210,31 @@ GEMINI_API_KEY=your_google_gemini_api_key_here   # For Gemini
 ANTHROPIC_API_KEY=your_anthropic_api_key_here    # For Anthropic
 ```
 
-**Note:** `GITLAB_TOKEN` is automatically available in CI/CD jobs when set as project variable. Only `AI_API_KEY` needs explicit assignment in job variables.
+**Note:** `GITLAB_TOKEN` is automatically available in CI/CD jobs when set as project variable.
+
+#### GitHub Actions Secrets
+
+Set these in **Settings → Secrets and Variables → Actions**:
+
+```bash
+# GitHub Access (automatically available as GITHUB_TOKEN)
+# No manual setup needed - GitHub provides this automatically
+
+# AI Provider (set as Repository Secret)
+GEMINI_API_KEY=your_google_gemini_api_key_here   # For Gemini
+# OR
+ANTHROPIC_API_KEY=your_anthropic_api_key_here    # For Anthropic
+```
+
+**Important:** `GITHUB_TOKEN` is automatically provided by GitHub Actions, but requires explicit `permissions` in the workflow (see example above). If the automatic token doesn't work in your organization:
+
+1. **Check repository settings**: Go to Settings → Actions → General → Workflow permissions
+2. **Option A**: Enable "Read and write permissions" for `GITHUB_TOKEN`
+3. **Option B**: Create a Personal Access Token with `repo` scope and add it as `PERSONAL_TOKEN` secret:
+   ```yaml
+   env:
+     GITHUB_TOKEN: ${{ secrets.PERSONAL_TOKEN }}  # Use custom PAT instead
+   ```
 
 #### Optional Configuration Variables
 

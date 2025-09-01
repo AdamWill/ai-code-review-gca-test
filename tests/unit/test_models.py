@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 from _pytest.monkeypatch import MonkeyPatch
 
-from ai_code_review.models.config import AIProvider, Config
-from ai_code_review.models.gitlab import (
-    MergeRequestCommit,
-    MergeRequestData,
-    MergeRequestDiff,
-    MergeRequestInfo,
+from ai_code_review.models.config import AIProvider, Config, PlatformProvider
+from ai_code_review.models.platform import (
+    PullRequestCommit,
+    PullRequestData,
+    PullRequestDiff,
+    PullRequestInfo,
 )
 from ai_code_review.models.review import CodeReview, FileReview, ReviewResult
 
@@ -21,16 +21,25 @@ def clear_config_env_vars(monkeypatch: MonkeyPatch) -> None:
     """Clear all configuration-related environment variables and disable .env file for test isolation."""
     # Clear environment variables
     env_vars_to_clear = [
+        "PLATFORM_PROVIDER",
         "GITLAB_URL",
         "GITLAB_TOKEN",
+        "GITHUB_URL",
+        "GITHUB_TOKEN",
         "AI_PROVIDER",
         "AI_MODEL",
         "AI_API_KEY",
         "SSL_VERIFY",
         "SSL_CERT_PATH",
+        "REPOSITORY_PATH",
+        "PULL_REQUEST_NUMBER",
+        "SERVER_URL",
         "CI_PROJECT_PATH",
         "CI_MERGE_REQUEST_IID",
         "CI_SERVER_URL",
+        "GITHUB_REPOSITORY",  # GitHub Actions auto-detection
+        "GITHUB_SERVER_URL",  # GitHub Enterprise
+        "GITLAB_CI",  # GitLab CI detection
         "TEMPERATURE",
         "MAX_TOKENS",
         "HTTP_TIMEOUT",
@@ -79,6 +88,7 @@ class TestConfig:
 
         assert config.gitlab_token == "test_token"
         assert config.gitlab_url == "https://gitlab.com"
+        assert config.platform_provider == PlatformProvider.GITLAB  # Default
         assert config.ai_provider == AIProvider.OLLAMA
         assert config.ai_model == "qwen2.5-coder:7b"  # Specified model for Ollama
         # API key may be set from environment, that's fine for Ollama
@@ -95,9 +105,30 @@ class TestConfig:
 
         assert config.gitlab_token == "custom_token"
         assert config.gitlab_url == "https://custom-gitlab.com"
+        assert config.platform_provider == PlatformProvider.GITLAB  # Default
         assert config.ai_provider == AIProvider.GEMINI
         assert config.ai_model == "gemini-2.5-pro"
         assert config.ai_api_key == "test_api_key"
+
+    def test_config_github_platform(self, monkeypatch: MonkeyPatch) -> None:
+        """Test config with GitHub platform."""
+        # Clear environment variables to avoid interference
+        clear_config_env_vars(monkeypatch)
+
+        config = Config(
+            platform_provider=PlatformProvider.GITHUB,
+            github_token="ghp_test_token",
+            ai_provider=AIProvider.GEMINI,
+            ai_model="gemini-2.5-pro",
+            ai_api_key="test_api_key",
+        )
+
+        assert config.platform_provider == PlatformProvider.GITHUB
+        assert config.github_token == "ghp_test_token"
+        assert config.github_url == "https://api.github.com"  # Default
+        assert config.gitlab_token is None  # Not required for GitHub
+        assert config.ai_provider == AIProvider.GEMINI
+        assert config.ai_model == "gemini-2.5-pro"
 
     def test_config_ai_model_parameters(self, monkeypatch: MonkeyPatch) -> None:
         """Test AI model parameter configuration."""
@@ -327,8 +358,19 @@ DRY_RUN=true
         )
         assert config.is_ci_mode()
 
-    def test_config_effective_values(self) -> None:
+    def test_config_effective_values(self, monkeypatch: MonkeyPatch) -> None:
         """Test effective value getters for CI integration."""
+        # Clear ALL CI environment variables to avoid contamination from real CI
+        ci_vars_to_clear = [
+            "CI_PROJECT_PATH",  # GitLab CI
+            "CI_MERGE_REQUEST_IID",  # GitLab CI
+            "CI_SERVER_URL",  # GitLab CI
+            "GITHUB_REPOSITORY",  # GitHub Actions
+            "GITHUB_SERVER_URL",  # GitHub Actions
+        ]
+        for var in ci_vars_to_clear:
+            monkeypatch.delenv(var, raising=False)
+
         config = Config(
             gitlab_token="test",
             ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
@@ -352,6 +394,8 @@ DRY_RUN=true
             "CI_MERGE_REQUEST_IID",
             "CI_SERVER_URL",
             "GITLAB_CI",
+            "GITHUB_REPOSITORY",  # Clear GitHub vars too
+            "GITHUB_SERVER_URL",
         ]
         for var in ci_vars_to_clear:
             monkeypatch.delenv(var, raising=False)
@@ -605,12 +649,12 @@ DRY_RUN=true
         assert config2.project_context_file == "env/context.md"
 
 
-class TestGitLabModels:
-    """Test GitLab data models."""
+class TestPlatformModels:
+    """Test platform-agnostic data models."""
 
-    def test_merge_request_diff(self) -> None:
-        """Test MergeRequestDiff model."""
-        diff = MergeRequestDiff(
+    def test_pull_request_diff(self) -> None:
+        """Test PullRequestDiff model."""
+        diff = PullRequestDiff(
             file_path="src/test.py", diff="@@ -1,3 +1,3 @@\n-old line\n+new line"
         )
 
@@ -619,11 +663,11 @@ class TestGitLabModels:
         assert diff.renamed_file is False
         assert diff.deleted_file is False
 
-    def test_merge_request_info(self) -> None:
-        """Test MergeRequestInfo model."""
-        info = MergeRequestInfo(
+    def test_pull_request_info(self) -> None:
+        """Test PullRequestInfo model."""
+        info = PullRequestInfo(
             id=123,
-            iid=456,
+            number=456,
             title="Test MR",
             source_branch="feature",
             target_branch="main",
@@ -633,19 +677,19 @@ class TestGitLabModels:
         )
 
         assert info.id == 123
-        assert info.iid == 456
+        assert info.number == 456
         assert info.description is None
 
-    def test_merge_request_data_properties(self) -> None:
-        """Test MergeRequestData calculated properties."""
+    def test_pull_request_data_properties(self) -> None:
+        """Test PullRequestData calculated properties."""
         diffs = [
-            MergeRequestDiff(file_path="file1.py", diff="short diff"),
-            MergeRequestDiff(file_path="file2.py", diff="longer diff content"),
+            PullRequestDiff(file_path="file1.py", diff="short diff"),
+            PullRequestDiff(file_path="file2.py", diff="longer diff content"),
         ]
 
-        info = MergeRequestInfo(
+        info = PullRequestInfo(
             id=123,
-            iid=456,
+            number=456,
             title="Test",
             source_branch="feature",
             target_branch="main",
@@ -655,7 +699,7 @@ class TestGitLabModels:
         )
 
         commits = [
-            MergeRequestCommit(
+            PullRequestCommit(
                 id="abc123",
                 title="Test commit",
                 message="Test commit message",
@@ -666,11 +710,11 @@ class TestGitLabModels:
             )
         ]
 
-        mr_data = MergeRequestData(info=info, diffs=diffs, commits=commits)
+        pr_data = PullRequestData(info=info, diffs=diffs, commits=commits)
 
-        assert mr_data.file_count == 2
-        assert mr_data.total_chars == len("short diff") + len("longer diff content")
-        assert mr_data.commit_count == 1
+        assert pr_data.file_count == 2
+        assert pr_data.total_chars == len("short diff") + len("longer diff content")
+        assert pr_data.commit_count == 1
 
 
 class TestReviewModels:

@@ -6,8 +6,22 @@ import re
 from enum import Enum
 from typing import Any
 
-from pydantic import Field, ValidationInfo, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings
+
+
+# PlatformProvider moved here to avoid circular imports
+class PlatformProvider(str, Enum):
+    """Supported code hosting platforms."""
+
+    GITLAB = "gitlab"
+    GITHUB = "github"
 
 
 def get_default_exclude_patterns() -> list[str]:
@@ -78,10 +92,25 @@ CLOUD_PROVIDERS = {
 class Config(BaseSettings):
     """Main configuration for AI Code Review tool."""
 
+    # Platform configuration
+    platform_provider: PlatformProvider = Field(
+        default=PlatformProvider.GITLAB, description="Code hosting platform to use"
+    )
+
     # GitLab configuration
-    gitlab_token: str = Field(description="GitLab Personal Access Token")
+    gitlab_token: str | None = Field(
+        default=None, description="GitLab Personal Access Token"
+    )
     gitlab_url: str = Field(
         default="https://gitlab.com", description="GitLab instance URL"
+    )
+
+    # GitHub configuration
+    github_token: str | None = Field(
+        default=None, description="GitHub Personal Access Token"
+    )
+    github_url: str = Field(
+        default="https://api.github.com", description="GitHub API URL"
     )
 
     # SSL configuration
@@ -135,16 +164,34 @@ class Config(BaseSettings):
         default=100, description="Maximum number of files to process"
     )
 
-    # GitLab CI/CD automatic variables (optional)
+    # CI/CD automatic variables (platform-agnostic)
+    repository_path: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GITHUB_REPOSITORY", "CI_PROJECT_PATH"),
+        description="Repository path (CI_PROJECT_PATH for GitLab, GITHUB_REPOSITORY for GitHub)",
+    )
+    pull_request_number: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices("CI_MERGE_REQUEST_IID"),
+        description="Pull/merge request number (CI_MERGE_REQUEST_IID for GitLab, derived from GitHub event)",
+    )
+    server_url: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("GITHUB_SERVER_URL", "CI_SERVER_URL"),
+        description="Platform server URL (CI_SERVER_URL for GitLab, GITHUB_SERVER_URL for GitHub)",
+    )
+
+    # Legacy GitLab CI/CD variables (for backward compatibility)
     ci_project_path: str | None = Field(
-        default=None, description="GitLab CI project path (automatically set in CI/CD)"
+        default=None,
+        description="GitLab CI project path (deprecated, use repository_path)",
     )
     ci_merge_request_iid: int | None = Field(
         default=None,
-        description="GitLab CI merge request IID (automatically set in CI/CD)",
+        description="GitLab CI merge request IID (deprecated, use pull_request_number)",
     )
     ci_server_url: str | None = Field(
-        default=None, description="GitLab CI server URL (automatically set in CI/CD)"
+        default=None, description="GitLab CI server URL (deprecated, use server_url)"
     )
 
     # Optional features
@@ -176,7 +223,7 @@ class Config(BaseSettings):
         description="Glob patterns for files to exclude from AI review",
     )
 
-    @field_validator("gitlab_url", "ollama_base_url")
+    @field_validator("gitlab_url", "github_url", "ollama_base_url")
     @classmethod
     def validate_url(cls, v: str) -> str:
         """Validate URL format."""
@@ -236,11 +283,14 @@ class Config(BaseSettings):
 
     @field_validator("gitlab_token")
     @classmethod
-    def validate_gitlab_token(cls, v: str) -> str:
+    def validate_gitlab_token(cls, v: str | None) -> str | None:
         """Validate GitLab token format and provide helpful error message."""
-        if not v or not v.strip():
+        if v is None:
+            return None
+
+        if not v.strip():
             raise ValueError(
-                "GitLab Personal Access Token is required. "
+                "GitLab Personal Access Token cannot be empty. "
                 "Get one at: https://gitlab.com/-/profile/personal_access_tokens "
                 "with scopes: api, read_user, read_repository. "
                 "Set it as GITLAB_TOKEN environment variable or in .env file."
@@ -263,6 +313,44 @@ class Config(BaseSettings):
                     "gldt- (deploy), glrt- (runner), gloas- (OAuth app), "
                     "or glcpat- (project access). "
                     "Get a valid token at: https://gitlab.com/-/profile/personal_access_tokens"
+                )
+
+        return v
+
+    @field_validator("github_token")
+    @classmethod
+    def validate_github_token(cls, v: str | None) -> str | None:
+        """Validate GitHub token format and provide helpful error message."""
+        if v is None:
+            return None
+
+        if not v.strip():
+            raise ValueError(
+                "GitHub Personal Access Token cannot be empty. "
+                "Get one at: https://github.com/settings/tokens "
+                "with scopes: repo, read:org. "
+                "Set it as GITHUB_TOKEN environment variable or in .env file."
+            )
+
+        v = v.strip()
+
+        # Allow test tokens (common patterns used in testing)
+        test_patterns = ("test", "mock", "fake", "dummy", "example")
+        if any(pattern in v.lower() for pattern in test_patterns):
+            return v
+
+        # Validate format for real GitHub tokens
+        # GitHub classic tokens start with 'ghp_', fine-grained tokens start with 'github_pat_'
+        if len(v) > 20 and not any(pattern in v.lower() for pattern in test_patterns):
+            if not v.startswith(
+                ("ghp_", "github_pat_", "gho_", "ghu_", "ghs_", "ghr_")
+            ):
+                raise ValueError(
+                    f"GitHub token format appears invalid: '{v[:12]}...'. "
+                    "GitHub tokens typically start with: ghp_ (personal), "
+                    "github_pat_ (fine-grained), gho_ (OAuth), ghu_ (user), "
+                    "ghs_ (server), or ghr_ (refresh). "
+                    "Get a valid token at: https://github.com/settings/tokens"
                 )
 
         return v
@@ -296,15 +384,34 @@ class Config(BaseSettings):
     def validate_required_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Validate required fields and set default models per provider."""
         if isinstance(data, dict):
-            # Check if gitlab_token is missing or empty
-            token = data.get("gitlab_token")
-            if not token or (isinstance(token, str) and not token.strip()):
-                raise ValueError(
-                    "GitLab Personal Access Token is required. "
-                    "Get one at: https://gitlab.com/-/profile/personal_access_tokens "
-                    "with scopes: api, read_user, read_repository. "
-                    "Set it as GITLAB_TOKEN environment variable or in .env file."
-                )
+            # Get platform provider (default to GitLab for backward compatibility)
+            platform_provider = data.get("platform_provider", PlatformProvider.GITLAB)
+            if isinstance(platform_provider, str):
+                platform_provider = PlatformProvider(platform_provider)
+
+            # Validate platform-specific token requirements
+            if platform_provider == PlatformProvider.GITLAB:
+                gitlab_token = data.get("gitlab_token")
+                if not gitlab_token or (
+                    isinstance(gitlab_token, str) and not gitlab_token.strip()
+                ):
+                    raise ValueError(
+                        "GitLab Personal Access Token is required for GitLab platform. "
+                        "Get one at: https://gitlab.com/-/profile/personal_access_tokens "
+                        "with scopes: api, read_user, read_repository. "
+                        "Set it as GITLAB_TOKEN environment variable or in .env file."
+                    )
+            elif platform_provider == PlatformProvider.GITHUB:
+                github_token = data.get("github_token")
+                if not github_token or (
+                    isinstance(github_token, str) and not github_token.strip()
+                ):
+                    raise ValueError(
+                        "GitHub Personal Access Token is required for GitHub platform. "
+                        "Get one at: https://github.com/settings/tokens "
+                        "with scopes: repo, read:org. "
+                        "Set it as GITHUB_TOKEN environment variable or in .env file."
+                    )
 
             # Set default model based on provider if model not explicitly set
             provider_str = data.get("ai_provider")
@@ -399,18 +506,63 @@ class Config(BaseSettings):
         "env_prefix": "",
     }
 
-    def get_effective_project_id(self) -> str | None:
-        """Get effective project ID from CI environment or explicit config."""
-        return self.ci_project_path
+    def get_effective_repository_path(self) -> str | None:
+        """Get effective repository path from CI environment or explicit config."""
+        # Priority: new fields -> legacy GitLab fields -> None
+        return self.repository_path or self.ci_project_path
 
-    def get_effective_mr_iid(self) -> int | None:
-        """Get effective MR IID from CI environment or explicit config."""
-        return self.ci_merge_request_iid
+    def get_effective_pull_request_number(self) -> int | None:
+        """Get effective pull/merge request number from CI environment or explicit config."""
+        # Priority: new fields -> legacy GitLab fields -> None
+        return self.pull_request_number or self.ci_merge_request_iid
 
-    def get_effective_gitlab_url(self) -> str:
-        """Get effective GitLab URL prioritizing CI environment."""
-        return self.ci_server_url or self.gitlab_url
+    def get_effective_server_url(self) -> str:
+        """Get effective server URL prioritizing CI environment."""
+        # Priority: new fields -> legacy GitLab fields -> platform defaults
+        if self.server_url:
+            return self.server_url
+        if self.ci_server_url:
+            return self.ci_server_url
+
+        # Return platform-specific default
+        if self.platform_provider == PlatformProvider.GITHUB:
+            return self.github_url
+        else:
+            return self.gitlab_url
+
+    def get_platform_token(self) -> str:
+        """Get the appropriate token for the configured platform."""
+        if self.platform_provider == PlatformProvider.GITLAB:
+            if not self.gitlab_token:
+                raise ValueError("GitLab token is required for GitLab platform")
+            return self.gitlab_token
+        elif self.platform_provider == PlatformProvider.GITHUB:
+            if not self.github_token:
+                raise ValueError("GitHub token is required for GitHub platform")
+            return self.github_token
+        else:
+            raise ValueError(f"Unsupported platform: {self.platform_provider}")
 
     def is_ci_mode(self) -> bool:
-        """Check if running in GitLab CI/CD environment."""
-        return bool(self.ci_project_path and self.ci_merge_request_iid)
+        """Check if running in CI/CD environment."""
+        return bool(
+            self.get_effective_repository_path()
+            and self.get_effective_pull_request_number()
+        )
+
+    # Legacy methods for backward compatibility
+    def get_effective_project_id(self) -> str | None:
+        """Get effective project ID from CI environment (legacy GitLab method)."""
+        return self.get_effective_repository_path()
+
+    def get_effective_mr_iid(self) -> int | None:
+        """Get effective MR IID from CI environment (legacy GitLab method)."""
+        return self.get_effective_pull_request_number()
+
+    def get_effective_gitlab_url(self) -> str:
+        """Get effective GitLab URL (legacy method)."""
+        if self.platform_provider != PlatformProvider.GITLAB:
+            raise ValueError(
+                "get_effective_gitlab_url() only valid for GitLab platform"
+            )
+        return self.get_effective_server_url()

@@ -7,9 +7,12 @@ from typing import Any
 
 import structlog
 
-from ai_code_review.core.gitlab_client import GitLabClient
-from ai_code_review.models.config import AIProvider, Config
-from ai_code_review.models.gitlab import MergeRequestData
+from ai_code_review.models.config import AIProvider, Config, PlatformProvider
+from ai_code_review.models.platform import (
+    PlatformClientInterface,
+    PostReviewResponse,
+    PullRequestData,
+)
 from ai_code_review.models.review import CodeReview, ReviewResult, ReviewSummary
 from ai_code_review.providers.base import BaseAIProvider
 from ai_code_review.providers.ollama import OllamaProvider
@@ -20,12 +23,12 @@ logger = structlog.get_logger(__name__)
 
 
 class ReviewEngine:
-    """Engine that coordinates GitLab and AI providers to generate code reviews."""
+    """Engine that coordinates platform clients and AI providers to generate code reviews."""
 
     def __init__(self, config: Config) -> None:
         """Initialize review engine."""
         self.config = config
-        self.gitlab_client = GitLabClient(config)
+        self.platform_client = self._create_platform_client(config)
         self.ai_provider = self._create_ai_provider()
 
         # Setup logging
@@ -35,6 +38,22 @@ class ReviewEngine:
         if config.log_level.upper() == "INFO":
             logging.getLogger("httpx").setLevel(logging.WARNING)
             logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+    def _create_platform_client(self, config: Config) -> PlatformClientInterface:
+        """Create platform client instance based on configuration."""
+        if config.platform_provider == PlatformProvider.GITLAB:
+            from ai_code_review.core.gitlab_client import GitLabClient
+
+            return GitLabClient(config)
+        elif config.platform_provider == PlatformProvider.GITHUB:
+            from ai_code_review.core.github_client import GitHubClient
+
+            return GitHubClient(config)
+        else:
+            raise AIProviderError(
+                f"Platform provider '{config.platform_provider}' not supported",
+                config.platform_provider.value,
+            )
 
     def _create_ai_provider(self) -> BaseAIProvider:
         """Create AI provider instance based on configuration."""
@@ -71,17 +90,18 @@ class ReviewEngine:
         )
 
         try:
-            # Step 1: Fetch MR data from GitLab
-            mr_data = await self.gitlab_client.get_merge_request_data(
-                project_id, mr_iid
+            # Step 1: Fetch PR/MR data from platform
+            pr_data = await self.platform_client.get_pull_request_data(
+                str(project_id), mr_iid
             )
 
             logger.info(
-                "MR data fetched successfully",
-                file_count=mr_data.file_count,
-                commit_count=mr_data.commit_count,
-                total_chars=mr_data.total_chars,
-                mr_title=mr_data.info.title,
+                "PR/MR data fetched successfully",
+                file_count=pr_data.file_count,
+                commit_count=pr_data.commit_count,
+                total_chars=pr_data.total_chars,
+                pr_title=pr_data.info.title,
+                platform=self.platform_client.get_platform_name(),
             )
 
             # Step 2: Generate review using AI (single call)
@@ -89,8 +109,8 @@ class ReviewEngine:
                 logger.info("DRY RUN: Generating mock review")
 
                 # Even in dry-run, analyze the diff for token estimation with adaptive context
-                diff_content = self._format_diffs_for_ai(mr_data)
-                original_total_chars = sum(len(diff.diff) for diff in mr_data.diffs)
+                diff_content = self._format_diffs_for_ai(pr_data)
+                original_total_chars = sum(len(diff.diff) for diff in pr_data.diffs)
 
                 # Use adaptive context size based on diff size
                 context_window_size = getattr(
@@ -126,9 +146,9 @@ class ReviewEngine:
                 )
 
                 review = self._create_mock_review()
-                summary = self._create_mock_summary(mr_data)
+                summary = self._create_mock_summary(pr_data)
             else:
-                review, summary = await self._generate_review_response(mr_data)
+                review, summary = await self._generate_review_response(pr_data)
 
             result = ReviewResult(review=review, summary=summary)
 
@@ -148,7 +168,7 @@ class ReviewEngine:
             ) from e
 
     async def _generate_review_response(
-        self, mr_data: MergeRequestData
+        self, pr_data: PullRequestData
     ) -> tuple[CodeReview, ReviewSummary]:
         """Generate review response using single LLM call."""
         # Check AI provider availability
@@ -163,10 +183,10 @@ class ReviewEngine:
             review_chain = create_review_chain(self.ai_provider.client)
 
             # Prepare input data
-            diff_content = self._format_diffs_for_ai(mr_data)
+            diff_content = self._format_diffs_for_ai(pr_data)
 
             # Log diff processing info with adaptive context window
-            original_total_chars = sum(len(diff.diff) for diff in mr_data.diffs)
+            original_total_chars = sum(len(diff.diff) for diff in pr_data.diffs)
             context_window_size = getattr(
                 self.ai_provider, "get_adaptive_context_size", lambda x: 16384
             )(original_total_chars)
@@ -208,7 +228,7 @@ class ReviewEngine:
                     {
                         "diff": diff_content,
                         "language": self.config.language_hint,
-                        "context": self._get_project_context(mr_data),
+                        "context": self._get_project_context(pr_data),
                     }
                 )
             finally:
@@ -225,10 +245,10 @@ class ReviewEngine:
                 minor_suggestions=[],
             )
 
-            # Always create summary (using basic MR metadata for now)
+            # Always create summary (using basic PR/MR metadata for now)
             # TODO: Extract from structured AI response in future
             summary = ReviewSummary(
-                title=mr_data.info.title,
+                title=pr_data.info.title,
                 key_changes=[],  # TODO: Extract from structured response in future
                 modules_affected=[],  # TODO: Extract from file analysis
                 user_impact="To be determined",
@@ -245,23 +265,30 @@ class ReviewEngine:
                 self.ai_provider.provider_name,
             ) from e
 
-    def _format_diffs_for_ai(self, mr_data: MergeRequestData) -> str:
-        """Format MR diffs for AI processing - no truncation, relying on 16K context window."""
+    def _format_diffs_for_ai(self, pr_data: PullRequestData) -> str:
+        """Format PR/MR diffs for AI processing - no truncation, relying on 16K context window."""
         formatted_diffs = []
 
-        formatted_diffs.append(f"# Merge Request: {mr_data.info.title}")
-        formatted_diffs.append(f"**Author:** {mr_data.info.author}")
-        formatted_diffs.append(
-            f"**Source:** {mr_data.info.source_branch} → {mr_data.info.target_branch}"
+        # Use platform-appropriate terminology
+        request_type = (
+            "Pull Request"
+            if self.platform_client.get_platform_name() == "github"
+            else "Merge Request"
         )
 
-        if mr_data.info.description:
-            formatted_diffs.append(f"**Description:** {mr_data.info.description}")
+        formatted_diffs.append(f"# {request_type}: {pr_data.info.title}")
+        formatted_diffs.append(f"**Author:** {pr_data.info.author}")
+        formatted_diffs.append(
+            f"**Source:** {pr_data.info.source_branch} → {pr_data.info.target_branch}"
+        )
+
+        if pr_data.info.description:
+            formatted_diffs.append(f"**Description:** {pr_data.info.description}")
 
         formatted_diffs.append("")
         formatted_diffs.append("## File Changes")
 
-        for diff in mr_data.diffs:
+        for diff in pr_data.diffs:
             formatted_diffs.append(f"\n### {diff.file_path}")
 
             if diff.new_file:
@@ -277,7 +304,7 @@ class ReviewEngine:
 
         return "\n".join(formatted_diffs)
 
-    def _get_project_context(self, mr_data: MergeRequestData | None = None) -> str:
+    def _get_project_context(self, pr_data: PullRequestData | None = None) -> str:
         """Get project context for AI review."""
         context_parts = []
 
@@ -292,9 +319,9 @@ class ReviewEngine:
                 context_parts.append(project_context_content)
 
         # Add commit context for better understanding
-        if mr_data and mr_data.commits:
+        if pr_data and pr_data.commits:
             context_parts.append("\n**Commit History:**")
-            for commit in mr_data.commits:
+            for commit in pr_data.commits:
                 commit_info = f"- `{commit.short_id}` {commit.title}"
                 if commit.message != commit.title:
                     # Add full message if it has more details beyond the title
@@ -379,10 +406,10 @@ class ReviewEngine:
             minor_suggestions=["[MOCK] Example minor suggestion"],
         )
 
-    def _create_mock_summary(self, mr_data: MergeRequestData) -> ReviewSummary:
+    def _create_mock_summary(self, pr_data: PullRequestData) -> ReviewSummary:
         """Create mock summary for dry-run mode."""
         return ReviewSummary(
-            title=f"[DRY RUN] {mr_data.info.title}",
+            title=f"[DRY RUN] {pr_data.info.title}",
             key_changes=["Mock change 1", "Mock change 2"],
             modules_affected=["mock_module"],
             user_impact="[MOCK] No user-facing changes identified",
@@ -431,29 +458,31 @@ class ReviewEngine:
 
         return health_status
 
-    async def post_review_to_gitlab(
+    async def post_review_to_platform(
         self,
-        project_id: str | int,
-        mr_iid: int,
+        project_id: str,
+        pr_number: int,
         review_result: ReviewResult,
-    ) -> dict[str, str]:
-        """Post generated review as a note/comment to GitLab MR.
+    ) -> PostReviewResponse:
+        """Post generated review as a comment to the platform (GitLab/GitHub).
 
         Args:
-            project_id: GitLab project ID or path (e.g., 'group/project')
-            mr_iid: Merge request IID
+            project_id: Platform-specific project identifier
+            pr_number: Pull/merge request number
             review_result: The review result to post
 
         Returns:
-            Dictionary containing note information (id, url, etc.)
+            PostReviewResponse containing comment information
 
         Raises:
-            GitLabAPIError: If posting fails
+            PlatformAPIError: If posting fails
         """
+        platform_name = self.platform_client.get_platform_name()
         logger.info(
-            "Posting review to GitLab",
+            f"Posting review to {platform_name}",
             project_id=project_id,
-            mr_iid=mr_iid,
+            pr_number=pr_number,
+            platform=platform_name,
             dry_run=self.config.dry_run,
         )
 
@@ -464,29 +493,43 @@ class ReviewEngine:
         footer = self._create_review_footer()
         full_content = f"{review_content}\n\n{footer}"
 
-        # Post to GitLab (handles dry-run internally)
-        note_info = await self.gitlab_client.post_review(
-            project_id, mr_iid, full_content
+        # Post to platform (handles dry-run internally)
+        response = await self.platform_client.post_review(
+            project_id, pr_number, full_content
         )
 
         logger.info(
             "Review posted successfully",
-            note_id=note_info["id"],
-            note_url=note_info["url"],
+            note_id=response.id,
+            note_url=response.url,
+            platform=platform_name,
             dry_run=self.config.dry_run,
         )
 
-        return note_info
+        return response
 
     def _create_review_footer(self) -> str:
         """Create footer with review metadata."""
+        platform_name = self.platform_client.get_platform_name().title()
         footer_parts = [
             "---",
             "🤖 **AI Code Review** | Generated with ai-code-review",
-            f"**Provider:** {self.config.ai_provider.value} | **Model:** {self.config.ai_model}",
+            f"**Platform:** {platform_name} | **AI Provider:** {self.config.ai_provider.value} | **Model:** {self.config.ai_model}",
         ]
 
         if self.config.dry_run:
             footer_parts.append("**Mode:** DRY RUN - No actual changes were analyzed")
 
         return "\n".join(footer_parts)
+
+    # Legacy method for backward compatibility
+    async def post_review_to_gitlab(
+        self,
+        project_id: str | int,
+        mr_iid: int,
+        review_result: ReviewResult,
+    ) -> PostReviewResponse:
+        """Legacy method for backward compatibility. Use post_review_to_platform instead."""
+        return await self.post_review_to_platform(
+            str(project_id), mr_iid, review_result
+        )

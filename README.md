@@ -1,15 +1,17 @@
 # AI Code Review Tool
 
 AI-powered Python CLI tool that provides automated code review assistance for
-GitLab Merge Requests. The tool analyzes MR diffs using AI models and generates
-structured feedback to support human reviewers.
+**GitLab Merge Requests** and **GitHub Pull Requests**. The tool analyzes diffs using AI models and generates
+structured feedback to support human reviewers across both platforms.
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 
 - Python 3.12+
-- **GitLab Personal Access Token** (REQUIRED)
+- **Platform Access Token** (REQUIRED):
+  - **GitLab**: Personal Access Token with `api`, `read_user`, `read_repository` scopes
+  - **GitHub**: For GitHub Actions use automatic `GITHUB_TOKEN` (with proper permissions), for local use create Personal Access Token with `repo` scope
 - **For Production/CI**: AI API key from supported providers:
   - Google Gemini API key (default provider)
   - Anthropic Claude API key (recommended alternative)
@@ -28,40 +30,68 @@ pip install -e .
 
 ### Quick Setup
 
-⚠️ **IMPORTANT: You MUST configure your GitLab token before using the tool:**
+⚠️ **IMPORTANT: You MUST configure platform access tokens before using the tool:**
 
 ```bash
-# Set your GitLab token (REQUIRED)
+# For GitLab (set GitLab token)
 export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+
+# For GitHub (set GitHub token)
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 
 # Or create a .env file (recommended)
 cp env.example .env
-# Then edit .env and set your GITLAB_TOKEN
+# Then edit .env and set your platform tokens
 ```
 
 ### Usage
 
+#### GitLab Merge Requests
+
 ```bash
 # Review a GitLab MR (uses Gemini by default)
-AI_API_KEY=your_gemini_key ai-code-review --project-id "group/project" --mr-iid 123
+AI_API_KEY=your_gemini_key ai-code-review --platform gitlab --project-id "group/project" --mr-iid 123
 
 # Post review as MR comment (typical CI/CD usage)
-AI_API_KEY=your_gemini_key ai-code-review --project-id "group/project" --mr-iid 123 --post
-
-# Use Anthropic Claude for high-quality reviews
-AI_API_KEY=your_claude_key ai-code-review --project-id "group/project" --mr-iid 123 --provider anthropic
-
-# Use Ollama for local development (no API key needed)
-ai-code-review --project-id "group/project" --mr-iid 123 --provider ollama
-
-# For large MRs (forces 24K context window)
-ai-code-review --project-id "group/project" --mr-iid 123 --big-diffs
-
-# Dry run mode (no API calls, useful for testing)
-ai-code-review --project-id "group/project" --mr-iid 123 --dry-run
+AI_API_KEY=your_gemini_key ai-code-review --platform gitlab --project-id "group/project" --mr-iid 123 --post
 ```
 
-### GitLab CI/CD Usage
+#### GitHub Pull Requests
+
+```bash
+# Review a GitHub PR
+AI_API_KEY=your_gemini_key ai-code-review --platform github --project-id "owner/repo" --pr-number 123
+
+# Post review as PR comment
+AI_API_KEY=your_gemini_key ai-code-review --platform github --project-id "owner/repo" --pr-number 123 --post
+
+```
+
+#### Advanced Options
+
+```bash
+# Use Anthropic Claude for high-quality reviews (GitLab)
+AI_API_KEY=your_claude_key ai-code-review --platform gitlab --project-id "group/project" --mr-iid 123 --provider anthropic
+
+# Use Anthropic Claude for GitHub
+AI_API_KEY=your_claude_key ai-code-review --platform github --project-id "owner/repo" --pr-number 123 --provider anthropic
+
+# Use Ollama for local development (no API key needed) - GitLab
+ai-code-review --platform gitlab --project-id "group/project" --mr-iid 123 --provider ollama
+
+# Use Ollama for GitHub
+ai-code-review --platform github --project-id "owner/repo" --pr-number 123 --provider ollama
+
+# For large diffs (forces 24K context window)
+ai-code-review --platform gitlab --project-id "group/project" --mr-iid 123 --big-diffs
+
+# Dry run mode (no API calls, useful for testing)
+ai-code-review --platform github --project-id "owner/repo" --pr-number 123 --dry-run
+```
+
+### CI/CD Integration
+
+#### GitLab CI/CD Usage
 
 ```yaml
 # .gitlab-ci.yml
@@ -72,10 +102,33 @@ ai-review:
     AI_API_KEY: $GEMINI_API_KEY  # Set as masked/protected variable
     # Alternative: AI_API_KEY: $ANTHROPIC_API_KEY  # For Claude
   script:
-    - ai-code-review --post
+    - ai-code-review --platform gitlab --post
   allow_failure: true  # Do not block the pipeline if the API fails
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+```
+
+#### GitHub Actions Usage
+
+```yaml
+# .github/workflows/ai-review.yml
+name: AI Code Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    container:
+      image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+    steps:
+      - name: Run AI Review
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          ai-code-review --platform github --pr-number ${{ github.event.pull_request.number }} --post
 ```
 
 ## 🔧 Configuration
@@ -84,21 +137,39 @@ The tool supports comprehensive configuration through environment variables.
 
 ### ⚠️ REQUIRED Configuration
 
-**You MUST set your GitLab Personal Access Token before using the tool:**
+**You MUST set platform access tokens before using the tool:**
+
+#### GitLab Setup
 
 ```bash
-# Option 1: Environment variable (for quick testing)
+# GitLab Personal Access Token
 export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
-
-# Option 2: .env file (RECOMMENDED for permanent setup)
-cp env.example .env
-# Edit .env and set your token
 ```
 
-**How to get a GitLab token:**
+#### GitHub Setup
 
+```bash
+# GitHub Personal Access Token
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+```
+
+#### Environment File (RECOMMENDED)
+
+```bash
+# Create and configure .env file
+cp env.example .env
+# Edit .env and set your platform tokens
+```
+
+**How to get tokens:**
+
+**GitLab Token:**
 1. Go to GitLab → Settings → Access Tokens
 2. Create a token with scopes: `api`, `read_user`, `read_repository`
+
+**GitHub Token:**
+1. Go to GitHub → Settings → Developer Settings → Personal Access Tokens → Tokens (classic)
+2. Create a token with scopes: `repo`, `read:org`
 3. Copy the token and use it in your configuration
 
 ### 🤖 AI Provider API Keys
@@ -118,11 +189,16 @@ cp env.example .env
 Copy `env.example` to `.env` and customize as needed:
 
 ```bash
-# Required - GitLab Personal Access Token
-export GITLAB_TOKEN=glpat_xxxxxxxxxxxx
+# Required - Platform Access Tokens
+export GITLAB_TOKEN=glpat_xxxxxxxxxxxx         # For GitLab platform
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxx           # For GitHub platform
 
-# Core settings (with defaults)
+# Platform Configuration
+export PLATFORM_PROVIDER=gitlab                # gitlab or github (default: gitlab)
 export GITLAB_URL=https://gitlab.com           # GitLab instance URL
+export GITHUB_URL=https://api.github.com       # GitHub API URL (for Enterprise)
+
+# AI Provider settings (with defaults)
 export AI_PROVIDER=gemini                      # gemini, anthropic, openai, ollama
 export AI_MODEL=gemini-2.5-pro                 # Provider-specific model name
 export AI_API_KEY=your_gemini_api_key_here     # Required for cloud providers

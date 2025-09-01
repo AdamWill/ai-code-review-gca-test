@@ -8,8 +8,10 @@ import pytest
 from click.testing import CliRunner
 
 from ai_code_review.cli import main
+from ai_code_review.models.config import PlatformProvider
 from ai_code_review.models.review import CodeReview, ReviewResult, ReviewSummary
-from ai_code_review.utils.exceptions import AIProviderError, GitLabAPIError
+from ai_code_review.utils.exceptions import AIProviderError
+from ai_code_review.utils.platform_exceptions import GitLabAPIError
 
 
 class TestCLI:
@@ -251,13 +253,15 @@ class TestCLI:
                 mock_engine.generate_review.return_value = Mock(
                     to_markdown=lambda: "# Test Review"
                 )
-                # Mock the new post_review_to_gitlab method
-                mock_engine.post_review_to_gitlab.return_value = {
-                    "id": "mock_note_123",
-                    "url": "https://gitlab.com/mock/project/-/merge_requests/123#note_mock_123",
-                    "created_at": "2024-01-01T12:00:00Z",
-                    "author": "AI Code Review (DRY RUN)",
-                }
+                # Mock the new post_review_to_platform method
+                from ai_code_review.models.platform import PostReviewResponse
+
+                mock_engine.post_review_to_platform.return_value = PostReviewResponse(
+                    id="mock_note_123",
+                    url="https://gitlab.com/mock/project/-/merge_requests/123#note_mock_123",
+                    created_at="2024-01-01T12:00:00Z",
+                    author="AI Code Review (DRY RUN)",
+                )
                 mock_engine_class.return_value = mock_engine
 
                 result = runner.invoke(
@@ -269,7 +273,7 @@ class TestCLI:
                     "DRY RUN: Review posting simulated successfully!" in result.output
                 )
                 assert "Mock Note URL:" in result.output
-                mock_engine.post_review_to_gitlab.assert_called_once()
+                mock_engine.post_review_to_platform.assert_called_once()
 
     def test_cli_version(self, runner: CliRunner) -> None:
         """Test version display."""
@@ -381,6 +385,89 @@ class TestCLI:
 
             called_args, called_kwargs = mock_config_class.call_args
             assert called_kwargs.get("enable_project_context") is False
+
+    def test_cli_github_platform_support(self, runner: CliRunner) -> None:
+        """Test GitHub platform selection."""
+        with patch("ai_code_review.cli.Config") as mock_config:
+            mock_config.return_value = Mock(
+                github_token="ghp_test_token",
+                platform_provider=PlatformProvider.GITHUB,
+                dry_run=True,
+                log_level="INFO",
+            )
+
+            with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
+                mock_engine = AsyncMock()
+                mock_engine.generate_review.return_value = Mock(
+                    to_markdown=lambda: "# GitHub Review"
+                )
+                mock_engine_class.return_value = mock_engine
+
+                result = runner.invoke(
+                    main,
+                    [
+                        "--platform",
+                        "github",
+                        "owner/repo",
+                        "123",
+                        "--dry-run",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                assert "# GitHub Review" in result.output
+
+    def test_cli_all_config_overrides(self, runner: CliRunner) -> None:
+        """Test that all CLI configuration overrides work."""
+        with patch("ai_code_review.cli.Config") as mock_config:
+            mock_config.return_value = Mock(
+                gitlab_token="test-token",
+                dry_run=True,
+                log_level="DEBUG",
+                ai_model="custom-model",
+                temperature=0.8,
+                max_tokens=2000,
+                max_files=50,
+                max_chars=5000,
+            )
+
+            with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
+                mock_engine = AsyncMock()
+                mock_engine.generate_review.return_value = Mock(
+                    to_markdown=lambda: "# Test Review"
+                )
+                mock_engine_class.return_value = mock_engine
+
+                result = runner.invoke(
+                    main,
+                    [
+                        "test/project",
+                        "123",
+                        "--model",
+                        "custom-model",
+                        "--temperature",
+                        "0.8",
+                        "--max-tokens",
+                        "2000",
+                        "--max-files",
+                        "50",
+                        "--max-chars",
+                        "5000",
+                        "--log-level",
+                        "DEBUG",
+                        "--dry-run",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                mock_config.assert_called_once()
+                call_kwargs = mock_config.call_args[1]
+                assert call_kwargs["ai_model"] == "custom-model"
+                assert call_kwargs["temperature"] == 0.8
+                assert call_kwargs["max_tokens"] == 2000
+                assert call_kwargs["max_files"] == 50
+                assert call_kwargs["max_chars"] == 5000
+                assert call_kwargs["log_level"] == "DEBUG"
 
         with patch("ai_code_review.cli.Config") as mock_config_class:
             mock_config = MagicMock()

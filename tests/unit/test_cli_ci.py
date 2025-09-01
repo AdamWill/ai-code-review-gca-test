@@ -8,6 +8,7 @@ import pytest
 from click.testing import CliRunner
 
 from ai_code_review.cli import main
+from ai_code_review.models.config import PlatformProvider
 
 
 class TestCLICI:
@@ -41,13 +42,16 @@ class TestCLICI:
                 ai_model="qwen2.5-coder:7b",
             )
             mock_config.return_value.is_ci_mode.return_value = True
-            mock_config.return_value.get_effective_project_id.return_value = (
+            mock_config.return_value.get_effective_repository_path.return_value = (
                 "group/test-project"
             )
-            mock_config.return_value.get_effective_mr_iid.return_value = 456
-            mock_config.return_value.get_effective_gitlab_url.return_value = (
+            mock_config.return_value.get_effective_pull_request_number.return_value = (
+                456
+            )
+            mock_config.return_value.get_effective_server_url.return_value = (
                 "https://gitlab.company.com"
             )
+            mock_config.return_value.platform_provider = Mock(value="gitlab")
 
             with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
                 mock_engine = AsyncMock()
@@ -97,8 +101,11 @@ class TestCLICI:
                 ai_model="qwen2.5-coder:7b",
             )
             mock_config.return_value.is_ci_mode.return_value = False
-            mock_config.return_value.get_effective_project_id.return_value = None
-            mock_config.return_value.get_effective_mr_iid.return_value = None
+            mock_config.return_value.get_effective_repository_path.return_value = None
+            mock_config.return_value.get_effective_pull_request_number.return_value = (
+                None
+            )
+            mock_config.return_value.platform_provider = Mock(value="gitlab")
             mock_config.return_value.get_effective_gitlab_url.return_value = (
                 "https://gitlab.com"
             )
@@ -132,9 +139,10 @@ class TestCLICI:
             config_instance = Mock()
             config_instance.gitlab_token = "test-token"
             config_instance.log_level = "INFO"
+            config_instance.platform_provider = PlatformProvider.GITLAB
             config_instance.is_ci_mode.return_value = False
-            config_instance.get_effective_project_id.return_value = None
-            config_instance.get_effective_mr_iid.return_value = None
+            config_instance.get_effective_repository_path.return_value = None
+            config_instance.get_effective_pull_request_number.return_value = None
             mock_config.return_value = config_instance
 
             # Should fail with helpful error message
@@ -158,11 +166,14 @@ class TestCLICI:
             config_instance = Mock()
             config_instance.gitlab_token = "test-token"
             config_instance.log_level = "INFO"
+            config_instance.platform_provider = PlatformProvider.GITLAB
             config_instance.ci_project_path = "group/test-project"
             config_instance.ci_merge_request_iid = None
             config_instance.is_ci_mode.return_value = False  # Incomplete CI setup
-            config_instance.get_effective_project_id.return_value = "group/test-project"
-            config_instance.get_effective_mr_iid.return_value = None
+            config_instance.get_effective_repository_path.return_value = (
+                "group/test-project"
+            )
+            config_instance.get_effective_pull_request_number.return_value = None
             mock_config.return_value = config_instance
 
             result = runner.invoke(main, [], env=ci_env)

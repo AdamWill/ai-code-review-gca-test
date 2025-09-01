@@ -10,11 +10,13 @@ import click
 import structlog
 
 from ai_code_review.core.review_engine import ReviewEngine
-from ai_code_review.models.config import AIProvider, Config
+from ai_code_review.models.config import AIProvider, Config, PlatformProvider
 from ai_code_review.utils.exceptions import (
     AICodeReviewError,
     AIProviderError,
-    GitLabAPIError,
+)
+from ai_code_review.utils.platform_exceptions import (
+    PlatformAPIError,
 )
 
 logger = structlog.get_logger(__name__)
@@ -24,22 +26,41 @@ logger = structlog.get_logger(__name__)
 @click.argument("project_id", required=False)
 @click.argument("mr_iid", type=int, required=False)
 @click.option(
+    "--platform",
+    type=click.Choice([p.value for p in PlatformProvider]),
+    default=None,
+    help="Code hosting platform to use (default: gitlab)",
+)
+@click.option(
     "--gitlab-url",
     default=None,
     help="GitLab instance URL (default: from config or https://gitlab.com)",
 )
 @click.option(
-    "--project-id",
-    "gitlab_project_id",
+    "--github-url",
     default=None,
-    help="GitLab project ID (default: from CI_PROJECT_PATH or required)",
+    help="GitHub API URL (default: from config or https://api.github.com)",
 )
+@click.option(
+    "--project-id",
+    "project_id_option",
+    default=None,
+    help="Project identifier (GitLab: group/project, GitHub: owner/repo)",
+)
+@click.option(
+    "--pr-number",
+    "pr_number_option",
+    type=int,
+    default=None,
+    help="Pull/merge request number (GitLab: MR IID, GitHub: PR number)",
+)
+# Legacy options for backward compatibility
 @click.option(
     "--mr-iid",
     "gitlab_mr_iid",
     type=int,
     default=None,
-    help="Merge Request IID (default: from CI_MERGE_REQUEST_IID or required)",
+    help="Merge Request IID (legacy, use --pr-number instead)",
 )
 @click.option(
     "--provider",
@@ -131,8 +152,11 @@ logger = structlog.get_logger(__name__)
 def main(
     project_id: str | None,
     mr_iid: int | None,
+    platform: str | None,
     gitlab_url: str | None,
-    gitlab_project_id: str | None,
+    github_url: str | None,
+    project_id_option: str | None,
+    pr_number_option: int | None,
     gitlab_mr_iid: int | None,
     provider: str | None,
     model: str | None,
@@ -152,40 +176,43 @@ def main(
     health_check: bool,
 ) -> None:
     """
-    AI-powered code review tool for GitLab Merge Requests.
+    AI-powered code review tool for GitLab Merge Requests and GitHub Pull Requests.
 
-    Analyzes MR diffs using AI models and generates structured feedback.
+    Analyzes PR/MR diffs using AI models and generates structured feedback.
 
     \b
     Arguments (optional in CI/CD mode):
-        PROJECT_ID    GitLab project ID (e.g., "group/project" or 123)
-        MR_IID        Merge Request IID (internal ID, not global ID)
+        PROJECT_ID    Project identifier (GitLab: "group/project", GitHub: "owner/repo")
+        MR_IID        Pull/merge request number (GitLab: MR IID, GitHub: PR number)
 
     \b
     Examples:
-        # Manual mode
-
+        # GitLab (default platform)
         ai-code-review group/project 123
+        ai-code-review --project-id group/project --pr-number 123 --post
 
-        ai-code-review --project-id group/project --mr-iid 123 --post
+        # GitHub
+        ai-code-review --platform github owner/repo 456 --post
+        ai-code-review --platform github --project-id owner/repo --pr-number 456
 
         # CI/CD mode (uses CI environment variables)
-
         ai-code-review --post
 
         # Health check
-
         ai-code-review --health-check
 
         # Local testing
-
         ai-code-review group/project 123 --provider ollama --dry-run
     """
     try:
         # Setup configuration by merging environment and CLI overrides
         config_overrides: dict[str, Any] = {}
+        if platform:
+            config_overrides["platform_provider"] = PlatformProvider(platform)
         if gitlab_url:
             config_overrides["gitlab_url"] = gitlab_url
+        if github_url:
+            config_overrides["github_url"] = github_url
         if provider:
             config_overrides["ai_provider"] = AIProvider(provider)
         if model:
@@ -243,27 +270,50 @@ def main(
             asyncio.run(_run_health_check(config))
             return
 
-        # Determine project_id and mr_iid from arguments, options, or CI environment
+        # Determine project_id and pr_number from arguments, options, or CI environment
+        # Precedence order: positional arg > CLI option > legacy option > config/env var
         effective_project_id = (
-            project_id or gitlab_project_id or config.get_effective_project_id()
+            project_id or project_id_option or config.get_effective_repository_path()
         )
-        effective_mr_iid = mr_iid or gitlab_mr_iid or config.get_effective_mr_iid()
+        # Precedence order: positional arg > new CLI option > legacy option > config/env var
+        effective_pr_number = (
+            mr_iid
+            or pr_number_option
+            or gitlab_mr_iid
+            or config.get_effective_pull_request_number()
+        )
 
         # Validate that we have required parameters
-        if not effective_project_id or not effective_mr_iid:
+        if not effective_project_id or not effective_pr_number:
+            platform_name = config.platform_provider.value
             if config.is_ci_mode():
-                click.echo(
-                    "❌ Error: Missing CI environment variables. "
-                    "Expected CI_PROJECT_PATH and CI_MERGE_REQUEST_IID.",
-                    err=True,
-                )
+                if platform_name == "gitlab":
+                    click.echo(
+                        "❌ Error: Missing GitLab CI environment variables. "
+                        "Expected CI_PROJECT_PATH and CI_MERGE_REQUEST_IID.",
+                        err=True,
+                    )
+                else:
+                    click.echo(
+                        "❌ Error: Missing GitHub Actions environment variables. "
+                        "Expected GITHUB_REPOSITORY and PR number from event.",
+                        err=True,
+                    )
             else:
-                click.echo(
-                    "❌ Error: PROJECT_ID and MR_IID are required.\n"
-                    "Provide them as arguments or use --project-id and --mr-iid options.\n"
-                    "In CI/CD, set CI_PROJECT_PATH and CI_MERGE_REQUEST_IID environment variables.",
-                    err=True,
-                )
+                if platform_name == "gitlab":
+                    click.echo(
+                        "❌ Error: PROJECT_ID and MR_IID are required for GitLab.\n"
+                        "Provide them as arguments or use --project-id and --pr-number options.\n"
+                        "In GitLab CI/CD, set CI_PROJECT_PATH and CI_MERGE_REQUEST_IID environment variables.",
+                        err=True,
+                    )
+                else:
+                    click.echo(
+                        "❌ Error: PROJECT_ID and PR_NUMBER are required for GitHub.\n"
+                        "Provide them as arguments or use --project-id and --pr-number options.\n"
+                        "In GitHub Actions, set GITHUB_REPOSITORY and derive PR number from event.",
+                        err=True,
+                    )
             sys.exit(1)
 
         # Run the review process
@@ -271,7 +321,7 @@ def main(
             _run_review(
                 config=config,
                 project_id=effective_project_id,
-                mr_iid=effective_mr_iid,
+                pr_number=effective_pr_number,
                 post_review=post,
             )
         )
@@ -281,7 +331,7 @@ def main(
         click.echo(f"❌ Error: {e}", err=True)
 
         # Set appropriate exit code based on error type
-        if isinstance(e, GitLabAPIError):
+        if isinstance(e, PlatformAPIError):
             sys.exit(2)
         elif isinstance(e, AIProviderError):
             sys.exit(3)
@@ -343,27 +393,31 @@ async def _run_health_check(config: Config) -> None:
 async def _run_review(
     config: Config,
     project_id: str,
-    mr_iid: int,
+    pr_number: int,
     post_review: bool,
 ) -> None:
     """Run the review generation process."""
+    platform_name = config.platform_provider.value
     logger.info(
         "Starting code review",
         project_id=project_id,
-        mr_iid=mr_iid,
+        pr_number=pr_number,
+        platform=platform_name,
         provider=config.ai_provider.value,
         dry_run=config.dry_run,
     )
 
     click.echo("🚀 Starting AI code review...")
     click.echo(f"  Project: {project_id}")
-    click.echo(f"  MR IID: {mr_iid}")
-    click.echo(f"  GitLab URL: {config.get_effective_gitlab_url()}")
+    click.echo(f"  PR/MR Number: {pr_number}")
+    click.echo(f"  Platform: {platform_name.title()}")
+    click.echo(f"  Server URL: {config.get_effective_server_url()}")
     click.echo(f"  AI Provider: {config.ai_provider.value}")
     click.echo(f"  Model: {config.ai_model}")
 
     if config.is_ci_mode():
-        click.echo("  🔄 CI/CD MODE - Using GitLab CI environment variables")
+        ci_system = "GitLab CI" if platform_name == "gitlab" else "GitHub Actions"
+        click.echo(f"  🔄 CI/CD MODE - Using {ci_system} environment variables")
 
     if config.dry_run:
         click.echo("  🧪 DRY RUN MODE - No actual API calls will be made")
@@ -373,30 +427,33 @@ async def _run_review(
         engine = ReviewEngine(config)
 
         # Generate review (always uses unified approach)
-        click.echo("\n📥 Fetching MR data from GitLab...")
-        result = await engine.generate_review(project_id, mr_iid)
+        platform_name = config.platform_provider.value.title()
+        click.echo(f"\n📥 Fetching PR/MR data from {platform_name}...")
+        result = await engine.generate_review(project_id, pr_number)
 
         # Display results
         click.echo("\n📝 Review generated successfully!")
 
         if post_review:
             try:
-                click.echo("\n📤 Posting review to GitLab...")
-                note_info = await engine.post_review_to_gitlab(
-                    project_id, mr_iid, result
+                click.echo(f"\n📤 Posting review to {platform_name}...")
+                note_info = await engine.post_review_to_platform(
+                    project_id, pr_number, result
                 )
 
                 if config.dry_run:
                     click.echo("🧪 DRY RUN: Review posting simulated successfully!")
-                    click.echo(f"   Mock Note URL: {note_info['url']}")
+                    click.echo(f"   Mock Note URL: {note_info.url}")
                 else:
-                    click.echo("✅ Review posted successfully to GitLab!")
-                    click.echo(f"   📝 Note URL: {note_info['url']}")
-                    click.echo(f"   🆔 Note ID: {note_info['id']}")
+                    click.echo(f"✅ Review posted successfully to {platform_name}!")
+                    click.echo(f"   📝 Comment URL: {note_info.url}")
+                    click.echo(f"   🆔 Comment ID: {note_info.id}")
 
             except Exception as e:
-                logger.error("Failed to post review to GitLab", error=str(e))
-                click.echo(f"❌ Failed to post review to GitLab: {e}", err=True)
+                logger.error(f"Failed to post review to {platform_name}", error=str(e))
+                click.echo(
+                    f"❌ Failed to post review to {platform_name}: {e}", err=True
+                )
                 # Continue execution - show review in stdout as fallback
 
         # Output review to stdout

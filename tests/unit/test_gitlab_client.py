@@ -10,8 +10,8 @@ import pytest
 
 from ai_code_review.core.gitlab_client import GitLabClient
 from ai_code_review.models.config import Config
-from ai_code_review.models.gitlab import MergeRequestData, MergeRequestDiff
-from ai_code_review.utils.exceptions import GitLabAPIError
+from ai_code_review.models.platform import PullRequestData, PullRequestDiff
+from ai_code_review.utils.platform_exceptions import GitLabAPIError
 
 
 @pytest.fixture
@@ -119,16 +119,16 @@ class TestGitLabClient:
         """Test dry run mode returns mock data."""
         client = GitLabClient(dry_run_config)
 
-        result = await client.get_merge_request_data("test/project", 123)
+        result = await client.get_pull_request_data("test/project", 123)
 
-        assert isinstance(result, MergeRequestData)
-        assert result.info.iid == 123
+        assert isinstance(result, PullRequestData)
+        assert result.info.number == 123
         assert result.info.title == "Mock MR 123 for project test/project"
         assert len(result.diffs) == 1
         assert result.diffs[0].file_path == "src/mock_file.py"
 
     @pytest.mark.asyncio
-    async def test_get_merge_request_data_success(self, test_config: Config) -> None:
+    async def test_get_pull_request_data_success(self, test_config: Config) -> None:
         """Test successful MR data fetch."""
         client = GitLabClient(test_config)
 
@@ -164,11 +164,11 @@ class TestGitLabClient:
             mock_client.projects.get.return_value = mock_project
             mock_project.mergerequests.get.return_value = mock_mr
 
-            result = await client.get_merge_request_data("test/project", 123)
+            result = await client.get_pull_request_data("test/project", 123)
 
             # Verify results
-            assert isinstance(result, MergeRequestData)
-            assert result.info.iid == 123
+            assert isinstance(result, PullRequestData)
+            assert result.info.number == 123
             assert result.info.title == "Test MR"
             assert result.info.author == "test_user"
             assert len(result.diffs) == 1
@@ -186,7 +186,7 @@ class TestGitLabClient:
             )
 
             with pytest.raises(GitLabAPIError, match="Failed to fetch MR data"):
-                await client.get_merge_request_data("nonexistent/project", 123)
+                await client.get_pull_request_data("nonexistent/project", 123)
 
     def test_content_limits_basic_functionality(self, test_config: Config) -> None:
         """Test basic content limits functionality."""
@@ -194,8 +194,8 @@ class TestGitLabClient:
 
         # Test with diffs under the limit
         diffs = [
-            MergeRequestDiff(file_path="file1.py", diff="small diff"),
-            MergeRequestDiff(file_path="file2.py", diff="another small diff"),
+            PullRequestDiff(file_path="file1.py", diff="small diff"),
+            PullRequestDiff(file_path="file2.py", diff="another small diff"),
         ]
 
         limited = client._apply_content_limits(diffs)
@@ -234,10 +234,10 @@ class TestGitLabClient:
             mock_mr.notes.create.assert_called_once_with({"body": review_content})
 
             # Verify return data
-            assert result["id"] == "456"
-            assert result["created_at"] == "2024-01-01T12:00:00Z"
-            assert result["author"] == "test_bot"
-            assert "note_456" in result["url"]
+            assert result.id == "456"
+            assert result.created_at == "2024-01-01T12:00:00Z"
+            assert result.author == "test_bot"
+            assert "note_456" in result.url
 
     @pytest.mark.asyncio
     async def test_post_review_dry_run(self, dry_run_config: Config) -> None:
@@ -248,11 +248,11 @@ class TestGitLabClient:
         result = await client.post_review("test/project", 123, review_content)
 
         # Verify mock data is returned
-        assert result["id"] == "mock_note_123"
-        assert result["author"] == "AI Code Review (DRY RUN)"
-        assert "mock/project" in result["url"]
-        assert "content_preview" in result
-        assert result["content_preview"].startswith("## AI Code Review")
+        assert result.id == "mock_note_123"
+        assert result.author == "AI Code Review (DRY RUN)"
+        assert "mock/project" in result.url
+        assert result.content_preview is not None
+        assert result.content_preview.startswith("## AI Code Review")
 
     @pytest.mark.asyncio
     async def test_post_review_gitlab_error(self, test_config: Config) -> None:
@@ -439,8 +439,8 @@ class TestGitLabClient:
         # Create diffs that exceed the limit
         large_diff = "@@ -1,10 +1,10 @@\n" + "A" * 100  # 118 chars total
         diffs = [
-            MergeRequestDiff(file_path="file1.py", diff="small"),  # 5 chars
-            MergeRequestDiff(
+            PullRequestDiff(file_path="file1.py", diff="small"),  # 5 chars
+            PullRequestDiff(
                 file_path="file2.py", diff=large_diff
             ),  # Would exceed limit
         ]
@@ -479,10 +479,10 @@ class TestGitLabClient:
         client = GitLabClient(tight_limit_config)
 
         diffs = [
-            MergeRequestDiff(
+            PullRequestDiff(
                 file_path="file1.py", diff="A" * 24
             ),  # 24 chars, leaves 1 char
-            MergeRequestDiff(
+            PullRequestDiff(
                 file_path="file2.py", diff="B" * 50
             ),  # Would need truncation to 1 char
         ]

@@ -7,23 +7,27 @@ Guide for developers who want to understand, modify, or extend the AI Code Revie
 ### High-Level Overview
 
 ```
-User/CI → CLI → Review Engine → AI Provider → GitLab API
-                      ↓
-                 Configuration
-                      ↓
-                 Models & Data
+User/CI → CLI → Review Engine → AI Provider
+               ↓              ↓
+          Platform Client → GitLab/GitHub API
+               ↓
+          Configuration
+               ↓
+          Models & Data
 ```
 
 The project follows a **layered architecture** with clear separation of concerns:
 
 - **CLI Layer**: User interface and command-line argument handling
 - **Business Logic**: Review orchestration and processing
-- **Provider Layer**: AI model abstraction (Gemini, Ollama)
-- **Data Layer**: Configuration, models, and GitLab integration
+- **Platform Layer**: GitLab and GitHub API abstraction
+- **Provider Layer**: AI model abstraction (Gemini, Anthropic, OpenAI, Ollama)
+- **Data Layer**: Configuration, models, and platform-agnostic data structures
 - **Utils**: Shared utilities, prompts, and exceptions
 
 ### Key Design Principles
 
+- **Platform Abstraction**: Support for multiple code hosting platforms (GitLab, GitHub)
 - **Provider Abstraction**: Easy to add new AI providers via LangChain
 - **Configuration-First**: All behavior configurable via environment variables
 - **Type Safety**: Full type annotations and strict mypy checking
@@ -34,21 +38,26 @@ The project follows a **layered architecture** with clear separation of concerns
 
 ```
 src/ai_code_review/
-├── cli.py                 # 🎯 CLI entry point and argument parsing
-├── core/                  # 🧠 Core business logic
-│   ├── gitlab_client.py   # 📡 GitLab API integration
-│   └── review_engine.py   # ⚙️  Review orchestration and processing
-├── models/                # 📋 Data models and validation
-│   ├── config.py          # ⚙️  Configuration management with Pydantic
-│   ├── gitlab.py          # 📊 GitLab data models
-│   └── review.py          # 📝 Review data structures
-├── providers/             # 🤖 AI provider implementations
-│   ├── base.py            # 🔧 Abstract base provider
-│   ├── gemini.py          # 🟢 Google Gemini implementation
-│   └── ollama.py          # 🔵 Ollama local LLM implementation
-└── utils/                 # 🛠️  Shared utilities
-    ├── exceptions.py      # ❌ Custom exceptions
-    └── prompts.py         # 💬 LangChain prompt templates
+├── cli.py                      # 🎯 CLI entry point with multi-platform support
+├── core/                       # 🧠 Core business logic
+│   ├── base_platform_client.py # 🔧 Abstract platform client base
+│   ├── gitlab_client.py        # 📡 GitLab API integration
+│   ├── github_client.py        # 🐙 GitHub API integration
+│   └── review_engine.py        # ⚙️  Platform-agnostic review orchestration
+├── models/                     # 📋 Data models and validation
+│   ├── config.py              # ⚙️  Multi-platform configuration with Pydantic
+│   ├── platform.py            # 🌐 Platform-agnostic data models
+│   ├── gitlab.py              # 📊 GitLab-specific data models (legacy)
+│   └── review.py              # 📝 Review data structures
+├── providers/                  # 🤖 AI provider implementations
+│   ├── base.py                # 🔧 Abstract base provider
+│   ├── anthropic.py           # 🟠 Anthropic Claude implementation
+│   ├── gemini.py              # 🟢 Google Gemini implementation
+│   └── ollama.py              # 🔵 Ollama local LLM implementation
+└── utils/                      # 🛠️  Shared utilities
+    ├── exceptions.py           # ❌ Custom exceptions
+    ├── platform_exceptions.py # 🚫 Platform-specific exceptions
+    └── prompts.py              # 💬 LangChain prompt templates
 ```
 
 ### Key Files Explained
@@ -67,12 +76,24 @@ src/ai_code_review/
 - Manages AI provider selection and invocation
 - **Modify when:** Changing review logic or adding features
 
-#### 📡 `core/gitlab_client.py` - GitLab Integration
+#### 📡 Platform Clients - GitLab/GitHub Integration
 
+**`core/base_platform_client.py`** - Abstract Base Class:
+- Common functionality for all platform clients
+- File filtering and content limit logic
+- Platform-agnostic interface definition
+
+**`core/gitlab_client.py`** - GitLab Implementation:
 - Fetches MR diffs and metadata
 - Posts review comments back to GitLab
 - Handles GitLab API authentication
 - **Modify when:** Adding GitLab features or fixing API issues
+
+**`core/github_client.py`** - GitHub Implementation:
+- Fetches PR diffs and metadata
+- Posts review comments to GitHub
+- Handles GitHub API authentication
+- **Modify when:** Adding GitHub features or fixing API issues
 
 #### 💬 `utils/prompts.py` - AI Prompt Management
 
@@ -98,6 +119,7 @@ click>=8.1.0           # Modern CLI framework
 aiohttp>=3.9.0         # Async HTTP client
 httpx>=0.28.1          # Sync HTTP client (for Ollama)
 python-gitlab>=4.0.0   # GitLab API client
+pygithub>=2.1.0        # GitHub API client
 
 # AI and LangChain
 langchain>=0.2.0                # LLM framework
@@ -133,7 +155,56 @@ uv                  # Package management
 
 ## 🔧 Common Modification Scenarios
 
-### 1. Modifying AI Prompts
+### 1. Adding a New Platform (e.g., Bitbucket)
+
+**Files to modify:**
+
+1. **Add Platform Provider** (`models/config.py`):
+
+```python
+class PlatformProvider(str, Enum):
+    GITLAB = "gitlab"
+    GITHUB = "github"
+    BITBUCKET = "bitbucket"  # Add new platform
+```
+
+1. **Create Platform Client** (`core/bitbucket_client.py`):
+
+```python
+class BitbucketClient(BasePlatformClient):
+    """Bitbucket API client implementation."""
+
+    async def get_pull_request_data(self, project_id: str, pr_number: int) -> PullRequestData:
+        # Implement Bitbucket API calls
+        pass
+
+    async def post_review(self, project_id: str, pr_number: int, review_content: str) -> PostReviewResponse:
+        # Implement posting to Bitbucket
+        pass
+```
+
+1. **Update Factory** (`core/review_engine.py`):
+
+```python
+def _create_platform_client(self) -> PlatformClientInterface:
+    if self.config.platform_provider == PlatformProvider.BITBUCKET:
+        return BitbucketClient(self.config)
+    # ... other platforms
+```
+
+1. **Add Configuration** (`models/config.py`):
+
+```python
+# Bitbucket configuration
+bitbucket_token: str | None = Field(default=None)
+bitbucket_url: str = Field(default="https://api.bitbucket.org/2.0")
+```
+
+1. **Add Tests** (`tests/unit/test_bitbucket_client.py`):
+
+Create comprehensive test suite following existing patterns.
+
+### 2. Modifying AI Prompts
 
 **File:** `src/ai_code_review/utils/prompts.py`
 

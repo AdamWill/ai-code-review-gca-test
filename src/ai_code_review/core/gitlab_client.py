@@ -2,28 +2,28 @@
 
 from __future__ import annotations
 
-import fnmatch
-from pathlib import PurePath
-
 import gitlab
+import structlog
 from gitlab.v4.objects import Project, ProjectMergeRequest
 
+from ai_code_review.core.base_platform_client import BasePlatformClient
 from ai_code_review.models.config import Config
-from ai_code_review.models.gitlab import (
-    MergeRequestCommit,
-    MergeRequestData,
-    MergeRequestDiff,
-    MergeRequestInfo,
+from ai_code_review.models.platform import (
+    PostReviewResponse,
+    PullRequestCommit,
+    PullRequestData,
+    PullRequestDiff,
+    PullRequestInfo,
 )
-from ai_code_review.utils.exceptions import GitLabAPIError
+from ai_code_review.utils.platform_exceptions import GitLabAPIError
 
 
-class GitLabClient:
+class GitLabClient(BasePlatformClient):
     """Client for GitLab API operations."""
 
     def __init__(self, config: Config) -> None:
         """Initialize GitLab client."""
-        self.config = config
+        super().__init__(config)
         self._gitlab_client: gitlab.Gitlab | None = None
 
     @property
@@ -38,19 +38,19 @@ class GitLabClient:
 
             self._gitlab_client = gitlab.Gitlab(
                 url=self.config.gitlab_url,
-                private_token=self.config.gitlab_token,
+                private_token=self.config.get_platform_token(),
                 ssl_verify=ssl_verify,
             )
         return self._gitlab_client
 
-    async def get_merge_request_data(
-        self, project_id: str | int, mr_iid: int
-    ) -> MergeRequestData:
+    async def get_pull_request_data(
+        self, project_id: str, pr_number: int
+    ) -> PullRequestData:
         """Fetch complete merge request data including diffs.
 
         Args:
             project_id: GitLab project ID or path (e.g., 'group/project')
-            mr_iid: Merge request IID
+            pr_number: Merge request IID
 
         Returns:
             Complete merge request data with diffs
@@ -60,19 +60,19 @@ class GitLabClient:
         """
         if self.config.dry_run:
             # Return mock data for dry run
-            return self._create_mock_mr_data(project_id, mr_iid)
+            return self._create_mock_pr_data(project_id, pr_number)
 
         try:
             # Get project
             project: Project = self.gitlab_client.projects.get(project_id)
 
             # Get merge request
-            merge_request: ProjectMergeRequest = project.mergerequests.get(mr_iid)
+            merge_request: ProjectMergeRequest = project.mergerequests.get(pr_number)
 
-            # Create MR info
-            mr_info = MergeRequestInfo(
+            # Create PR info (mapping GitLab MR to platform-agnostic model)
+            pr_info = PullRequestInfo(
                 id=merge_request.id,
-                iid=merge_request.iid,
+                number=merge_request.iid,  # GitLab uses iid as the "number"
                 title=merge_request.title,
                 description=merge_request.description,
                 source_branch=merge_request.source_branch,
@@ -86,7 +86,7 @@ class GitLabClient:
             diffs = await self._fetch_merge_request_diffs(merge_request)
             commits = await self._fetch_merge_request_commits(merge_request)
 
-            return MergeRequestData(info=mr_info, diffs=diffs, commits=commits)
+            return PullRequestData(info=pr_info, diffs=diffs, commits=commits)
 
         except gitlab.GitlabError as e:
             raise GitLabAPIError(
@@ -97,9 +97,9 @@ class GitLabClient:
 
     async def _fetch_merge_request_diffs(
         self, merge_request: ProjectMergeRequest
-    ) -> list[MergeRequestDiff]:
+    ) -> list[PullRequestDiff]:
         """Fetch diffs for a merge request."""
-        diffs: list[MergeRequestDiff] = []
+        diffs: list[PullRequestDiff] = []
         excluded_files: list[str] = []
         excluded_chars = 0
 
@@ -135,7 +135,7 @@ class GitLabClient:
                     continue  # Skip excluded files
 
                 # Create diff object
-                diff = MergeRequestDiff(
+                diff = PullRequestDiff(
                     file_path=file_path,
                     new_file=change["new_file"],
                     renamed_file=change["renamed_file"],
@@ -150,8 +150,6 @@ class GitLabClient:
                     break
 
             # Log filtering and skipping statistics
-            import structlog
-
             logger = structlog.get_logger()
 
             if excluded_files:
@@ -180,16 +178,16 @@ class GitLabClient:
 
     async def _fetch_merge_request_commits(
         self, merge_request: ProjectMergeRequest
-    ) -> list[MergeRequestCommit]:
+    ) -> list[PullRequestCommit]:
         """Fetch commits for a merge request."""
-        commits: list[MergeRequestCommit] = []
+        commits: list[PullRequestCommit] = []
 
         try:
             # Get commits from the MR
             mr_commits = merge_request.commits()
 
             for commit_data in mr_commits:
-                commit = MergeRequestCommit(
+                commit = PullRequestCommit(
                     id=commit_data.id,
                     title=commit_data.title,
                     message=commit_data.message,
@@ -207,77 +205,22 @@ class GitLabClient:
                 f"Failed to fetch commits: {e}", getattr(e, "response_code", None)
             ) from e
 
-    def _apply_content_limits(
-        self, diffs: list[MergeRequestDiff]
-    ) -> list[MergeRequestDiff]:
-        """Apply content size limits to diffs."""
-        total_chars = 0
-        limited_diffs: list[MergeRequestDiff] = []
-
-        for diff in diffs:
-            # Check if adding this diff exceeds the limit
-            diff_chars = len(diff.diff)
-            if total_chars + diff_chars > self.config.max_chars:
-                # Try to truncate this diff
-                remaining_chars = self.config.max_chars - total_chars
-                if remaining_chars > 20:  # Only include if we have meaningful content
-                    truncated_diff = MergeRequestDiff(
-                        file_path=diff.file_path,
-                        new_file=diff.new_file,
-                        renamed_file=diff.renamed_file,
-                        deleted_file=diff.deleted_file,
-                        diff=diff.diff[:remaining_chars] + "\n... (diff truncated)",
-                    )
-                    limited_diffs.append(truncated_diff)
-                break
-
-            limited_diffs.append(diff)
-            total_chars += diff_chars
-
-        return limited_diffs
-
-    def _should_exclude_file(self, file_path: str) -> bool:
-        """Check if file should be excluded from AI review based on patterns.
-
-        Args:
-            file_path: Path of the file to check
-
-        Returns:
-            True if file should be excluded, False otherwise
-        """
-        path = PurePath(file_path)
-        for pattern in self.config.exclude_patterns:
-            try:
-                # Use PurePath.match() for glob patterns with ** support
-                if path.match(pattern):
-                    return True
-                # Also try fnmatch for simple patterns (fallback)
-                if fnmatch.fnmatch(file_path, pattern):
-                    return True
-            except (ValueError, TypeError):
-                # If pattern is invalid, try fnmatch as fallback
-                if fnmatch.fnmatch(file_path, pattern):
-                    return True
-        return False
-
-    def _create_mock_mr_data(
-        self, project_id: str | int, mr_iid: int
-    ) -> MergeRequestData:
+    def _create_mock_pr_data(self, project_id: str, pr_number: int) -> PullRequestData:
         """Create mock merge request data for dry run mode."""
-        mock_info = MergeRequestInfo(
+        mock_info = PullRequestInfo(
             id=12345,
-            iid=mr_iid,
-            title=f"Mock MR {mr_iid} for project {project_id}",
+            number=pr_number,
+            title=f"Mock MR {pr_number} for project {project_id}",
             description="Mock merge request for testing",
             source_branch="feature/mock-branch",
             target_branch="main",
             author="mock_user",
             state="opened",
-            web_url=f"{self.config.gitlab_url}/mock/project/-/merge_requests/{mr_iid}",
+            web_url=f"{self.config.gitlab_url}/mock/project/-/merge_requests/{pr_number}",
         )
 
         mock_diffs = [
-            MergeRequestDiff(
+            PullRequestDiff(
                 file_path="src/mock_file.py",
                 new_file=False,
                 diff="@@ -1,3 +1,3 @@\n def mock_function():\n-    return 'old'\n+    return 'new'",
@@ -285,7 +228,7 @@ class GitLabClient:
         ]
 
         mock_commits = [
-            MergeRequestCommit(
+            PullRequestCommit(
                 id="abc123456789",
                 title="Add world greeting feature",
                 message="Add world greeting feature\n\nImplements the requested greeting functionality to improve user experience.",
@@ -296,47 +239,47 @@ class GitLabClient:
             )
         ]
 
-        return MergeRequestData(info=mock_info, diffs=mock_diffs, commits=mock_commits)
+        return PullRequestData(info=mock_info, diffs=mock_diffs, commits=mock_commits)
 
     async def post_review(
-        self, project_id: str | int, mr_iid: int, review_content: str
-    ) -> dict[str, str]:
+        self, project_id: str, pr_number: int, review_content: str
+    ) -> PostReviewResponse:
         """Post review as a note/comment on the merge request.
 
         Args:
             project_id: GitLab project ID or path (e.g., 'group/project')
-            mr_iid: Merge request IID
+            pr_number: Merge request IID
             review_content: The markdown content of the review to post
 
         Returns:
-            Dictionary containing note information (id, url, etc.)
+            Response containing note information
 
         Raises:
             GitLabAPIError: If posting fails
         """
         if self.config.dry_run:
             # Return mock data for dry run
-            return self._create_mock_note_data(project_id, mr_iid, review_content)
+            return self._create_mock_note_data(project_id, pr_number, review_content)
 
         try:
             # Get project
             project: Project = self.gitlab_client.projects.get(project_id)
 
             # Get merge request
-            merge_request: ProjectMergeRequest = project.mergerequests.get(mr_iid)
+            merge_request: ProjectMergeRequest = project.mergerequests.get(pr_number)
 
             # Create the note on the MR
             note = merge_request.notes.create({"body": review_content})
 
             # Return note information
-            return {
-                "id": str(note.id),
-                "url": f"{self.config.gitlab_url}/-/merge_requests/{mr_iid}#note_{note.id}",
-                "created_at": note.created_at,
-                "author": note.author["name"]
+            return PostReviewResponse(
+                id=str(note.id),
+                url=f"{self.config.gitlab_url}/-/merge_requests/{pr_number}#note_{note.id}",
+                created_at=note.created_at,
+                author=note.author["name"]
                 if "author" in note.__dict__
                 else "AI Code Review",
-            }
+            )
 
         except gitlab.GitlabError as e:
             raise GitLabAPIError(
@@ -347,15 +290,23 @@ class GitLabClient:
             raise GitLabAPIError(f"Unexpected error posting review: {e}") from e
 
     def _create_mock_note_data(
-        self, project_id: str | int, mr_iid: int, review_content: str
-    ) -> dict[str, str]:
+        self, project_id: str, pr_number: int, review_content: str
+    ) -> PostReviewResponse:
         """Create mock note data for dry run mode."""
-        return {
-            "id": "mock_note_123",
-            "url": f"{self.config.gitlab_url}/mock/project/-/merge_requests/{mr_iid}#note_mock_123",
-            "created_at": "2024-01-01T12:00:00Z",
-            "author": "AI Code Review (DRY RUN)",
-            "content_preview": review_content[:100] + "..."
+        return PostReviewResponse(
+            id="mock_note_123",
+            url=f"{self.config.gitlab_url}/mock/project/-/merge_requests/{pr_number}#note_mock_123",
+            created_at="2024-01-01T12:00:00Z",
+            author="AI Code Review (DRY RUN)",
+            content_preview=review_content[:100] + "..."
             if len(review_content) > 100
             else review_content,
-        }
+        )
+
+    def get_platform_name(self) -> str:
+        """Get the name of the platform."""
+        return "gitlab"
+
+    def format_project_url(self, project_id: str) -> str:
+        """Format the project URL for GitLab."""
+        return f"{self.config.gitlab_url}/{project_id}"

@@ -8,11 +8,12 @@ import pytest
 
 from ai_code_review.core.review_engine import ReviewEngine
 from ai_code_review.models.config import AIProvider, Config
-from ai_code_review.models.gitlab import (
-    MergeRequestCommit,
-    MergeRequestData,
-    MergeRequestDiff,
-    MergeRequestInfo,
+from ai_code_review.models.platform import (
+    PostReviewResponse,
+    PullRequestCommit,
+    PullRequestData,
+    PullRequestDiff,
+    PullRequestInfo,
 )
 from ai_code_review.models.review import CodeReview, ReviewResult, ReviewSummary
 from ai_code_review.utils.exceptions import AIProviderError
@@ -42,11 +43,11 @@ class TestReviewEngine:
         )
 
     @pytest.fixture
-    def sample_mr_data(self) -> MergeRequestData:
-        """Sample merge request data."""
-        info = MergeRequestInfo(
+    def sample_pr_data(self) -> PullRequestData:
+        """Sample pull request data."""
+        info = PullRequestInfo(
             id=123,
-            iid=456,
+            number=456,
             title="Test MR",
             description="Test description",
             source_branch="feature",
@@ -57,14 +58,14 @@ class TestReviewEngine:
         )
 
         diffs = [
-            MergeRequestDiff(
+            PullRequestDiff(
                 file_path="src/test.py",
                 diff="@@ -1,3 +1,3 @@\n-old_function()\n+new_function()",
             )
         ]
 
         commits = [
-            MergeRequestCommit(
+            PullRequestCommit(
                 id="abc123",
                 title="Test feature implementation",
                 message="Test feature implementation\n\nAdds new functionality for testing.\n- Implements core logic\n- Updates documentation",
@@ -75,14 +76,14 @@ class TestReviewEngine:
             )
         ]
 
-        return MergeRequestData(info=info, diffs=diffs, commits=commits)
+        return PullRequestData(info=info, diffs=diffs, commits=commits)
 
     def test_engine_initialization(self, test_config: Config) -> None:
         """Test review engine initialization."""
         engine = ReviewEngine(test_config)
 
         assert engine.config == test_config
-        assert isinstance(engine.gitlab_client, object)
+        assert isinstance(engine.platform_client, object)
         assert engine.ai_provider.provider_name == "ollama"
 
     def test_unsupported_ai_provider(self) -> None:
@@ -98,15 +99,15 @@ class TestReviewEngine:
 
     @pytest.mark.asyncio
     async def test_generate_review_dry_run(
-        self, dry_run_config: Config, sample_mr_data: MergeRequestData
+        self, dry_run_config: Config, sample_pr_data: PullRequestData
     ) -> None:
         """Test review generation in dry run mode."""
         engine = ReviewEngine(dry_run_config)
 
         with patch.object(
-            engine.gitlab_client, "get_merge_request_data"
+            engine.platform_client, "get_pull_request_data"
         ) as mock_gitlab:
-            mock_gitlab.return_value = sample_mr_data
+            mock_gitlab.return_value = sample_pr_data
 
             result = await engine.generate_review("test/project", 123)
 
@@ -121,15 +122,15 @@ class TestReviewEngine:
 
     @pytest.mark.asyncio
     async def test_generate_review_always_includes_summary(
-        self, dry_run_config: Config, sample_mr_data: MergeRequestData
+        self, dry_run_config: Config, sample_pr_data: PullRequestData
     ) -> None:
         """Test that review generation always includes summary (unified approach)."""
         engine = ReviewEngine(dry_run_config)
 
         with patch.object(
-            engine.gitlab_client, "get_merge_request_data"
+            engine.platform_client, "get_pull_request_data"
         ) as mock_gitlab:
-            mock_gitlab.return_value = sample_mr_data
+            mock_gitlab.return_value = sample_pr_data
 
             result = await engine.generate_review("test/project", 123)
 
@@ -144,16 +145,16 @@ class TestReviewEngine:
 
     @pytest.mark.asyncio
     async def test_generate_review_with_ai(
-        self, test_config: Config, sample_mr_data: MergeRequestData
+        self, test_config: Config, sample_pr_data: PullRequestData
     ) -> None:
         """Test review generation with AI provider."""
         engine = ReviewEngine(test_config)
 
         # Mock GitLab client
         with patch.object(
-            engine.gitlab_client, "get_merge_request_data"
+            engine.platform_client, "get_pull_request_data"
         ) as mock_gitlab:
-            mock_gitlab.return_value = sample_mr_data
+            mock_gitlab.return_value = sample_pr_data
 
             # Mock AI provider
             with patch.object(engine.ai_provider, "is_available", return_value=True):
@@ -199,15 +200,15 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
     @pytest.mark.asyncio
     async def test_generate_review_ai_unavailable(
-        self, test_config: Config, sample_mr_data: MergeRequestData
+        self, test_config: Config, sample_pr_data: PullRequestData
     ) -> None:
         """Test error handling when AI provider is unavailable."""
         engine = ReviewEngine(test_config)
 
         with patch.object(
-            engine.gitlab_client, "get_merge_request_data"
+            engine.platform_client, "get_pull_request_data"
         ) as mock_gitlab:
-            mock_gitlab.return_value = sample_mr_data
+            mock_gitlab.return_value = sample_pr_data
 
             with patch.object(engine.ai_provider, "is_available", return_value=False):
                 with pytest.raises(AIProviderError, match="is not available"):
@@ -219,7 +220,7 @@ AI generated review feedback for test purposes. The code changes appear well-str
         engine = ReviewEngine(test_config)
 
         with patch.object(
-            engine.gitlab_client, "get_merge_request_data"
+            engine.platform_client, "get_pull_request_data"
         ) as mock_gitlab:
             mock_gitlab.side_effect = Exception("GitLab API error")
 
@@ -271,12 +272,12 @@ AI generated review feedback for test purposes. The code changes appear well-str
             assert "Health check failed" in result["ai_provider"]["error"]
 
     def test_format_diffs_for_ai(
-        self, test_config: Config, sample_mr_data: MergeRequestData
+        self, test_config: Config, sample_pr_data: PullRequestData
     ) -> None:
         """Test diff formatting for AI processing."""
         engine = ReviewEngine(test_config)
 
-        formatted = engine._format_diffs_for_ai(sample_mr_data)
+        formatted = engine._format_diffs_for_ai(sample_pr_data)
 
         assert "# Merge Request: Test MR" in formatted
         assert "**Author:** test_user" in formatted
@@ -315,7 +316,7 @@ AI generated review feedback for test purposes. The code changes appear well-str
             os.chdir(original_dir)
 
     @pytest.mark.asyncio
-    async def test_post_review_to_gitlab_success(self, test_config: Config) -> None:
+    async def test_post_review_to_platform_success(self, test_config: Config) -> None:
         """Test successful review posting to GitLab."""
         engine = ReviewEngine(test_config)
 
@@ -339,17 +340,17 @@ AI generated review feedback for test purposes. The code changes appear well-str
         review_result = ReviewResult(review=review, summary=summary)
 
         # Mock GitLab client response
-        mock_note_info = {
-            "id": "123",
-            "url": "https://gitlab.com/test/-/merge_requests/456#note_123",
-            "created_at": "2024-01-01T12:00:00Z",
-            "author": "AI Code Review",
-        }
+        mock_note_info = PostReviewResponse(
+            id="123",
+            url="https://gitlab.com/test/-/merge_requests/456#note_123",
+            created_at="2024-01-01T12:00:00Z",
+            author="AI Code Review",
+        )
 
-        with patch.object(engine.gitlab_client, "post_review") as mock_post:
+        with patch.object(engine.platform_client, "post_review") as mock_post:
             mock_post.return_value = mock_note_info
 
-            result = await engine.post_review_to_gitlab(
+            result = await engine.post_review_to_platform(
                 "test/project", 456, review_result
             )
 
@@ -365,7 +366,9 @@ AI generated review feedback for test purposes. The code changes appear well-str
             assert result == mock_note_info
 
     @pytest.mark.asyncio
-    async def test_post_review_to_gitlab_dry_run(self, dry_run_config: Config) -> None:
+    async def test_post_review_to_platform_dry_run(
+        self, dry_run_config: Config
+    ) -> None:
         """Test review posting to GitLab in dry run mode."""
         engine = ReviewEngine(dry_run_config)
 
@@ -389,18 +392,18 @@ AI generated review feedback for test purposes. The code changes appear well-str
         review_result = ReviewResult(review=review, summary=summary)
 
         # Mock GitLab client response for dry run
-        mock_note_info = {
-            "id": "mock_note_123",
-            "url": "https://gitlab.com/mock/project/-/merge_requests/456#note_mock_123",
-            "created_at": "2024-01-01T12:00:00Z",
-            "author": "AI Code Review (DRY RUN)",
-            "content_preview": "Test review feedback...",
-        }
+        mock_note_info = PostReviewResponse(
+            id="mock_note_123",
+            url="https://gitlab.com/mock/project/-/merge_requests/456#note_mock_123",
+            created_at="2024-01-01T12:00:00Z",
+            author="AI Code Review (DRY RUN)",
+            content_preview="Test review feedback...",
+        )
 
-        with patch.object(engine.gitlab_client, "post_review") as mock_post:
+        with patch.object(engine.platform_client, "post_review") as mock_post:
             mock_post.return_value = mock_note_info
 
-            result = await engine.post_review_to_gitlab(
+            result = await engine.post_review_to_platform(
                 "test/project", 456, review_result
             )
 
@@ -411,7 +414,7 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
             # Verify return value
             assert result == mock_note_info
-            assert "DRY RUN" in result["author"]
+            assert "DRY RUN" in result.author
 
     def test_create_review_footer_normal_mode(self, test_config: Config) -> None:
         """Test review footer creation in normal mode."""
@@ -420,7 +423,7 @@ AI generated review feedback for test purposes. The code changes appear well-str
         footer = engine._create_review_footer()
 
         assert "🤖 **AI Code Review**" in footer
-        assert f"**Provider:** {test_config.ai_provider.value}" in footer
+        assert f"**AI Provider:** {test_config.ai_provider.value}" in footer
         assert f"**Model:** {test_config.ai_model}" in footer
         assert "DRY RUN" not in footer
 
@@ -431,7 +434,7 @@ AI generated review feedback for test purposes. The code changes appear well-str
         footer = engine._create_review_footer()
 
         assert "🤖 **AI Code Review**" in footer
-        assert f"**Provider:** {dry_run_config.ai_provider.value}" in footer
+        assert f"**AI Provider:** {dry_run_config.ai_provider.value}" in footer
         assert f"**Model:** {dry_run_config.ai_model}" in footer
         assert "**Mode:** DRY RUN" in footer
 
