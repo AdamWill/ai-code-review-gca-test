@@ -120,6 +120,10 @@ on:
 jobs:
   ai-review:
     runs-on: ubuntu-latest
+    # ⚠️ IMPORTANT: Add write permissions for PR comments
+    permissions:
+      contents: read
+      pull-requests: write
     container:
       image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
     steps:
