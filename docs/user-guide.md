@@ -50,10 +50,12 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          ai-code-review --platform github --pr-number ${{ github.event.pull_request.number }} --post
+          ai-code-review --pr-number ${{ github.event.pull_request.number }} --post
 ```
 
 **Setup Requirements:**
+
+**Note:** The platform (GitLab/GitHub) is **automatically detected** from CI/CD environment variables. No need to specify `--platform` in workflows!
 
 1. **Create Platform Access Token:**
 
@@ -179,7 +181,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          ai-code-review --platform github --pr-number ${{ github.event.pull_request.number }} --post
+          ai-code-review --pr-number ${{ github.event.pull_request.number }} --post
 ```
 
 **Note:** Using the GitLab container image (Option 2) is **recommended** as it's faster and more reliable than installing from source.

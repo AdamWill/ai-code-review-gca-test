@@ -40,6 +40,7 @@ def clear_config_env_vars(monkeypatch: MonkeyPatch) -> None:
         "GITHUB_REPOSITORY",  # GitHub Actions auto-detection
         "GITHUB_SERVER_URL",  # GitHub Enterprise
         "GITLAB_CI",  # GitLab CI detection
+        "GITHUB_ACTIONS",  # GitHub Actions detection
         "TEMPERATURE",
         "MAX_TOKENS",
         "HTTP_TIMEOUT",
@@ -385,6 +386,110 @@ DRY_RUN=true
         assert config.get_effective_project_id() == "group/ci-project"
         assert config.get_effective_mr_iid() == 456
         assert config.get_effective_gitlab_url() == "https://ci-gitlab.com"
+
+    def test_config_platform_autodetection_gitlab_ci(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test platform auto-detection for GitLab CI."""
+        clear_config_env_vars(monkeypatch)
+
+        # Set GitLab CI environment
+        monkeypatch.setenv("GITLAB_CI", "true")
+        monkeypatch.setenv("CI_PROJECT_PATH", "group/project")
+
+        config = Config(
+            gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+
+        assert config.platform_provider == PlatformProvider.GITLAB
+
+    def test_config_platform_autodetection_github_actions(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test platform auto-detection for GitHub Actions."""
+        clear_config_env_vars(monkeypatch)
+
+        # Set GitHub Actions environment
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+
+        config = Config(
+            github_token="ghp_test",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+
+        assert config.platform_provider == PlatformProvider.GITHUB
+
+    def test_config_platform_autodetection_github_repository_only(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test platform auto-detection with GITHUB_REPOSITORY only (fallback detection)."""
+        clear_config_env_vars(monkeypatch)
+
+        # Set only GitHub repository (fallback case - data available but no explicit CI flag)
+        monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+
+        config = Config(
+            github_token="ghp_test",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+
+        assert config.platform_provider == PlatformProvider.GITHUB
+
+    def test_config_platform_explicit_override(self, monkeypatch: MonkeyPatch) -> None:
+        """Test that explicit platform specification overrides auto-detection."""
+        clear_config_env_vars(monkeypatch)
+
+        # Set GitHub environment but force GitLab
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+
+        config = Config(
+            platform_provider=PlatformProvider.GITLAB,  # Explicit override
+            gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+
+        assert config.platform_provider == PlatformProvider.GITLAB
+
+    def test_config_platform_autodetection_fallback(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test platform auto-detection falls back to GitLab when no CI detected."""
+        clear_config_env_vars(monkeypatch)
+
+        # No CI environment variables set
+        config = Config(
+            gitlab_token="test",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+
+        assert config.platform_provider == PlatformProvider.GITLAB
+
+    def test_config_platform_autodetection_dirty_environment(
+        self, monkeypatch: MonkeyPatch
+    ) -> None:
+        """Test platform auto-detection handles dirty environments safely."""
+        clear_config_env_vars(monkeypatch)
+
+        # Dirty environment: CI flag but no data (should fallback to default)
+        monkeypatch.setenv("GITHUB_ACTIONS", "true")
+        # NO GITHUB_REPOSITORY - dirty environment
+
+        config = Config(
+            gitlab_token="test",  # Provide GitLab token for fallback
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+        )
+
+        # Should fallback to GitLab since no usable GitHub data
+        assert config.platform_provider == PlatformProvider.GITLAB
 
     def test_config_effective_values_fallback(self, monkeypatch: MonkeyPatch) -> None:
         """Test fallback to regular values when CI vars not available."""

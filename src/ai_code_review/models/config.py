@@ -384,7 +384,11 @@ class Config(BaseSettings):
     def validate_required_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
         """Validate required fields and set default models per provider."""
         if isinstance(data, dict):
-            # Get platform provider (default to GitLab for backward compatibility)
+            # Auto-detect platform if not explicitly specified
+            if not data.get("platform_provider"):
+                data["platform_provider"] = cls._detect_platform_from_environment()
+
+            # Get platform provider (with auto-detection or explicit value)
             platform_provider = data.get("platform_provider", PlatformProvider.GITLAB)
             if isinstance(platform_provider, str):
                 platform_provider = PlatformProvider(platform_provider)
@@ -436,6 +440,38 @@ class Config(BaseSettings):
                     data["ai_model"] = get_default_model_for_provider(provider)
 
         return data
+
+    @staticmethod
+    def _detect_platform_from_environment() -> PlatformProvider:
+        """Auto-detect platform based on CI/CD environment variables.
+
+        Returns:
+            PlatformProvider: Detected platform (GitLab or GitHub)
+
+        Detection logic:
+        - GitLab CI: GITLAB_CI=true AND CI_PROJECT_PATH exists (primary)
+        - GitHub Actions: GITHUB_ACTIONS=true AND GITHUB_REPOSITORY exists (primary)
+        - Fallback: GITHUB_REPOSITORY exists (GitHub) or CI_PROJECT_PATH exists (GitLab)
+        - Default: GitLab (backward compatibility)
+        """
+        import os
+
+        # GitLab CI detection (require both GITLAB_CI and data availability)
+        if os.getenv("GITLAB_CI") == "true" and os.getenv("CI_PROJECT_PATH"):
+            return PlatformProvider.GITLAB
+
+        # GitHub Actions detection (require both GITHUB_ACTIONS and data availability)
+        if os.getenv("GITHUB_ACTIONS") == "true" and os.getenv("GITHUB_REPOSITORY"):
+            return PlatformProvider.GITHUB
+
+        # Fallback: detect by data availability only (safer for edge cases)
+        if os.getenv("GITHUB_REPOSITORY"):
+            return PlatformProvider.GITHUB
+        if os.getenv("CI_PROJECT_PATH"):
+            return PlatformProvider.GITLAB
+
+        # Default to GitLab for backward compatibility
+        return PlatformProvider.GITLAB
 
     @model_validator(mode="after")
     @classmethod

@@ -128,7 +128,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
-          ai-code-review --platform github --pr-number ${{ github.event.pull_request.number }} --post
+          ai-code-review --pr-number ${{ github.event.pull_request.number }} --post
 ```
 
 ## 🔧 Configuration
