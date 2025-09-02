@@ -252,12 +252,12 @@ class TestGitLabClient:
 
             result = await client.get_pull_request_data("group/project", 456)
 
-        # Verify results
-        assert isinstance(result, PullRequestData)
-        assert result.info.number == 456
-        assert result.info.title == "Test MR"
-        assert len(result.diffs) == 1
-        assert result.diffs[0].file_path == "src/test_file.py"
+            # Verify results
+            assert isinstance(result, PullRequestData)
+            assert result.info.number == 456
+            assert result.info.title == "Test MR"
+            assert len(result.diffs) == 1
+            assert result.diffs[0].file_path == "src/test_file.py"
 
     @pytest.mark.asyncio
     async def test_post_review_success(self, test_config: Config) -> None:
@@ -317,7 +317,7 @@ class TestGitLabClient:
 
             result = await client.post_review("group/project", 456, review_content)
 
-        # Verify API calls
+            # Verify API calls
         mock_client.projects.get.assert_called_once_with("group/project")
         mock_project.mergerequests.get.assert_called_once_with(456)
 
@@ -698,3 +698,189 @@ class TestGitLabClient:
             result.url
             == f"https://test-gitlab.com/-/merge_requests/123#note_{mock_new_discussion.id}"
         )
+
+    @pytest.mark.asyncio
+    async def test_ssl_initialization_already_done(self, test_config: Config) -> None:
+        """Test SSL initialization when already completed (line 41)."""
+        test_config.ssl_cert_url = "https://internal-gitlab.com/ca-cert.crt"
+        client = GitLabClient(test_config)
+
+        # Set SSL as already initialized
+        client._ssl_initialized = True
+        original_ssl_cert_path = client._ssl_cert_path
+
+        # Call initialization again - should return early
+        await client._initialize_ssl_certificate()
+
+        # SSL cert path should remain unchanged
+        assert client._ssl_cert_path == original_ssl_cert_path
+        assert client._ssl_initialized is True
+
+    @pytest.mark.asyncio
+    async def test_gitlab_client_with_downloaded_ssl_cert(
+        self, test_config: Config
+    ) -> None:
+        """Test GitLab client property using downloaded SSL certificate (line 75)."""
+        test_config.ssl_cert_url = "https://internal-gitlab.com/ca-cert.crt"
+        client = GitLabClient(test_config)
+
+        # Simulate downloaded certificate
+        client._ssl_cert_path = "/tmp/downloaded_cert.pem"
+        client._ssl_initialized = True
+
+        with patch("gitlab.Gitlab") as mock_gitlab_class:
+            mock_gitlab_instance = mock_gitlab_class.return_value
+
+            # Access gitlab_client property
+            gitlab_client = client.gitlab_client
+
+            # Verify GitLab was created with downloaded certificate path
+            mock_gitlab_class.assert_called_once_with(
+                url=test_config.gitlab_url,
+                private_token=test_config.gitlab_token,
+                ssl_verify="/tmp/downloaded_cert.pem",
+            )
+            assert gitlab_client == mock_gitlab_instance
+
+    @pytest.mark.asyncio
+    async def test_get_pull_request_data_unexpected_error(
+        self, test_config: Config
+    ) -> None:
+        """Test handling unexpected errors in get_pull_request_data (lines 135-136)."""
+        client = GitLabClient(test_config)
+
+        with patch("gitlab.Gitlab") as mock_gitlab_class:
+            mock_gitlab_instance = mock_gitlab_class.return_value
+            mock_project = mock_gitlab_instance.projects.get.return_value
+            # Simulate unexpected error (not GitLabAPIError)
+            mock_project.mergerequests.get.side_effect = RuntimeError(
+                "Unexpected system error"
+            )
+
+            with pytest.raises(GitLabAPIError, match="Unexpected error"):
+                await client.get_pull_request_data("group/project", 123)
+
+    @pytest.mark.asyncio
+    async def test_fetch_merge_request_diffs_with_response_object(
+        self, test_config: Config
+    ) -> None:
+        """Test diff fetching when response is a Response object (line 155)."""
+        client = GitLabClient(test_config)
+
+        # Mock a Response object with json() method and hasattr check
+        mock_response = MagicMock()
+        # Remove 'get' method to force it into the Response object path
+        del mock_response.get
+        mock_response.json.return_value = {
+            "changes": [
+                {
+                    "old_path": "file.py",
+                    "new_path": "file.py",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                }
+            ]
+        }
+
+        # Create mock MR with changes method returning response object
+        mock_mr = MagicMock()
+        # Return the response object directly (not the json data)
+        mock_mr.changes.return_value = mock_response
+
+        result = await client._fetch_merge_request_diffs(mock_mr)
+
+        assert len(result) == 1
+        assert result[0].file_path == "file.py"
+        assert result[0].diff == "@@ -1,1 +1,1 @@\n-old\n+new\n"
+
+    @pytest.mark.asyncio
+    async def test_fetch_diffs_with_excluded_and_empty_files(
+        self, test_config: Config
+    ) -> None:
+        """Test diff fetching with excluded files and empty diffs (lines 168-175)."""
+        client = GitLabClient(test_config)
+
+        changes_data = {
+            "changes": [
+                {
+                    "old_path": "src/main.py",
+                    "new_path": "src/main.py",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1 +1,1 @@\n-old\n+new\n",
+                },
+                {
+                    "old_path": "package-lock.json",  # Should be excluded
+                    "new_path": "package-lock.json",
+                    "new_file": False,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "@@ -1,1000 +1,1000 @@\n...",
+                },
+                {
+                    "old_path": "binary.jpg",  # No diff content
+                    "new_path": "binary.jpg",
+                    "new_file": True,
+                    "renamed_file": False,
+                    "deleted_file": False,
+                    "diff": "",  # Empty diff
+                },
+            ]
+        }
+
+        mock_mr = MagicMock()
+        mock_mr.changes.return_value = changes_data
+
+        result = await client._fetch_merge_request_diffs(mock_mr)
+
+        # Should only include main.py (not excluded, has diff content)
+        assert len(result) == 1
+        assert result[0].file_path == "src/main.py"
+
+    @pytest.mark.asyncio
+    async def test_resolve_threads_individual_failures(
+        self, test_config: Config
+    ) -> None:
+        """Test thread resolution with individual thread failures (lines 395-405)."""
+        client = GitLabClient(test_config)
+
+        # Mock project and MR
+        mock_project = MagicMock()
+        mock_mr = MagicMock()
+
+        # Mock AI threads - one will fail to resolve
+        mock_failing_thread = MagicMock()
+        mock_failing_thread.id = "failing_123"
+        mock_failing_thread.individual_note = False
+        mock_failing_thread.attributes = {
+            "notes": [{"body": "🤖 AI Code Review\n\nPrevious content"}]
+        }
+        mock_failing_thread.resolved = False
+        # Simulate save() failure
+        mock_failing_thread.save.side_effect = Exception("Permission denied")
+
+        mock_working_thread = MagicMock()
+        mock_working_thread.id = "working_456"
+        mock_working_thread.individual_note = False
+        mock_working_thread.attributes = {
+            "notes": [{"body": "🤖 AI Code Review\n\nWorking content"}]
+        }
+        mock_working_thread.resolved = False
+
+        mock_mr.discussions.list.return_value = [
+            mock_failing_thread,
+            mock_working_thread,
+        ]
+
+        # This should handle individual failures gracefully
+        await client._resolve_previous_ai_threads(mock_project, mock_mr)
+
+        # Working thread should be resolved, failing thread should log warning
+        assert mock_working_thread.resolved is True
+        mock_working_thread.save.assert_called_once()
+
+        # Failing thread should remain unresolved due to exception
+        mock_failing_thread.save.assert_called_once()

@@ -8,6 +8,7 @@ import pytest
 
 from ai_code_review.models.config import AIProvider, Config
 from ai_code_review.providers.ollama import OllamaProvider
+from ai_code_review.utils.exceptions import AIProviderError
 
 
 @pytest.fixture
@@ -176,3 +177,85 @@ class TestOllamaProvider:
             assert result["status"] == "unhealthy"
             assert result["server_reachable"] is False
             assert "Connection refused" in result["error"]
+
+    def test_client_creation_failure(self, test_config: Config) -> None:
+        """Test client creation failure handling (lines 48-49)."""
+        provider = OllamaProvider(test_config)
+
+        with patch("ai_code_review.providers.ollama.ChatOllama") as mock_chat:
+            mock_chat.side_effect = Exception("Failed to connect to Ollama")
+
+            with pytest.raises(AIProviderError, match="Failed to create Ollama client"):
+                _ = provider.client
+
+    def test_get_context_size_for_config_big_diffs(self, test_config: Config) -> None:
+        """Test context size configuration with big_diffs enabled (line 63)."""
+        test_config.big_diffs = True
+        provider = OllamaProvider(test_config)
+
+        result = provider._get_context_size_for_config()
+        assert result == 24576  # 24K for big diffs
+
+    def test_get_adaptive_context_size_manual_big_diffs(
+        self, test_config: Config
+    ) -> None:
+        """Test adaptive context size with manual big_diffs flag (lines 70-71)."""
+        test_config.big_diffs = True
+        provider = OllamaProvider(test_config)
+
+        # Should return 24K regardless of diff size
+        result = provider.get_adaptive_context_size(30000)
+        assert result == 24576
+
+    def test_get_adaptive_context_size_auto_large_diff(
+        self, test_config: Config
+    ) -> None:
+        """Test adaptive context size with auto-detected large diff (lines 74-77)."""
+        test_config.big_diffs = False
+        provider = OllamaProvider(test_config)
+
+        # Large diff should trigger 24K context
+        result = provider.get_adaptive_context_size(70000)  # > 60K
+        assert result == 24576
+
+    def test_get_adaptive_context_size_standard(self, test_config: Config) -> None:
+        """Test adaptive context size with standard diff (lines 79-80)."""
+        test_config.big_diffs = False
+        provider = OllamaProvider(test_config)
+
+        # Standard diff should use 16K context
+        result = provider.get_adaptive_context_size(30000)  # < 60K
+        assert result == 16384
+
+    def test_is_available_http_error(self, test_config: Config) -> None:
+        """Test is_available with HTTP error (line 94)."""
+        provider = OllamaProvider(test_config)
+
+        # Mock httpx to raise a non-generic exception
+        with patch("httpx.get") as mock_get:
+            mock_get.side_effect = ConnectionError("Network unreachable")
+
+            result = provider.is_available()
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_health_check_invalid_json_response(
+        self, test_config: Config
+    ) -> None:
+        """Test health check with invalid JSON response (line 112)."""
+        provider = OllamaProvider(test_config)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.side_effect = ValueError("Invalid JSON")
+
+        with patch("httpx.AsyncClient") as mock_client_class:
+            mock_client = AsyncMock()
+            mock_client_class.return_value.__aenter__.return_value = mock_client
+            mock_client.get.return_value = mock_response
+
+            result = await provider.health_check()
+
+            assert result["status"] == "unhealthy"
+            assert result["server_reachable"] is False  # Exception makes it unreachable
+            assert "Invalid JSON" in result["error"]
