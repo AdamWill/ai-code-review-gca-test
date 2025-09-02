@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Any
+
 import gitlab
 import structlog
 from gitlab.v4.objects import Project, ProjectMergeRequest
@@ -244,7 +247,7 @@ class GitLabClient(BasePlatformClient):
     async def post_review(
         self, project_id: str, pr_number: int, review_content: str
     ) -> PostReviewResponse:
-        """Post review as a note/comment on the merge request.
+        """Post review as a discussion thread on the merge request.
 
         Args:
             project_id: GitLab project ID or path (e.g., 'group/project')
@@ -252,14 +255,14 @@ class GitLabClient(BasePlatformClient):
             review_content: The markdown content of the review to post
 
         Returns:
-            Response containing note information
+            Response containing thread information
 
         Raises:
             GitLabAPIError: If posting fails
         """
         if self.config.dry_run:
             # Return mock data for dry run
-            return self._create_mock_note_data(project_id, pr_number, review_content)
+            return self._create_mock_thread_data(project_id, pr_number, review_content)
 
         try:
             # Get project
@@ -268,40 +271,126 @@ class GitLabClient(BasePlatformClient):
             # Get merge request
             merge_request: ProjectMergeRequest = project.mergerequests.get(pr_number)
 
-            # Create the note on the MR
-            note = merge_request.notes.create({"body": review_content})
+            # Resolve previous AI review threads
+            await self._resolve_previous_ai_threads(project, merge_request)
 
-            # Return note information
+            # Create clean thread title (GitLab already shows timestamp)
+            thread_title = "🤖 AI Code Review"
+
+            # Create thread with just title (short message that stays visible when resolved)
+            thread_starter = f"# {thread_title}\n\n✅ **AI analysis complete** - Review details below"
+
+            # Create the discussion thread on the MR
+            discussion = merge_request.discussions.create({"body": thread_starter})
+
+            # Add the full review content as a reply within the thread
+            # This will be collapsed when the thread is resolved
+            discussion.notes.create({"body": review_content})
+
+            # Return thread information
             return PostReviewResponse(
-                id=str(note.id),
-                url=f"{self.config.gitlab_url}/-/merge_requests/{pr_number}#note_{note.id}",
-                created_at=note.created_at,
-                author=note.author["name"]
-                if "author" in note.__dict__
-                else "AI Code Review",
+                id=str(discussion.id),
+                url=f"{self.config.gitlab_url}/-/merge_requests/{pr_number}#note_{discussion.id}",
+                created_at=getattr(
+                    discussion, "created_at", datetime.now().isoformat()
+                ),
+                author="AI Code Review",
             )
 
         except gitlab.GitlabError as e:
             raise GitLabAPIError(
-                f"Failed to post review to GitLab: {e}",
+                f"Failed to post review thread to GitLab: {e}",
                 getattr(e, "response_code", None),
             ) from e
         except Exception as e:
-            raise GitLabAPIError(f"Unexpected error posting review: {e}") from e
+            raise GitLabAPIError(f"Unexpected error posting review thread: {e}") from e
 
-    def _create_mock_note_data(
+    def _create_mock_thread_data(
         self, project_id: str, pr_number: int, review_content: str
     ) -> PostReviewResponse:
-        """Create mock note data for dry run mode."""
+        """Create mock thread data for dry run mode."""
         return PostReviewResponse(
-            id="mock_note_123",
+            id="mock_thread_123",
             url=f"{self.config.gitlab_url}/mock/project/-/merge_requests/{pr_number}#note_mock_123",
-            created_at="2024-01-01T12:00:00Z",
+            created_at=datetime.now().isoformat(),
             author="AI Code Review (DRY RUN)",
-            content_preview=review_content[:100] + "..."
-            if len(review_content) > 100
-            else review_content,
+            content_preview="🤖 AI Code Review - ✅ AI analysis complete (DRY RUN)",
         )
+
+    async def _resolve_previous_ai_threads(
+        self, project: Project, merge_request: ProjectMergeRequest
+    ) -> None:
+        """Find and resolve previous AI review threads to keep the MR clean.
+
+        Args:
+            project: GitLab project object
+            merge_request: GitLab merge request object
+        """
+        logger = structlog.get_logger()
+
+        try:
+            # Get all discussions for this MR
+            discussions = merge_request.discussions.list(all=True)
+
+            # Find discussions created by AI review bot
+            ai_threads = []
+            for discussion in discussions:
+                # Check if this is an AI review thread
+                notes = getattr(discussion, "attributes", {}).get("notes", [])
+                if notes and self._is_ai_review_thread(notes[0]):
+                    ai_threads.append(discussion)
+
+            # Resolve previous AI threads
+            for thread in ai_threads:
+                try:
+                    # Mark thread as resolved
+                    thread.resolved = True
+                    thread.save()
+
+                    logger.info(
+                        "Resolved previous AI review thread",
+                        thread_id=thread.id,
+                        project_id=project.id,
+                        mr_iid=merge_request.iid,
+                    )
+                except Exception as e:
+                    # Don't fail the whole operation if we can't resolve a thread
+                    logger.warning(
+                        "Failed to resolve previous AI thread",
+                        thread_id=thread.id,
+                        error=str(e),
+                    )
+
+        except Exception as e:
+            # Don't fail the whole review posting if thread resolution fails
+            logger.warning(
+                "Failed to resolve previous AI threads",
+                error=str(e),
+                project_id=project.id,
+                mr_iid=merge_request.iid,
+            )
+
+    def _is_ai_review_thread(self, note_data: dict[str, Any]) -> bool:
+        """Check if a thread note was created by AI Code Review.
+
+        Args:
+            note_data: Dictionary containing note information
+
+        Returns:
+            True if this appears to be an AI review thread
+        """
+        body = note_data.get("body", "")
+
+        # Look for AI review markers in the thread body
+        ai_markers = [
+            "🤖 AI Code Review",
+            "# AI Code Review",
+            "## AI Code Review",
+            "AI-powered code analysis",
+            "<!-- AI Code Review Bot -->",
+        ]
+
+        return any(marker in body for marker in ai_markers)
 
     def get_platform_name(self) -> str:
         """Get the name of the platform."""

@@ -207,18 +207,20 @@ class TestGitLabClient:
 
     @pytest.mark.asyncio
     async def test_post_review_success(self, test_config: Config) -> None:
-        """Test successful review posting."""
+        """Test successful review posting as discussion thread."""
         client = GitLabClient(test_config)
         review_content = "## AI Code Review\n\nThis is a test review."
 
         # Mock GitLab objects
-        mock_note = MagicMock()
-        mock_note.id = 456
-        mock_note.created_at = "2024-01-01T12:00:00Z"
-        mock_note.author = {"name": "test_bot"}
+        mock_discussion = MagicMock()
+        mock_discussion.id = "discussion_456"
+        mock_discussion.created_at = "2024-01-01T12:00:00Z"
+        mock_discussion.notes = MagicMock()
 
         mock_mr = MagicMock()
-        mock_mr.notes.create.return_value = mock_note
+        mock_mr.iid = 123
+        mock_mr.discussions.create.return_value = mock_discussion
+        mock_mr.discussions.list.return_value = []  # No previous discussions
 
         mock_project = MagicMock()
         mock_project.mergerequests.get.return_value = mock_mr
@@ -231,13 +233,25 @@ class TestGitLabClient:
             # Verify API calls
             mock_client.projects.get.assert_called_once_with("test/project")
             mock_project.mergerequests.get.assert_called_once_with(123)
-            mock_mr.notes.create.assert_called_once_with({"body": review_content})
+
+            # Verify discussion thread was created with title only
+            mock_mr.discussions.create.assert_called_once()
+            create_call_args = mock_mr.discussions.create.call_args[0][0]
+            assert "🤖 AI Code Review" in create_call_args["body"]
+            assert "✅ **AI analysis complete**" in create_call_args["body"]
+            # Content should NOT be in the main thread
+            assert review_content not in create_call_args["body"]
+
+            # Verify review content was added as a note within the thread
+            mock_discussion.notes.create.assert_called_once_with(
+                {"body": review_content}
+            )
 
             # Verify return data
-            assert result.id == "456"
+            assert result.id == "discussion_456"
             assert result.created_at == "2024-01-01T12:00:00Z"
-            assert result.author == "test_bot"
-            assert "note_456" in result.url
+            assert result.author == "AI Code Review"
+            assert "note_discussion_456" in result.url
 
     @pytest.mark.asyncio
     async def test_post_review_dry_run(self, dry_run_config: Config) -> None:
@@ -248,11 +262,12 @@ class TestGitLabClient:
         result = await client.post_review("test/project", 123, review_content)
 
         # Verify mock data is returned
-        assert result.id == "mock_note_123"
+        assert result.id == "mock_thread_123"
         assert result.author == "AI Code Review (DRY RUN)"
         assert "mock/project" in result.url
         assert result.content_preview is not None
-        assert result.content_preview.startswith("## AI Code Review")
+        assert "🤖 AI Code Review" in result.content_preview
+        assert "✅ AI analysis complete" in result.content_preview
 
     @pytest.mark.asyncio
     async def test_post_review_gitlab_error(self, test_config: Config) -> None:
@@ -265,7 +280,9 @@ class TestGitLabClient:
                 "Unauthorized", response_code=401
             )
 
-            with pytest.raises(GitLabAPIError, match="Failed to post review to GitLab"):
+            with pytest.raises(
+                GitLabAPIError, match="Failed to post review thread to GitLab"
+            ):
                 await client.post_review("test/project", 123, review_content)
 
     @pytest.mark.asyncio
@@ -277,8 +294,74 @@ class TestGitLabClient:
         with patch.object(client, "_gitlab_client", mock_client := MagicMock()):
             mock_client.projects.get.side_effect = Exception("Network error")
 
-            with pytest.raises(GitLabAPIError, match="Unexpected error posting review"):
+            with pytest.raises(
+                GitLabAPIError, match="Unexpected error posting review thread"
+            ):
                 await client.post_review("test/project", 123, review_content)
+
+    @pytest.mark.asyncio
+    async def test_resolve_previous_ai_threads(self, test_config: Config) -> None:
+        """Test resolving previous AI review threads."""
+        client = GitLabClient(test_config)
+
+        # Mock previous AI thread
+        mock_ai_thread = MagicMock()
+        mock_ai_thread.id = "old_thread_123"
+        mock_ai_thread.attributes = {
+            "notes": [{"body": "🤖 AI Code Review\n\nPrevious review"}]
+        }
+
+        # Mock non-AI thread
+        mock_other_thread = MagicMock()
+        mock_other_thread.attributes = {
+            "notes": [{"body": "This is a regular comment from a human"}]
+        }
+
+        mock_mr = MagicMock()
+        mock_mr.discussions.list.return_value = [mock_ai_thread, mock_other_thread]
+
+        mock_project = MagicMock()
+
+        # Test the method
+        await client._resolve_previous_ai_threads(mock_project, mock_mr)
+
+        # Verify AI thread was resolved
+        assert mock_ai_thread.resolved is True
+        mock_ai_thread.save.assert_called_once()
+
+        # Verify other thread was not modified (save not called)
+        mock_other_thread.save.assert_not_called()
+
+    def test_is_ai_review_thread(self, test_config: Config) -> None:
+        """Test AI review thread identification."""
+        client = GitLabClient(test_config)
+
+        # Test AI review markers
+        ai_notes = [
+            {"body": "🤖 AI Code Review\n\nReview content"},
+            {"body": "# AI Code Review\n\nSome findings"},
+            {"body": "## AI Code Review\n\nResults here"},
+            {"body": "AI-powered code analysis found issues"},
+            {"body": "<!-- AI Code Review Bot -->\nReview content"},
+        ]
+
+        for note in ai_notes:
+            assert client._is_ai_review_thread(note), (
+                f"Should detect AI thread: {note['body'][:50]}"
+            )
+
+        # Test non-AI notes
+        human_notes = [
+            {"body": "This looks good to me"},
+            {"body": "Please fix the typo in line 42"},
+            {"body": "LGTM 👍"},
+            {"body": "Could you add a test for this?"},
+        ]
+
+        for note in human_notes:
+            assert not client._is_ai_review_thread(note), (
+                f"Should not detect as AI thread: {note['body']}"
+            )
 
     def test_should_exclude_file_lockfiles(self, test_config: Config) -> None:
         """Test that lockfiles are excluded from AI review."""
@@ -638,3 +721,53 @@ class TestGitLabClient:
         assert diffs[0].file_path == "file1.py"
         assert diffs[1].file_path == "file2.py"
         # file3.py and file4.py should be skipped
+
+    @pytest.mark.asyncio
+    async def test_post_review_with_previous_threads_resolution(
+        self, test_config: Config
+    ) -> None:
+        """Test posting review that resolves previous AI threads."""
+        client = GitLabClient(test_config)
+        review_content = "## AI Code Review\n\nNew review content."
+
+        # Mock previous AI discussion
+        mock_old_discussion = MagicMock()
+        mock_old_discussion.id = "old_discussion_123"
+        mock_old_discussion.attributes = {
+            "notes": [{"body": "🤖 AI Code Review\n\nOld review"}]
+        }
+
+        # Mock new discussion
+        mock_new_discussion = MagicMock()
+        mock_new_discussion.id = "new_discussion_456"
+        mock_new_discussion.created_at = "2024-01-01T12:00:00Z"
+        mock_new_discussion.notes = MagicMock()
+
+        mock_mr = MagicMock()
+        mock_mr.iid = 123
+        mock_mr.discussions.list.return_value = [mock_old_discussion]
+        mock_mr.discussions.create.return_value = mock_new_discussion
+
+        mock_project = MagicMock()
+        mock_project.mergerequests.get.return_value = mock_mr
+
+        with patch.object(client, "_gitlab_client", mock_client := MagicMock()):
+            mock_client.projects.get.return_value = mock_project
+
+            result = await client.post_review("test/project", 123, review_content)
+
+            # Verify previous thread was resolved
+            assert mock_old_discussion.resolved is True
+            mock_old_discussion.save.assert_called_once()
+
+            # Verify new discussion was created with title
+            mock_mr.discussions.create.assert_called_once()
+
+            # Verify review content was added as note within thread
+            mock_new_discussion.notes.create.assert_called_once_with(
+                {"body": review_content}
+            )
+
+            # Verify return data
+            assert result.id == "new_discussion_456"
+            assert result.author == "AI Code Review"
