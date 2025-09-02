@@ -381,8 +381,15 @@ class ReviewEngine:
 
     def _create_mock_review(self) -> CodeReview:
         """Create mock review for dry-run mode."""
+        # Common summary section (avoid duplication)
+        summary_content = """### ✅ Summary
+- **Overall Assessment:** [MOCK] Good code quality for testing
+- **Priority Issues:** [MOCK] No critical issues identified
+- **Minor Suggestions:** [MOCK] Consider adding more comprehensive tests"""
+
+        # Build content based on configuration
         if self.config.include_mr_summary:
-            mock_content = """## AI Code Review
+            main_content = """## AI Code Review
 
 ### 📋 MR Summary
 [DRY RUN] Mock merge request for testing purposes.
@@ -393,23 +400,16 @@ class ReviewEngine:
 
 ### Detailed Code Review
 
-[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution.
-
-### ✅ Summary
-- **Overall Assessment:** [MOCK] Good code quality for testing
-- **Priority Issues:** [MOCK] No critical issues identified
-- **Minor Suggestions:** [MOCK] Consider adding more comprehensive tests"""
+[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution."""
         else:
-            mock_content = """## AI Code Review
+            main_content = """## AI Code Review
 
 ### Detailed Code Review
 
-[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution.
+[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution."""
 
-### ✅ Summary
-- **Overall Assessment:** [MOCK] Good code quality for testing
-- **Priority Issues:** [MOCK] No critical issues identified
-- **Minor Suggestions:** [MOCK] Consider adding more comprehensive tests"""
+        # Combine main content with common summary
+        mock_content = f"{main_content}\n\n{summary_content}"
 
         return CodeReview(
             general_feedback=mock_content,
