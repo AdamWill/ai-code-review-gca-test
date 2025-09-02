@@ -116,7 +116,7 @@ build-container:
 
 ai-review:
   stage: review
-  image: "${CI_REGISTRY_IMAGE}:latest"
+  image: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_REF_SLUG}"
   allow_failure: true
   script:
     - ai-code-review --post
