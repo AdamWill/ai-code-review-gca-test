@@ -257,6 +257,9 @@ LANGUAGE_HINT=python           # Language hint for better analysis
 ENABLE_PROJECT_CONTEXT=true    # Load project context from .ai_review/project.md (default: true)
 PROJECT_CONTEXT_FILE=.ai_review/project.md  # Path to project context file (default: .ai_review/project.md)
 
+# Review Format
+INCLUDE_MR_SUMMARY=true        # Include MR Summary section in reviews (default: true)
+
 # File Filtering
 EXCLUDE_PATTERNS="*.lock,*.min.js,node_modules/**,dist/**"
 
@@ -418,6 +421,48 @@ Enhance AI review quality by providing project-specific context. The AI can give
 - **Include examples**: Show code examples for important conventions
 - **Test the impact**: Compare reviews with and without context to measure improvement
 
+### 📝 Review Format Configuration
+
+Control what sections are included in AI reviews to match your team's preferences.
+
+#### MR Summary Section
+
+By default, AI reviews include both an **MR Summary** (executive overview) and **Detailed Code Review** (technical analysis):
+
+```markdown
+## AI Code Review
+
+### 📋 MR Summary
+Brief overview of changes, impact, and risk level
+
+### Detailed Code Review
+Technical analysis of code changes
+
+### ✅ Summary
+Final assessment and recommendations
+```
+
+#### Code-Focused Reviews
+
+For teams that prefer shorter, more focused reviews, you can skip the MR Summary section:
+
+```bash
+# Environment variable
+INCLUDE_MR_SUMMARY=false
+
+# CLI flag
+ai-code-review group/project 123 --no-mr-summary --post
+```
+
+**Result:** Reviews contain only the detailed technical analysis without the executive summary.
+
+#### When to Use Code-Focused Reviews
+
+- ✅ **Large development teams** where reviews are already long
+- ✅ **Experienced developers** who prefer direct technical feedback
+- ✅ **CI/CD environments** with strict message length limits
+- ✅ **Personal projects** where executive summaries aren't needed
+
 #### Example CI/CD with Project Context
 
 ```yaml
@@ -475,6 +520,9 @@ ai-code-review group/project 123 \
   --language-hint python \
   --exclude-files "**/*test*" \
   --big-diffs
+
+# Code-focused review (without MR Summary section)
+ai-code-review group/project 123 --no-mr-summary
 ```
 
 #### 2. Review and Post to GitLab
@@ -484,6 +532,9 @@ Generate review and post it as MR comment:
 ```bash
 # Post review to GitLab MR
 AI_API_KEY=your_key ai-code-review group/project 123 --post
+
+# Post code-focused review (without MR Summary section)
+AI_API_KEY=your_key ai-code-review group/project 123 --post --no-mr-summary
 
 # With health check first (recommended)
 AI_API_KEY=your_key ai-code-review --health-check && \

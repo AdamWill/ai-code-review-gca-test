@@ -187,6 +187,11 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
                     result = await engine.generate_review("test/project", 123)
 
+                    # Verify create_review_chain was called with config
+                    mock_review_chain.assert_called_once_with(
+                        engine.ai_provider.client, engine.config
+                    )
+
                     assert isinstance(result, ReviewResult)
                     # The entire LLM response should be used directly
                     assert (
@@ -197,6 +202,81 @@ AI generated review feedback for test purposes. The code changes appear well-str
                     assert "### Detailed Code Review" in result.review.general_feedback
                     assert result.summary is not None
                     assert result.summary.title == "Test MR"
+
+    @pytest.mark.asyncio
+    async def test_generate_review_without_mr_summary(
+        self, sample_pr_data: PullRequestData
+    ) -> None:
+        """Test review generation without MR Summary section (with AI call)."""
+        # Create config with MR Summary disabled, but NOT dry_run (use ollama to avoid API key requirements)
+        config = Config(ai_provider="ollama", include_mr_summary=False)
+        engine = ReviewEngine(config)
+
+        with patch.object(
+            engine.platform_client, "get_pull_request_data"
+        ) as mock_gitlab:
+            mock_gitlab.return_value = sample_pr_data
+
+            # Mock AI provider
+            with patch.object(engine.ai_provider, "is_available", return_value=True):
+                # Mock review chain
+                with patch(
+                    "ai_code_review.core.review_engine.create_review_chain"
+                ) as mock_review_chain:
+                    mock_chain = AsyncMock()
+                    # Mock response without MR Summary section
+                    mock_response = """## AI Code Review
+
+### Detailed Code Review
+
+AI generated review feedback for test purposes. The code changes appear well-structured and follow good practices.
+
+### ✅ Summary
+- **Overall Assessment:** Good code quality with minor suggestions
+- **Priority Issues:** None identified
+- **Minor Suggestions:** Consider adding more comprehensive tests"""
+
+                    mock_chain.ainvoke.return_value = mock_response
+                    mock_review_chain.return_value = mock_chain
+
+                    result = await engine.generate_review("test/project", 123)
+
+                    # Verify create_review_chain was called with config that has include_mr_summary=False
+                    mock_review_chain.assert_called_once_with(
+                        engine.ai_provider.client, engine.config
+                    )
+
+                    assert isinstance(result, ReviewResult)
+                    assert isinstance(result.review, CodeReview)
+                    assert isinstance(result.summary, ReviewSummary)
+                    # Verify MR Summary section is NOT present
+                    assert "### 📋 MR Summary" not in result.review.general_feedback
+                    assert "### Detailed Code Review" in result.review.general_feedback
+                    assert "## AI Code Review" in result.review.general_feedback
+
+    @pytest.mark.asyncio
+    async def test_generate_review_dry_run_without_mr_summary(
+        self, sample_pr_data: PullRequestData
+    ) -> None:
+        """Test dry run mode without MR Summary section."""
+        # Create config with MR Summary disabled AND dry_run=True (use ollama to avoid API key requirements)
+        config = Config(ai_provider="ollama", include_mr_summary=False, dry_run=True)
+        engine = ReviewEngine(config)
+
+        with patch.object(
+            engine.platform_client, "get_pull_request_data"
+        ) as mock_gitlab:
+            mock_gitlab.return_value = sample_pr_data
+
+            result = await engine.generate_review("test/project", 123)
+
+            assert isinstance(result, ReviewResult)
+            assert isinstance(result.review, CodeReview)
+            assert isinstance(result.summary, ReviewSummary)
+            # Verify mock review respects the configuration
+            assert "### 📋 MR Summary" not in result.review.general_feedback
+            assert "### Detailed Code Review" in result.review.general_feedback
+            assert "[DRY RUN]" in result.review.general_feedback
 
     @pytest.mark.asyncio
     async def test_generate_review_ai_unavailable(

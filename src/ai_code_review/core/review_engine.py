@@ -179,8 +179,8 @@ class ReviewEngine:
             )
 
         try:
-            # Create review chain (uses unified prompt)
-            review_chain = create_review_chain(self.ai_provider.client)
+            # Create review chain (uses unified prompt with config-based format)
+            review_chain = create_review_chain(self.ai_provider.client, self.config)
 
             # Prepare input data
             diff_content = self._format_diffs_for_ai(pr_data)
@@ -229,6 +229,7 @@ class ReviewEngine:
                         "diff": diff_content,
                         "language": self.config.language_hint,
                         "context": self._get_project_context(pr_data),
+                        "include_mr_summary": self.config.include_mr_summary,
                     }
                 )
             finally:
@@ -380,7 +381,8 @@ class ReviewEngine:
 
     def _create_mock_review(self) -> CodeReview:
         """Create mock review for dry-run mode."""
-        mock_content = """## AI Code Review
+        if self.config.include_mr_summary:
+            mock_content = """## AI Code Review
 
 ### 📋 MR Summary
 [DRY RUN] Mock merge request for testing purposes.
@@ -388,6 +390,17 @@ class ReviewEngine:
 - **Key Changes:** Mock code modifications for testing
 - **Impact:** Testing environment only, no production impact
 - **Risk Level:** Low - Mock changes for development testing
+
+### Detailed Code Review
+
+[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution.
+
+### ✅ Summary
+- **Overall Assessment:** [MOCK] Good code quality for testing
+- **Priority Issues:** [MOCK] No critical issues identified
+- **Minor Suggestions:** [MOCK] Consider adding more comprehensive tests"""
+        else:
+            mock_content = """## AI Code Review
 
 ### Detailed Code Review
 

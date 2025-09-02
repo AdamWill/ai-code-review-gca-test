@@ -7,18 +7,40 @@ from typing import Any
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
+from ai_code_review.models.config import Config
 
-def create_system_prompt() -> str:
-    """Create system prompt for code review."""
-    return """You are an expert senior software engineer and a meticulous code reviewer.
+
+def create_system_prompt(include_mr_summary: bool = True) -> str:
+    """Create system prompt for code review.
+
+    Args:
+        include_mr_summary: Whether to include MR Summary section in the output
+
+    Returns:
+        System prompt with appropriate format requirements
+    """
+    if include_mr_summary:
+        sections = [
+            "   - ### 📋 MR Summary",
+            "   - ### Detailed Code Review",
+            "   - #### 📂 File Reviews (if needed)",
+            "   - ### ✅ Summary",
+        ]
+    else:
+        sections = [
+            "   - ### Detailed Code Review",
+            "   - #### 📂 File Reviews (if needed)",
+            "   - ### ✅ Summary",
+        ]
+
+    section_list = "\n".join(sections)
+
+    return f"""You are an expert senior software engineer and a meticulous code reviewer.
 
 CRITICAL FORMAT REQUIREMENTS - FAILURE TO FOLLOW WILL RESULT IN REJECTED OUTPUT:
 1. You MUST start with exactly "## AI Code Review"
 2. You MUST use exactly these section headers in order:
-   - ### 📋 MR Summary
-   - ### Detailed Code Review
-   - #### 📂 File Reviews (if needed)
-   - ### ✅ Summary
+{section_list}
 3. Do NOT create your own format or headings
 4. Do NOT write free-form analysis - follow the structure
 5. Each section should be concise and focused
@@ -28,21 +50,17 @@ Focus ONLY on the changes in the diff, not the entire codebase.
 Your tone should be helpful, collaborative, and professional."""
 
 
-def create_review_prompt() -> ChatPromptTemplate:
-    """Create unified prompt template that generates both review and summary in one call."""
-    template = """IGNORE any tendency to write free-form analysis. You MUST follow this EXACT template.
+def create_review_prompt(include_mr_summary: bool = True) -> ChatPromptTemplate:
+    """Create unified prompt template that generates both review and summary in one call.
 
-{language_hint_section}
+    Args:
+        include_mr_summary: Whether to include MR Summary section in the output
 
-{project_context_section}
-
-❌ WRONG - Do NOT do this:
-"This patchset introduces several changes..." (free-form analysis)
-"The changes introduce support for..." (ignoring format)
-
-✅ CORRECT - You MUST do this:
-
-## AI Code Review
+    Returns:
+        ChatPromptTemplate configured for the requested format
+    """
+    if include_mr_summary:
+        format_example = """## AI Code Review
 
 ### 📋 MR Summary
 [Write ONE sentence summarizing the change]
@@ -71,13 +89,51 @@ def create_review_prompt() -> ChatPromptTemplate:
 
 - **Overall Assessment:** [Quality rating + key recommendations]
 - **Priority Issues:** [Most critical items]
-- **Minor Suggestions:** [Optional improvements]
+- **Minor Suggestions:** [Optional improvements]"""
+    else:
+        format_example = """## AI Code Review
+
+### Detailed Code Review
+
+[Technical review focusing on logic, security, performance, architecture]
+
+#### 📂 File Reviews
+[Only include if you have specific file feedback]
+
+<details>
+<summary><strong>📄 `filename`</strong> - Brief issue summary</summary>
+
+- **[Review]** Actionable review with reasoning
+- **[Question]** Clarifying questions (if needed)
+- **[Suggestion]** Improvement suggestions (if needed)
+
+</details>
+
+### ✅ Summary
+
+- **Overall Assessment:** [Quality rating + key recommendations]
+- **Priority Issues:** [Most critical items]
+- **Minor Suggestions:** [Optional improvements]"""
+
+    template = f"""IGNORE any tendency to write free-form analysis. You MUST follow this EXACT template.
+
+{{language_hint_section}}
+
+{{project_context_section}}
+
+❌ WRONG - Do NOT do this:
+"This patchset introduces several changes..." (free-form analysis)
+"The changes introduce support for..." (ignoring format)
+
+✅ CORRECT - You MUST do this:
+
+{format_example}
 
 COPY THE FORMAT ABOVE EXACTLY. DO NOT DEVIATE.
 
 ---
 
-{diff_content}"""
+{{diff_content}}"""
 
     return ChatPromptTemplate.from_messages(
         [("system", "{system_prompt}"), ("human", template)]
@@ -128,15 +184,16 @@ def _create_project_context_section(input_data: dict[str, Any]) -> str:
 
 
 def _get_system_prompt(input_data: dict[str, Any]) -> str:
-    """Get system prompt (ignores input data, always returns same prompt).
+    """Get system prompt with MR Summary inclusion based on configuration.
 
     Args:
-        input_data: Unused, but required for LangChain compatibility
+        input_data: Dictionary that may contain 'include_mr_summary' key
 
     Returns:
-        The system prompt string
+        The system prompt string configured for the requested format
     """
-    return create_system_prompt()
+    include_mr_summary = input_data.get("include_mr_summary", True)
+    return create_system_prompt(include_mr_summary=include_mr_summary)
 
 
 def _build_chain_inputs() -> dict[str, Any]:
@@ -153,11 +210,11 @@ def _build_chain_inputs() -> dict[str, Any]:
     }
 
 
-def create_review_chain(llm: Any) -> Any:
+def create_review_chain(llm: Any, config: Config) -> Any:
     """Create a LangChain pipeline for unified code review and summary.
 
-    This function creates a single processing pipeline that generates both:
-    - Executive summary (for managers/stakeholders)
+    This function creates a single processing pipeline that generates:
+    - Optional executive summary (for managers/stakeholders)
     - Detailed code review (for developers)
 
     This unified approach provides:
@@ -165,23 +222,25 @@ def create_review_chain(llm: Any) -> Any:
     - Lower latency (single round-trip)
     - Better consistency between summary and detailed review
     - Simplified application logic
+    - Configurable output format (with/without MR Summary)
 
     Args:
         llm: Language model instance to use for generating reviews
+        config: Configuration object with review format preferences
 
     Returns:
         LangChain pipeline ready to process unified review requests
 
     Example:
-        >>> chain = create_review_chain(my_llm)
+        >>> chain = create_review_chain(my_llm, config)
         >>> result = chain.invoke({
         ...     "diff": "- old code\n+ new code",
         ...     "language": "Python",
         ...     "context": "This is a web API project"
         ... })
-        >>> # Result contains both summary and detailed review in structured format
+        >>> # Result contains review in configured format (with/without MR Summary)
     """
-    prompt_template = create_review_prompt()
+    prompt_template = create_review_prompt(include_mr_summary=config.include_mr_summary)
     input_transformations = _build_chain_inputs()
 
     # Create LangChain pipeline: input_transformations -> prompt -> llm -> parser

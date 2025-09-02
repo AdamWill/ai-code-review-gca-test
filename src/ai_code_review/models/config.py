@@ -206,6 +206,10 @@ class Config(BaseSettings):
         default=".ai_review/project.md",
         description="Path to project context file (relative to repository root)",
     )
+    include_mr_summary: bool = Field(
+        default=True,
+        description="Include MR Summary section in reviews (disable for shorter, code-focused reviews)",
+    )
 
     # Execution options
     dry_run: bool = Field(default=False, description="Dry run mode (no API calls)")

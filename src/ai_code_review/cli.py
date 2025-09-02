@@ -144,6 +144,11 @@ logger = structlog.get_logger(__name__)
     help="Enable/disable loading project context from .ai_review/project.md (default: enabled if file exists)",
 )
 @click.option(
+    "--no-mr-summary",
+    is_flag=True,
+    help="Skip MR Summary section and show only detailed code review",
+)
+@click.option(
     "--health-check",
     is_flag=True,
     help="Perform health check on all components and exit",
@@ -173,6 +178,7 @@ def main(
     exclude_files: tuple[str, ...],
     no_file_filtering: bool,
     project_context: bool | None,
+    no_mr_summary: bool,
     health_check: bool,
 ) -> None:
     """
@@ -237,6 +243,8 @@ def main(
             config_overrides["log_level"] = log_level
         if project_context is not None:
             config_overrides["enable_project_context"] = project_context
+        if no_mr_summary:
+            config_overrides["include_mr_summary"] = False
 
         # Handle file filtering options
         if no_file_filtering:
