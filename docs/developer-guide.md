@@ -213,18 +213,41 @@ The prompts determine what the AI generates. This is the **most commonly modifie
 #### Current Structure
 
 ```python
-def create_system_prompt() -> str:
+# Format templates (extracted as constants for maintainability)
+_FORMAT_EXAMPLE_FULL = """## AI Code Review
+### 📋 MR Summary
+..."""
+
+_FORMAT_EXAMPLE_COMPACT = """## AI Code Review
+### Detailed Code Review
+..."""
+
+def create_system_prompt(include_mr_summary: bool = True) -> str:
     """System prompt - defines AI role and behavior"""
     return """You are an expert senior software engineer..."""
 
-def create_review_prompt() -> ChatPromptTemplate:
+def create_review_prompt(include_mr_summary: bool = True) -> ChatPromptTemplate:
     """User prompt template - defines output format"""
-    template = """IGNORE any tendency to write free-form analysis..."""
+    format_example = _FORMAT_EXAMPLE_FULL if include_mr_summary else _FORMAT_EXAMPLE_COMPACT
+    template = f"""IGNORE any tendency to write free-form analysis...
+    {format_example}..."""
     return ChatPromptTemplate.from_messages([...])
 
-def create_review_chain(llm: Any) -> Any:
+def _create_system_prompt_func(include_mr_summary: bool) -> Any:
+    """Factory pattern for LangChain Expression Language (LCEL) compatibility.
+
+    Returns a closure with configuration baked in, avoiding the need to pass
+    configuration through .ainvoke() input dictionary every time.
+    """
+    def _get_system_prompt(input_data: dict[str, Any]) -> str:
+        return create_system_prompt(include_mr_summary=include_mr_summary)
+    return _get_system_prompt
+
+def create_review_chain(llm: Any, config: Config) -> Any:
     """LangChain pipeline combining prompts with AI model"""
     # Input transformations + prompt + LLM + output parser
+    prompt_template = create_review_prompt(include_mr_summary=config.include_mr_summary)
+    input_transformations = _build_chain_inputs(include_mr_summary=config.include_mr_summary)
     return input_transformations | prompt_template | llm | StrOutputParser()
 ```
 
@@ -232,28 +255,38 @@ def create_review_chain(llm: Any) -> Any:
 
 ```python
 # 1. Change system behavior
-def create_system_prompt() -> str:
+def create_system_prompt(include_mr_summary: bool = True) -> str:
     return """You are a security-focused code reviewer.
     Focus primarily on security vulnerabilities and best practices..."""
 
-# 2. Modify output format
-def create_review_prompt() -> ChatPromptTemplate:
-    template = """Generate a security-focused review with this structure:
+# 2. Modify output format templates
+_SECURITY_FORMAT_EXAMPLE = """## Security Review
+### 🔒 Security Analysis
+### 🚨 Critical Issues
+### ✅ Security Recommendations"""
 
-    ## Security Review
-    ### 🔒 Security Analysis
-    ### 🚨 Critical Issues
-    ### ✅ Security Recommendations
+def create_review_prompt(include_mr_summary: bool = True) -> ChatPromptTemplate:
+    format_example = _SECURITY_FORMAT_EXAMPLE  # Use your custom format
+    template = f"""Generate a security-focused review with this structure:
 
-    {diff_content}"""
-    return ChatPromptTemplate.from_messages([("system", "{system_prompt}"), ("human", template)])
+    {format_example}
 
-# 3. Add new input variables
+    {{diff_content}}"""
+    return ChatPromptTemplate.from_messages([("system", "{{system_prompt}}"), ("human", template)])
+
+# 3. Add new input variables to chain
 def _create_security_context_section(input_data: dict[str, Any]) -> str:
     security_context = input_data.get("security_context")
     if security_context:
         return f"## Security Context\n{security_context}"
     return ""
+
+def _build_chain_inputs(include_mr_summary: bool) -> dict[str, Any]:
+    return {
+        "system_prompt": _create_system_prompt_func(include_mr_summary),
+        "security_context_section": _create_security_context_section,  # Add new section
+        # ... other transformations
+    }
 ```
 
 **Testing Prompt Changes:**
@@ -267,9 +300,91 @@ ai-code-review group/project 123
 
 # Test specific scenarios
 ai-code-review group/project 123 --language-hint python --exclude-files "test_*"
+
+# Test review format options
+ai-code-review group/project 123 --no-mr-summary --dry-run  # Short format
+ai-code-review group/project 123 --dry-run                  # Full format (default)
 ```
 
-### 2. Project Context Integration
+### 2. Review Format Configuration
+
+**Files:** `src/ai_code_review/models/config.py`, `src/ai_code_review/cli.py`, `src/ai_code_review/utils/prompts.py`
+
+The project supports **configurable review formats** to match different team preferences and use cases.
+
+#### Available Formats
+
+**Full Format (Default):**
+- 📋 **MR Summary**: High-level change overview
+- 📝 **Detailed Code Review**: Technical analysis
+- ✅ **Summary**: Key findings and recommendations
+
+**Compact Format (`--no-mr-summary`):**
+- 📝 **Detailed Code Review**: Technical analysis (main focus)
+- ✅ **Summary**: Key findings and recommendations
+
+#### Configuration Methods
+
+**Environment Variable:**
+```bash
+export INCLUDE_MR_SUMMARY=false  # Enable compact format
+export INCLUDE_MR_SUMMARY=true   # Enable full format (default)
+```
+
+**CLI Flag:**
+```bash
+ai-code-review group/project 123 --no-mr-summary  # Compact format
+ai-code-review group/project 123                  # Full format (default)
+```
+
+**Programmatic Configuration:**
+```python
+from ai_code_review.models.config import Config
+
+# Compact format
+config = Config(include_mr_summary=False)
+
+# Full format (default)
+config = Config()  # include_mr_summary defaults to True
+```
+
+#### Implementation Details
+
+The format configuration affects:
+
+1. **Prompt Templates** (`utils/prompts.py`):
+   ```python
+   # Constants for maintainability
+   _FORMAT_EXAMPLE_FULL = """## AI Code Review
+   ### 📋 MR Summary
+   ### Detailed Code Review
+   ### ✅ Summary"""
+
+   _FORMAT_EXAMPLE_COMPACT = """## AI Code Review
+   ### Detailed Code Review
+   ### ✅ Summary"""
+
+   # Dynamic format selection
+   def create_review_prompt(include_mr_summary: bool = True) -> ChatPromptTemplate:
+       format_example = _FORMAT_EXAMPLE_FULL if include_mr_summary else _FORMAT_EXAMPLE_COMPACT
+   ```
+
+2. **System Prompts** (also conditional based on format)
+3. **Mock Reviews** (for dry-run testing)
+
+#### Testing Format Options
+
+```bash
+# Test both formats
+ai-code-review group/project 123 --dry-run                  # Full format
+ai-code-review group/project 123 --dry-run --no-mr-summary  # Compact format
+
+# Integration testing
+uv run pytest tests/unit/test_prompts.py -k "mr_summary" -v
+uv run pytest tests/unit/test_review_engine.py -k "mr_summary" -v
+```
+
+### 3. Project Context Integration
 
 **Files:** `src/ai_code_review/core/review_engine.py`, `src/ai_code_review/models/config.py`, `src/ai_code_review/cli.py`
 
@@ -485,6 +600,12 @@ class Config(BaseSettings):
         le=300,  # Max 5 minutes
     )
 
+    # Real example from the project: Optional MR Summary section
+    include_mr_summary: bool = Field(
+        default=True,
+        description="Include MR Summary section in reviews (disable for shorter, code-focused reviews)"
+    )
+
     # Add validation if needed
     @field_validator("custom_timeout")
     @classmethod
@@ -505,9 +626,16 @@ class Config(BaseSettings):
     default=None,
     help="Custom timeout in seconds (10-300)"
 )
-def main(custom_timeout: int | None, ...):
+# Real example from the project: MR Summary control
+@click.option(
+    "--no-mr-summary",
+    is_flag=True,
+    help="Disable MR Summary section for shorter, code-focused reviews"
+)
+def main(custom_timeout: int | None, no_mr_summary: bool, ...):
     config = Config(
         custom_timeout=custom_timeout,
+        include_mr_summary=not no_mr_summary,
         # ... other config
     )
 ```
