@@ -47,6 +47,9 @@ ai-code-review group/project 123 --provider ollama --dry-run
 # Production with Gemini (requires API key)
 AI_API_KEY=your_key ai-code-review group/project 123 --dry-run
 
+# Short format (compact review without MR Summary)
+ai-code-review group/project 123 --provider ollama --no-mr-summary --dry-run
+
 # Post review to GitLab MR
 ai-code-review group/project 123 --post
 ```

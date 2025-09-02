@@ -46,20 +46,20 @@ AI-powered code review tool that integrates with GitLab to provide automated, in
 
 ## Common Issues & Gotchas
 - **Intentional "Bad" Patterns:**
-  - Long prompt templates in `utils/prompts.py` are necessary for AI quality
+  - Long prompt templates in `utils/prompts.py` (now organized as constants) are necessary for AI quality
   - Complex token calculations are required for different provider limits
   - Hardcoded model names in `config.py` are provider-specific defaults
-  
+
 - **External Dependencies Not in Diff:**
   - GitLab API structure varies between instances (gitlab.com vs self-hosted)
   - AI provider response formats differ and require specific parsing
   - LangChain abstractions hide provider-specific error handling
-  
+
 - **Configuration & Environment:**
   - `dry_run=True` throughout tests prevents actual API calls and costs
   - SSL verification disabled in tests is for mocking, not production
   - Large timeout values are for slow AI model inference times
-  
+
 - **Performance & Architecture:**
   - Synchronous file I/O in context loading is acceptable (small files)
   - No database - all data comes from GitLab API in real-time

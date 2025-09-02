@@ -114,12 +114,18 @@ containerized environments.
 - **External URL Mode**: Fetch context from external URL (documentation sites)
 - **Token Management**: Smart truncation when context + diff exceeds token limits
 
-### FR-008: Customizable Prompt Templates (Planned)
+### FR-008: Customizable Prompt Templates (Partially Implemented)
+
+**Implemented Features:**
+- ✅ Configurable review output formats (full vs compact)
+- ✅ Optional MR Summary section (`include_mr_summary` configuration)
+- ✅ Template constants for maintainable prompt management
+- ✅ LangChain factory pattern for configuration integration
 
 **Future Implementation:**
 - Template override system via `.ai_review/templates/` directory
 - Base template inheritance with custom extensions
-- Configurable review focus areas and output formats
+- Advanced configurable review focus areas
 - Project-specific guidelines integration
 
 ### FR-009: Content Processing (Implemented)
@@ -251,7 +257,9 @@ The AI system must generate structured code reviews that serve both technical an
 
 ### Required Output Format
 
-The AI must generate reviews in this exact structure:
+The AI must generate reviews following one of two configurable structures:
+
+#### Full Format (Default, `include_mr_summary=true`)
 
 ```markdown
 ## AI Code Review
@@ -262,6 +270,32 @@ The AI must generate reviews in this exact structure:
 - **Key Changes:** [List 2-3 most important changes]
 - **Impact:** [Describe affected modules/functionality]
 - **Risk Level:** [Low/Medium/High] - [Brief reason]
+
+### Detailed Code Review
+[Technical analysis focusing on logic, security, performance, architecture]
+
+#### 📂 File Reviews
+[Only include if specific file feedback exists]
+
+<details>
+<summary><strong>📄 `filename`</strong> - Brief issue summary</summary>
+
+- **[Review]** Actionable review with reasoning
+- **[Question]** Clarifying questions (if needed)
+- **[Suggestion]** Improvement suggestions (if needed)
+
+</details>
+
+### ✅ Summary
+- **Overall Assessment:** [Quality rating + key recommendations]
+- **Priority Issues:** [Most critical items]
+- **Minor Suggestions:** [Optional improvements]
+```
+
+#### Compact Format (`include_mr_summary=false`, `--no-mr-summary`)
+
+```markdown
+## AI Code Review
 
 ### Detailed Code Review
 [Technical analysis focusing on logic, security, performance, architecture]
@@ -451,6 +485,9 @@ OLLAMA_BASE_URL=http://localhost:11434  # Ollama server URL
 # Processing Limits
 MAX_CHARS=100000                        # Max characters from diff
 MAX_FILES=100                           # Max files to process
+
+# Review Format Configuration
+INCLUDE_MR_SUMMARY=true                 # Include MR Summary section (set to false for compact format)
 
 # GitLab CI/CD Variables (automatically set in CI/CD environment)
 CI_PROJECT_PATH=                        # Project path (group/project)

@@ -87,6 +87,12 @@ ai-code-review --platform gitlab --project-id "group/project" --mr-iid 123 --big
 
 # Dry run mode (no API calls, useful for testing)
 ai-code-review --platform github --project-id "owner/repo" --pr-number 123 --dry-run
+
+# Short format without MR Summary section (focus on code review only)
+ai-code-review --platform gitlab --project-id "group/project" --mr-iid 123 --no-mr-summary
+
+# Combine options: short format + dry run for testing
+ai-code-review --platform gitlab --project-id "group/project" --mr-iid 123 --no-mr-summary --dry-run
 ```
 
 ### CI/CD Integration
@@ -223,6 +229,7 @@ export MAX_FILES=100                           # Max files to process
 export LANGUAGE_HINT=python                   # Programming language hint
 export DRY_RUN=false                          # Enable dry-run mode (no API calls)
 export BIG_DIFFS=false                        # Force large context (24K)
+export INCLUDE_MR_SUMMARY=true                # Include MR Summary section (disable for shorter reviews)
 export LOG_LEVEL=INFO                         # DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
 
