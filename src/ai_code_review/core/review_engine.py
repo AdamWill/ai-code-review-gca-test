@@ -386,28 +386,23 @@ class ReviewEngine:
 - **Priority Issues:** [MOCK] No critical issues identified
 - **Minor Suggestions:** [MOCK] Consider adding more comprehensive tests"""
 
-        # Build content based on configuration
-        if self.config.include_mr_summary:
-            main_content = """## AI Code Review
+        # Build content parts to avoid duplication
+        parts = ["## AI Code Review"]
 
-### 📋 MR Summary
+        if self.config.include_mr_summary:
+            parts.append("""### 📋 MR Summary
 [DRY RUN] Mock merge request for testing purposes.
 
 - **Key Changes:** Mock code modifications for testing
 - **Impact:** Testing environment only, no production impact
-- **Risk Level:** Low - Mock changes for development testing
+- **Risk Level:** Low - Mock changes for development testing""")
 
-### Detailed Code Review
+        parts.append("""### Detailed Code Review
 
-[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution."""
-        else:
-            main_content = """## AI Code Review
+[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution.""")
 
-### Detailed Code Review
-
-[DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution."""
-
-        # Combine main content with common summary
+        # Combine all parts with common summary
+        main_content = "\n\n".join(parts)
         mock_content = f"{main_content}\n\n{summary_content}"
 
         return CodeReview(
