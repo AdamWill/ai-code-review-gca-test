@@ -102,7 +102,7 @@ ai-review:
     AI_API_KEY: $GEMINI_API_KEY  # Set as masked/protected variable
     # Alternative: AI_API_KEY: $ANTHROPIC_API_KEY  # For Claude
   script:
-    - ai-code-review --platform gitlab --post
+    - ai-code-review --post
   allow_failure: true  # Do not block the pipeline if the API fails
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
