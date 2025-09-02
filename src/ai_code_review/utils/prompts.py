@@ -191,11 +191,20 @@ def _create_project_context_section(input_data: dict[str, Any]) -> str:
 def _create_system_prompt_func(include_mr_summary: bool) -> Any:
     """Create a system prompt function with configuration baked in.
 
+    This factory pattern is used because the LangChain Expression Language (LCEL)
+    pipeline expects a callable that accepts a single dictionary argument. This
+    allows us to pass the `include_mr_summary` configuration from the higher-level
+    `create_review_chain` function into the prompt generation step.
+
+    Without this pattern, we would need to pass configuration data through the
+    `.ainvoke()` input dictionary every time, creating coupling between chain
+    creation and chain invocation.
+
     Args:
         include_mr_summary: Whether to include MR Summary section
 
     Returns:
-        Function that returns system prompt (ignores input_data)
+        Function that returns system prompt (ignores input_data but follows LCEL signature)
     """
 
     def _get_system_prompt(input_data: dict[str, Any]) -> str:
