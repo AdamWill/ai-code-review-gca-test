@@ -15,7 +15,7 @@ stages:
 
 ai-code-review:
   stage: review
-  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY   # Set as protected/masked variable
   script:
@@ -43,7 +43,7 @@ jobs:
       contents: read
       pull-requests: write
     container:
-      image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+      image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
     steps:
       - name: Run AI Review
         env:
@@ -149,7 +149,7 @@ ai-code-review:
     AI_API_KEY: $GEMINI_API_KEY
   before_script:
     # Install from GitLab repository (not published on PyPI yet)
-    - pip install git+https://gitlab.com/juanjeojeda/ai-code-review.git
+    - pip install git+https://gitlab.com/redhat/edge/ci-cd/ai-code-review.git
   script:
     - ai-code-review --platform gitlab --post
   allow_failure: true
@@ -175,7 +175,7 @@ jobs:
           python-version: '3.12'
       - name: Install from repository
         run: |
-          pip install git+https://gitlab.com/juanjeojeda/ai-code-review.git
+          pip install git+https://gitlab.com/redhat/edge/ci-cd/ai-code-review.git
       - name: Run AI Review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -289,7 +289,7 @@ SSL_VERIFY=false               # Disable SSL verification completely
 ```yaml
 ai-code-review:
   stage: review
-  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
     # SSL configuration for internal GitLab
@@ -307,7 +307,7 @@ ai-code-review:
 ```yaml
 ai-code-review:
   stage: review
-  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
     # CAUTION: Only for development - disables SSL verification
@@ -335,7 +335,7 @@ test:
 # AI Code Review
 ai-code-review:
   stage: review
-  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
     LANGUAGE_HINT: python
@@ -423,7 +423,7 @@ Enhance AI review quality by providing project-specific context. The AI can give
 ```yaml
 ai-code-review:
   stage: review
-  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
     LANGUAGE_HINT: python
@@ -443,7 +443,7 @@ Use AI Code Review locally to analyze GitLab MRs.
 
 ```bash
 # Install locally from GitLab repository (not published on PyPI yet)
-pip install git+https://gitlab.com/juanjeojeda/ai-code-review.git
+pip install git+https://gitlab.com/redhat/edge/ci-cd/ai-code-review.git
 
 # Required: GitLab Personal Access Token
 export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
@@ -654,6 +654,6 @@ LOG_LEVEL: DEBUG
 
 ## 📚 More Information
 
-- **Project Repository**: <https://gitlab.com/juanjeojeda/ai-code-review>
-- **Issues & Support**: <https://gitlab.com/juanjeojeda/ai-code-review/-/issues>
+- **Project Repository**: <https://gitlab.com/redhat/edge/ci-cd/ai-code-review>
+- **Issues & Support**: <https://gitlab.com/redhat/edge/ci-cd/ai-code-review/-/issues>
 - **Complete Documentation**: See `README.md` and `SPECS.md` in the repository

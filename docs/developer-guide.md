@@ -558,7 +558,7 @@ ai-code-review group/project 123 --no-file-filtering
 
 ```bash
 # Clone and setup
-git clone https://gitlab.com/juanjeojeda/ai-code-review.git
+git clone https://gitlab.com/redhat/edge/ci-cd/ai-code-review.git
 cd ai-code-review
 
 # Install with development dependencies
@@ -696,7 +696,7 @@ uv run mypy src/ai_code_review/providers/gemini.py
 
 ### Getting Help
 
-- **Issues**: <https://gitlab.com/juanjeojeda/ai-code-review/-/issues>
+- **Issues**: <https://gitlab.com/redhat/edge/ci-cd/ai-code-review/-/issues>
 - **Discussions**: Use GitLab Issues for questions and discussions
 - **Code Review**: All changes require MR review before merging
 

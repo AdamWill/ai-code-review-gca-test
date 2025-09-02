@@ -97,7 +97,7 @@ ai-code-review --platform github --project-id "owner/repo" --pr-number 123 --dry
 # .gitlab-ci.yml
 ai-review:
   stage: test
-  image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+  image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY  # Set as masked/protected variable
     # Alternative: AI_API_KEY: $ANTHROPIC_API_KEY  # For Claude
@@ -125,7 +125,7 @@ jobs:
       contents: read
       pull-requests: write
     container:
-      image: registry.gitlab.com/juanjeojeda/ai-code-review:latest
+      image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
     steps:
       - name: Run AI Review
         env:
@@ -548,4 +548,4 @@ MIT License - see LICENSE file for details.
 
 **Author:** Juanje Ojeda\
 **Email:** juanje@redhat.com\
-**URL:** <https://gitlab.com/juanjeojeda/ai-code-review>
+**URL:** <https://gitlab.com/redhat/edge/ci-cd/ai-code-review>

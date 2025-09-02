@@ -51,9 +51,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://gitlab.com/juanjeojeda/ai-code-review"
-Repository = "https://gitlab.com/juanjeojeda/ai-code-review"
-Issues = "https://gitlab.com/juanjeojeda/ai-code-review/-/issues"
+Homepage = "https://gitlab.com/redhat/edge/ci-cd/ai-code-review"
+Repository = "https://gitlab.com/redhat/edge/ci-cd/ai-code-review"
+Issues = "https://gitlab.com/redhat/edge/ci-cd/ai-code-review/-/issues"
 
 [tool.ruff]
 line-length = 88
