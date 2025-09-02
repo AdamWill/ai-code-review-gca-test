@@ -98,6 +98,8 @@ class SSLCertificateManager:
 
         try:
             async with aiohttp.ClientSession() as session:
+                # Disable SSL verification for the certificate download itself,
+                # as we are bootstrapping trust from a user-provided URL.
                 async with session.get(cert_url, ssl=False) as response:
                     if response.status != 200:
                         raise ValueError(
