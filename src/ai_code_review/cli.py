@@ -149,6 +149,16 @@ logger = structlog.get_logger(__name__)
     help="Skip MR Summary section and show only detailed code review",
 )
 @click.option(
+    "--ssl-cert-url",
+    default=None,
+    help="URL to download SSL certificate automatically (alternative to manual cert path)",
+)
+@click.option(
+    "--ssl-cert-cache-dir",
+    default=None,
+    help="Directory to cache downloaded SSL certificates (default: .ssl_cache)",
+)
+@click.option(
     "--health-check",
     is_flag=True,
     help="Perform health check on all components and exit",
@@ -179,6 +189,8 @@ def main(
     no_file_filtering: bool,
     project_context: bool | None,
     no_mr_summary: bool,
+    ssl_cert_url: str | None,
+    ssl_cert_cache_dir: str | None,
     health_check: bool,
 ) -> None:
     """
@@ -245,6 +257,10 @@ def main(
             config_overrides["enable_project_context"] = project_context
         if no_mr_summary:
             config_overrides["include_mr_summary"] = False
+        if ssl_cert_url:
+            config_overrides["ssl_cert_url"] = ssl_cert_url
+        if ssl_cert_cache_dir:
+            config_overrides["ssl_cert_cache_dir"] = ssl_cert_cache_dir
 
         # Handle file filtering options
         if no_file_filtering:

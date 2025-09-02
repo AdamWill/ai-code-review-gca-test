@@ -122,6 +122,14 @@ class Config(BaseSettings):
         default=None,
         description="Path to SSL certificate file for custom CA or self-signed certificates",
     )
+    ssl_cert_url: str | None = Field(
+        default=None,
+        description="URL to download SSL certificate automatically (alternative to ssl_cert_path)",
+    )
+    ssl_cert_cache_dir: str = Field(
+        default=".ssl_cache",
+        description="Directory to cache downloaded SSL certificates",
+    )
 
     # AI provider configuration
     ai_provider: AIProvider = Field(
@@ -259,6 +267,30 @@ class Config(BaseSettings):
             raise ValueError(f"SSL certificate file is not readable: {v}")
 
         return v
+
+    @field_validator("ssl_cert_url")
+    @classmethod
+    def validate_ssl_cert_url(cls, v: str | None) -> str | None:
+        """Validate SSL certificate URL format."""
+        if v is None:
+            return None
+
+        if not v.strip():
+            raise ValueError("SSL certificate URL cannot be empty")
+
+        url_pattern = r"^https?://[^\s/$.?#].[^\s]*$"
+        if not re.match(url_pattern, v):
+            raise ValueError(f"Invalid SSL certificate URL format: {v}")
+
+        return v.rstrip("/")
+
+    @field_validator("ssl_cert_cache_dir")
+    @classmethod
+    def validate_ssl_cert_cache_dir(cls, v: str) -> str:
+        """Validate SSL certificate cache directory."""
+        if not v.strip():
+            raise ValueError("SSL certificate cache directory cannot be empty")
+        return v.strip()
 
     @field_validator("ai_model")
     @classmethod

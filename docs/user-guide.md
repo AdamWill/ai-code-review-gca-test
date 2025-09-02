@@ -271,16 +271,53 @@ LOG_LEVEL=INFO                # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
 For internal GitLab instances using self-signed certificates or custom CA certificates:
 
+**Option 1**: Automatic Certificate Download (Recommended):
+
 ```bash
-# SSL Configuration
+# SSL Configuration - Automatic Download
+SSL_VERIFY=true                                    # Enable SSL verification (recommended)
+SSL_CERT_URL=https://gitlab.company.com/ca-bundle.crt  # URL to download certificate
+SSL_CERT_CACHE_DIR=.ssl_cache                     # Cache directory (optional, defaults to .ssl_cache)
+```
+
+**Option 2**: Manual Certificate File:
+
+```bash
+# SSL Configuration - Manual Path
 SSL_VERIFY=true                # Enable SSL verification (recommended)
 SSL_CERT_PATH=/path/to/company-ca.crt  # Path to your company's CA certificate
+```
 
+**Option 3**: Development/Testing Only:
+
+```bash
 # Alternative for development/testing (NOT recommended for production)
 SSL_VERIFY=false               # Disable SSL verification completely
 ```
 
 ##### Setting up SSL Certificates in CI/CD
+
+###### Method 1: Automatic Download (Recommended)
+
+Simply provide the URL where your certificate can be downloaded:
+
+```yaml
+ai-code-review:
+  stage: review
+  image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
+  variables:
+    AI_API_KEY: $GEMINI_API_KEY
+    # SSL configuration - automatic download
+    SSL_VERIFY: "true"
+    SSL_CERT_URL: "https://gitlab.company.com/ca-bundle.crt"  # Your internal CA certificate URL
+  script:
+    - ai-code-review --post
+  allow_failure: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+```
+
+###### Method 2: Upload Certificate File (Legacy)
 
 1. **Upload your company's CA certificate** to your project:
    - **Settings** → **CI/CD** → **Variables**
@@ -654,7 +691,15 @@ This occurs when connecting to internal GitLab instances with custom or self-sig
 
 ##### Solutions
 
-1. **Use your company's CA certificate (recommended):**
+1. **Use automatic certificate download (recommended):**
+
+    ```bash
+    # No manual download needed - certificate is downloaded automatically
+    SSL_VERIFY=true SSL_CERT_URL=https://gitlab.company.com/ca-bundle.crt \
+    ai-code-review --gitlab-url https://gitlab.company.com internal/project 456
+    ```
+
+1. **Use your company's CA certificate manually (legacy):**
 
     ```bash
     # Download your company's certificate first

@@ -19,6 +19,9 @@ from ai_code_review.models.platform import (
     PullRequestInfo,
 )
 from ai_code_review.utils.platform_exceptions import GitLabAPIError
+from ai_code_review.utils.ssl_utils import SSLCertificateManager
+
+logger = structlog.get_logger(__name__)
 
 
 class GitLabClient(BasePlatformClient):
@@ -28,6 +31,31 @@ class GitLabClient(BasePlatformClient):
         """Initialize GitLab client."""
         super().__init__(config)
         self._gitlab_client: gitlab.Gitlab | None = None
+        self._ssl_manager = SSLCertificateManager(config.ssl_cert_cache_dir)
+        self._ssl_cert_path: str | None = None
+        self._ssl_initialized: bool = False
+
+    async def _initialize_ssl_certificate(self) -> None:
+        """Initialize SSL certificate, downloading if needed."""
+        if self._ssl_initialized:
+            return
+
+        try:
+            self._ssl_cert_path = await self._ssl_manager.get_certificate_path(
+                cert_url=self.config.ssl_cert_url,
+                cert_path=self.config.ssl_cert_path,
+            )
+            if self._ssl_cert_path:
+                logger.info("SSL certificate initialized", path=self._ssl_cert_path)
+        except Exception as e:
+            logger.warning(
+                "Failed to setup SSL certificate, falling back to ssl_verify setting",
+                error=str(e),
+                ssl_verify=self.config.ssl_verify,
+            )
+            self._ssl_cert_path = None
+
+        self._ssl_initialized = True
 
     @property
     def gitlab_client(self) -> gitlab.Gitlab:
@@ -35,9 +63,16 @@ class GitLabClient(BasePlatformClient):
         if self._gitlab_client is None:
             # Configure SSL verification
             ssl_verify: bool | str = self.config.ssl_verify
-            if self.config.ssl_cert_path is not None:
-                # Use custom certificate file
+
+            # Handle ssl_cert_path immediately (synchronous)
+            if self.config.ssl_cert_path:
                 ssl_verify = self.config.ssl_cert_path
+                logger.info(
+                    "Using SSL certificate path", path=self.config.ssl_cert_path
+                )
+            # Use cached certificate path from async download if available
+            elif self._ssl_cert_path:
+                ssl_verify = self._ssl_cert_path
 
             self._gitlab_client = gitlab.Gitlab(
                 url=self.config.gitlab_url,
@@ -61,6 +96,8 @@ class GitLabClient(BasePlatformClient):
         Raises:
             GitLabAPIError: If API call fails
         """
+        # Initialize SSL certificate before making API calls
+        await self._initialize_ssl_certificate()
         if self.config.dry_run:
             # Return mock data for dry run
             return self._create_mock_pr_data(project_id, pr_number)
@@ -260,6 +297,8 @@ class GitLabClient(BasePlatformClient):
         Raises:
             GitLabAPIError: If posting fails
         """
+        # Initialize SSL certificate before making API calls
+        await self._initialize_ssl_certificate()
         if self.config.dry_run:
             # Return mock data for dry run
             return self._create_mock_thread_data(project_id, pr_number, review_content)
