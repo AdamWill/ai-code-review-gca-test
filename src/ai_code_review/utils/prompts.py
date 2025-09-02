@@ -9,6 +9,63 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from ai_code_review.models.config import Config
 
+# Format examples for review output templates
+_FORMAT_EXAMPLE_FULL = """## AI Code Review
+
+### 📋 MR Summary
+[Write ONE sentence summarizing the change]
+
+- **Key Changes:** [List 2-3 most important changes]
+- **Impact:** [Describe affected modules/functionality]
+- **Risk Level:** [Low/Medium/High] - [Brief reason]
+
+### Detailed Code Review
+
+[Technical review focusing on logic, security, performance, architecture]
+
+#### 📂 File Reviews
+[Only include if you have specific file feedback]
+
+<details>
+<summary><strong>📄 `filename`</strong> - Brief issue summary</summary>
+
+- **[Review]** Actionable review with reasoning
+- **[Question]** Clarifying questions (if needed)
+- **[Suggestion]** Improvement suggestions (if needed)
+
+</details>
+
+### ✅ Summary
+
+- **Overall Assessment:** [Quality rating + key recommendations]
+- **Priority Issues:** [Most critical items]
+- **Minor Suggestions:** [Optional improvements]"""
+
+
+_FORMAT_EXAMPLE_COMPACT = """## AI Code Review
+
+### Detailed Code Review
+
+[Technical review focusing on logic, security, performance, architecture]
+
+#### 📂 File Reviews
+[Only include if you have specific file feedback]
+
+<details>
+<summary><strong>📄 `filename`</strong> - Brief issue summary</summary>
+
+- **[Review]** Actionable review with reasoning
+- **[Question]** Clarifying questions (if needed)
+- **[Suggestion]** Improvement suggestions (if needed)
+
+</details>
+
+### ✅ Summary
+
+- **Overall Assessment:** [Quality rating + key recommendations]
+- **Priority Issues:** [Most critical items]
+- **Minor Suggestions:** [Optional improvements]"""
+
 
 def create_system_prompt(include_mr_summary: bool = True) -> str:
     """Create system prompt for code review.
@@ -59,61 +116,9 @@ def create_review_prompt(include_mr_summary: bool = True) -> ChatPromptTemplate:
     Returns:
         ChatPromptTemplate configured for the requested format
     """
-    if include_mr_summary:
-        format_example = """## AI Code Review
-
-### 📋 MR Summary
-[Write ONE sentence summarizing the change]
-
-- **Key Changes:** [List 2-3 most important changes]
-- **Impact:** [Describe affected modules/functionality]
-- **Risk Level:** [Low/Medium/High] - [Brief reason]
-
-### Detailed Code Review
-
-[Technical review focusing on logic, security, performance, architecture]
-
-#### 📂 File Reviews
-[Only include if you have specific file feedback]
-
-<details>
-<summary><strong>📄 `filename`</strong> - Brief issue summary</summary>
-
-- **[Review]** Actionable review with reasoning
-- **[Question]** Clarifying questions (if needed)
-- **[Suggestion]** Improvement suggestions (if needed)
-
-</details>
-
-### ✅ Summary
-
-- **Overall Assessment:** [Quality rating + key recommendations]
-- **Priority Issues:** [Most critical items]
-- **Minor Suggestions:** [Optional improvements]"""
-    else:
-        format_example = """## AI Code Review
-
-### Detailed Code Review
-
-[Technical review focusing on logic, security, performance, architecture]
-
-#### 📂 File Reviews
-[Only include if you have specific file feedback]
-
-<details>
-<summary><strong>📄 `filename`</strong> - Brief issue summary</summary>
-
-- **[Review]** Actionable review with reasoning
-- **[Question]** Clarifying questions (if needed)
-- **[Suggestion]** Improvement suggestions (if needed)
-
-</details>
-
-### ✅ Summary
-
-- **Overall Assessment:** [Quality rating + key recommendations]
-- **Priority Issues:** [Most critical items]
-- **Minor Suggestions:** [Optional improvements]"""
+    format_example = (
+        _FORMAT_EXAMPLE_FULL if include_mr_summary else _FORMAT_EXAMPLE_COMPACT
+    )
 
     template = f"""IGNORE any tendency to write free-form analysis. You MUST follow this EXACT template.
 
@@ -183,27 +188,34 @@ def _create_project_context_section(input_data: dict[str, Any]) -> str:
     return ""
 
 
-def _get_system_prompt(input_data: dict[str, Any]) -> str:
-    """Get system prompt with MR Summary inclusion based on configuration.
+def _create_system_prompt_func(include_mr_summary: bool) -> Any:
+    """Create a system prompt function with configuration baked in.
 
     Args:
-        input_data: Dictionary that may contain 'include_mr_summary' key
+        include_mr_summary: Whether to include MR Summary section
 
     Returns:
-        The system prompt string configured for the requested format
+        Function that returns system prompt (ignores input_data)
     """
-    include_mr_summary = input_data.get("include_mr_summary", True)
-    return create_system_prompt(include_mr_summary=include_mr_summary)
+
+    def _get_system_prompt(input_data: dict[str, Any]) -> str:
+        """Get system prompt with configuration already determined."""
+        return create_system_prompt(include_mr_summary=include_mr_summary)
+
+    return _get_system_prompt
 
 
-def _build_chain_inputs() -> dict[str, Any]:
+def _build_chain_inputs(include_mr_summary: bool) -> dict[str, Any]:
     """Build input transformation functions for review chain.
+
+    Args:
+        include_mr_summary: Whether to include MR Summary section
 
     Returns:
         Dictionary mapping template variables to transformation functions
     """
     return {
-        "system_prompt": _get_system_prompt,
+        "system_prompt": _create_system_prompt_func(include_mr_summary),
         "diff_content": _extract_diff_content,
         "language_hint_section": _create_language_hint_section,
         "project_context_section": _create_project_context_section,
@@ -241,7 +253,9 @@ def create_review_chain(llm: Any, config: Config) -> Any:
         >>> # Result contains review in configured format (with/without MR Summary)
     """
     prompt_template = create_review_prompt(include_mr_summary=config.include_mr_summary)
-    input_transformations = _build_chain_inputs()
+    input_transformations = _build_chain_inputs(
+        include_mr_summary=config.include_mr_summary
+    )
 
     # Create LangChain pipeline: input_transformations -> prompt -> llm -> parser
     chain = input_transformations | prompt_template | llm | StrOutputParser()

@@ -9,8 +9,8 @@ from ai_code_review.models.config import Config
 from ai_code_review.utils.prompts import (
     _create_language_hint_section,
     _create_project_context_section,
+    _create_system_prompt_func,
     _extract_diff_content,
-    _get_system_prompt,
     create_review_chain,
     create_review_prompt,
     create_system_prompt,
@@ -150,20 +150,20 @@ class TestPrompts:
         result = _create_project_context_section(input_data)
         assert result == ""
 
-    def test_get_system_prompt(self) -> None:
-        """Test system prompt getter function with default behavior."""
-        input_data = {
-            "some": "data"
-        }  # No include_mr_summary key, should default to True
-        result = _get_system_prompt(input_data)
+    def test_create_system_prompt_func_with_mr_summary(self) -> None:
+        """Test system prompt function creation with MR Summary enabled."""
+        prompt_func = _create_system_prompt_func(include_mr_summary=True)
+        input_data = {"some": "data"}  # Input data should be ignored now
+        result = prompt_func(input_data)
         expected = create_system_prompt(include_mr_summary=True)
         assert result == expected
         assert "### 📋 MR Summary" in result
 
-    def test_get_system_prompt_with_mr_summary_config(self) -> None:
-        """Test system prompt getter function with explicit MR Summary config."""
-        input_data = {"include_mr_summary": False}
-        result = _get_system_prompt(input_data)
+    def test_create_system_prompt_func_without_mr_summary(self) -> None:
+        """Test system prompt function creation with MR Summary disabled."""
+        prompt_func = _create_system_prompt_func(include_mr_summary=False)
+        input_data = {"some": "data"}  # Input data should be ignored now
+        result = prompt_func(input_data)
         expected = create_system_prompt(include_mr_summary=False)
         assert result == expected
         assert "### 📋 MR Summary" not in result

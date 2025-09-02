@@ -229,7 +229,6 @@ class ReviewEngine:
                         "diff": diff_content,
                         "language": self.config.language_hint,
                         "context": self._get_project_context(pr_data),
-                        "include_mr_summary": self.config.include_mr_summary,
                     }
                 )
             finally:
