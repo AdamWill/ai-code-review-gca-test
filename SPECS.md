@@ -3,9 +3,9 @@
 ## 📋 Project Overview
 
 AI-powered Python CLI tool that provides automated code review assistance for
-GitLab Merge Requests. The tool analyzes MR diffs using AI models and generates
+**GitLab Merge Requests** and **GitHub Pull Requests**. The tool analyzes diffs using AI models and generates
 structured feedback to support human reviewers in identifying potential issues,
-security vulnerabilities, and code quality improvements.
+security vulnerabilities, and code quality improvements across both platforms.
 
 ### Core Functionality
 
@@ -13,9 +13,8 @@ security vulnerabilities, and code quality improvements.
 logic issues, security concerns, performance problems, and architectural
 patterns. Focuses on high-level feedback that complements static analysis tools.
 
-**Context Integration**: Planned feature to read project documentation (README,
-coding standards, architecture docs) to provide contextually relevant reviews
-that align with project-specific practices and conventions.
+**Context Integration**: Implemented feature to read project documentation (`.ai_review/project.md`)
+to provide contextually relevant reviews that align with project-specific practices and conventions.
 
 **Structured Output**: Generates collapsible markdown reviews with
 file-by-file analysis, actionable suggestions, and executive summaries
@@ -23,9 +22,9 @@ suitable for both technical and non-technical stakeholders.
 
 ### Usage Model
 
-The tool integrates into GitLab CI/CD pipelines as an additional job that runs
-automatically on merge request events. It fetches the MR diff, processes it
-through the configured AI provider, and posts the review as a comment on the MR.
+The tool integrates into **both GitLab CI/CD and GitHub Actions** pipelines as an additional job that runs
+automatically on merge request/pull request events. It fetches the diff, processes it
+through the configured AI provider, and posts the review as a **discussion thread** (GitLab) or **comment** (GitHub).
 This provides immediate feedback to assist human reviewers without replacing
 the human review process.
 
@@ -33,20 +32,36 @@ the human review process.
 
 Built with Python 3.12+, LangChain for AI provider abstraction, and modern
 development tooling (uv, ruff, mypy). Supports local development with Ollama
-and production deployment with cloud AI providers (Gemini default) in
-containerized environments.
+and production deployment with cloud AI providers (Gemini default, Anthropic alternative) in
+containerized environments. Full multi-platform support for GitLab and GitHub.
 
 ## 🎯 Functional Requirements
 
 ### Core Features (All Implemented ✅)
 
-### FR-001: GitLab Integration (Implemented)
+### FR-001: Multi-Platform Integration (Implemented)
+
+**GitLab Support:**
 
 - ✅ Fetch MR diffs from GitLab API using project ID and MR IID
 - ✅ Support both numeric project IDs and URL-encoded paths (e.g., `group/subgroup/project`)
 - ✅ Handle authentication via GitLab Personal Access Token
-- ✅ Support configurable GitLab instance URLs
-- ✅ Automatic CI/CD environment variable detection
+- ✅ Support configurable GitLab instance URLs (including self-hosted)
+- ✅ Post reviews as **discussion threads** with auto-resolution of previous AI threads
+- ✅ SSL certificate support for internal GitLab instances
+
+**GitHub Support:**
+
+- ✅ Fetch PR diffs from GitHub API using owner/repo and PR number
+- ✅ Handle authentication via GitHub Personal Access Token or GitHub Actions token
+- ✅ Support configurable GitHub API URLs (GitHub.com and GitHub Enterprise)
+- ✅ Post reviews as **PR comments**
+
+**Auto-Detection:**
+
+- ✅ Automatic platform detection from CI/CD environment variables
+- ✅ GitLab CI: Uses `CI_PROJECT_PATH`, `CI_MERGE_REQUEST_IID`, `CI_SERVER_URL`
+- ✅ GitHub Actions: Uses `GITHUB_REPOSITORY`, `GITHUB_EVENT_PATH`, `GITHUB_API_URL`
 
 ### FR-002: AI Code Review (Implemented)
 
@@ -82,24 +97,47 @@ containerized environments.
 
 ### Advanced Features
 
-### FR-006: Multi-Provider AI Support
+### FR-006: Multi-Provider AI Support (Implemented)
 
 **Currently Implemented:**
 - **Local Development**: Ollama with qwen2.5-coder:7b (local development only, cost-free)
-- **Production/Container Default**: Google Gemini (gemini-2.5-pro)
-- **CI/CD**: Cloud providers integration (Gemini)
+- **Production Default**: Google Gemini (gemini-2.5-pro)
+- **High-Quality Alternative**: Anthropic Claude (claude-sonnet-4-20250514)
+
+**Planned (Configured but Not Implemented):**
+- **OpenAI GPT Models**: Configuration ready, provider implementation pending
+
+**Provider Features:**
+- ✅ Health check endpoints for all providers
+- ✅ Provider-specific model defaults and validation
+- ✅ Automatic API key validation and error handling
+- ✅ Dry-run mode support across all providers
+- ✅ Provider-specific timeout and retry handling
 
 **Planned Future Support:**
-- Additional cloud providers (OpenAI, Anthropic) via LangChain
+- OpenAI GPT provider implementation (configuration already exists)
 - Provider load balancing and fallback mechanisms
 - Extended model selection per provider
+- Cost optimization with provider switching
 
 **Architecture Features:**
 - Extensible provider system via LangChain abstraction
 - Provider-specific configuration and error handling
 - Adaptive context windows based on diff size and provider capabilities
 
-### FR-007: Project Context Integration ✅
+### FR-007: Enterprise & Self-Hosted Support (Implemented)
+
+**SSL Certificate Support:**
+- ✅ Custom SSL certificate support for internal GitLab instances
+- ✅ SSL verification bypass for development environments
+- ✅ Configurable SSL settings per GitLab instance
+
+**Self-Hosted Platform Support:**
+- ✅ GitLab self-hosted instances with custom URLs
+- ✅ GitHub Enterprise support with custom API URLs
+- ✅ Environment-specific configuration management
+
+### FR-008: Project Context Integration (Implemented)
 
 **Implemented:**
 - **Standard Context File**: `.ai_review/project.md` - project info, stack, architecture, style guides
@@ -114,7 +152,25 @@ containerized environments.
 - **External URL Mode**: Fetch context from external URL (documentation sites)
 - **Token Management**: Smart truncation when context + diff exceeds token limits
 
-### FR-008: Customizable Prompt Templates (Partially Implemented)
+### FR-009: Enhanced Review Integration (Implemented)
+
+**GitLab Discussion Threads:**
+- ✅ Create reviews as **discussion threads** instead of simple comments
+- ✅ Auto-resolution of previous AI-generated threads before posting new reviews
+- ✅ Collapsible review content (collapses automatically after page refresh)
+- ✅ Clean thread titles with review content as replies
+
+**GitHub PR Comments:**
+- ✅ Standard PR comment integration
+- ✅ Rich markdown formatting support
+- ✅ Integration with GitHub Actions permissions
+
+**Review Format Management:**
+- ✅ Configurable review formats (full vs compact)
+- ✅ Optional MR Summary section (`include_mr_summary`)
+- ✅ CLI flag support (`--no-mr-summary`)
+
+### FR-010: Customizable Prompt Templates (Partially Implemented)
 
 **Implemented Features:**
 - ✅ Configurable review output formats (full vs compact)
@@ -128,7 +184,7 @@ containerized environments.
 - Advanced configurable review focus areas
 - Project-specific guidelines integration
 
-### FR-009: Content Processing (Implemented)
+### FR-011: Content Processing (Implemented)
 
 **Current Features:**
 - ✅ Handle large diffs with intelligent truncation (adaptive context windows)
@@ -140,7 +196,7 @@ containerized environments.
 **Planned Enhancements:**
 - Context-aware content prioritization based on project context
 
-### FR-010: Error Handling & Resilience (Partially Implemented)
+### FR-012: Error Handling & Resilience (Partially Implemented)
 
 **Current Features:**
 - ✅ Custom exception hierarchy for different error types
@@ -425,13 +481,18 @@ ai-code-review/
 - **File Filtering**: Smart exclusion of build artifacts, lockfiles, and generated content
 - **Output Generation**: Structured markdown reviews with collapsible sections
 
-#### Project Context Handler (Planned)
+#### Project Context Handler (Implemented)
+
+**Current Implementation:**
+- ✅ Standard context file support (`.ai_review/project.md`)
+- ✅ Context size management and intelligent truncation
+- ✅ Safe file loading with graceful fallback
+- ✅ CLI control (`--project-context`/`--no-project-context`)
+- ✅ Environment variable control (`ENABLE_PROJECT_CONTEXT`)
 
 **Future Implementation:**
 - Auto-discovery of standard files (README.md, CLAUDE.md, .cursorrules)
-- Standard context file support (`.ai_review/project.md`)
 - External URL context fetching with caching
-- Context size management and intelligent truncation
 - Context priority system (custom > standard > auto-discovered)
 
 ## 🧪 Testing Strategy
@@ -447,9 +508,17 @@ ai-code-review/
 ### Integration Tests
 
 - End-to-end CLI workflows (local with Ollama, CI with cloud providers)
-- GitLab API integration (with test instance)
-- Ollama local LLM integration (local development only)
-- LangChain cloud provider integration (Gemini, OpenAI, Anthropic)
+- **Multi-Platform API Integration:**
+  - GitLab API integration (Merge Requests, discussion threads)
+  - GitHub API integration (Pull Requests, comments)
+- **AI Provider Integration:**
+  - Ollama local LLM integration (local development only)
+  - Google Gemini cloud provider integration
+  - Anthropic Claude cloud provider integration
+  - OpenAI GPT models (legacy support)
+- **CI/CD Platform Testing:**
+  - GitLab CI/CD with automatic platform detection
+  - GitHub Actions with automatic platform detection
 - Container-based testing with cloud providers only
 
 ### Test Tools and Fixtures
@@ -465,12 +534,17 @@ ai-code-review/
 ### Environment Variables
 
 ```bash
-# Required - GitLab Personal Access Token
-GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+# Required - Platform Access Tokens (choose one or both)
+GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # For GitLab platform
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx   # For GitHub platform
 
-# Core Configuration
-GITLAB_URL=https://gitlab.com           # GitLab instance URL
-AI_PROVIDER=gemini                      # gemini (production default), ollama (local dev)
+# Platform Configuration
+PLATFORM_PROVIDER=gitlab                # gitlab or github (auto-detected in CI/CD)
+GITLAB_URL=https://gitlab.com           # GitLab instance URL (supports self-hosted)
+GITHUB_URL=https://api.github.com       # GitHub API URL (supports Enterprise)
+
+# Core AI Configuration
+AI_PROVIDER=gemini                      # gemini, anthropic, ollama (openai: configured but not implemented)
 AI_MODEL=gemini-2.5-pro                 # AI model name for selected provider
 AI_API_KEY=your_gemini_api_key_here     # Required for cloud providers (not needed for ollama)
 
@@ -493,6 +567,11 @@ INCLUDE_MR_SUMMARY=true                 # Include MR Summary section (set to fal
 CI_PROJECT_PATH=                        # Project path (group/project)
 CI_MERGE_REQUEST_IID=                   # MR IID number
 CI_SERVER_URL=                          # GitLab instance URL
+
+# GitHub Actions Variables (automatically set in GitHub Actions environment)
+GITHUB_REPOSITORY=                      # Repository (owner/repo)
+GITHUB_EVENT_PATH=                      # Path to GitHub event JSON
+GITHUB_API_URL=                         # GitHub API URL
 
 # Optional Features
 LANGUAGE_HINT=python                    # Programming language hint
