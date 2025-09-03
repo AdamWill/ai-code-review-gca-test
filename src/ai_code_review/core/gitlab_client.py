@@ -59,8 +59,20 @@ class GitLabClient(BasePlatformClient):
 
     @property
     def gitlab_client(self) -> gitlab.Gitlab:
-        """Get or create GitLab client instance."""
+        """Get or create GitLab client instance.
+
+        Note: If ssl_cert_url is configured, ensure _initialize_ssl_certificate()
+        is called first in your async method to set up SSL properly.
+        """
         if self._gitlab_client is None:
+            # Defensive check: warn if SSL URL is configured but not initialized
+            if self.config.ssl_cert_url and not self._ssl_initialized:
+                logger.warning(
+                    "SSL certificate URL configured but not initialized. "
+                    "Call _initialize_ssl_certificate() first in async methods.",
+                    ssl_cert_url=self.config.ssl_cert_url,
+                )
+
             # Configure SSL verification
             ssl_verify: bool | str = self.config.ssl_verify
 

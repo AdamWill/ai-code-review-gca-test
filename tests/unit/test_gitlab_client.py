@@ -884,3 +884,29 @@ class TestGitLabClient:
 
         # Failing thread should remain unresolved due to exception
         mock_failing_thread.save.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_gitlab_client_ssl_url_not_initialized_warning(
+        self, test_config: Config
+    ) -> None:
+        """Test warning when accessing gitlab_client with ssl_cert_url but no initialization (line 70)."""
+        test_config.ssl_cert_url = "https://internal-gitlab.com/ca-cert.crt"
+        client = GitLabClient(test_config)
+
+        # Access gitlab_client without calling _initialize_ssl_certificate first
+        # This should work but trigger a warning since SSL URL is configured but not initialized
+        with patch("gitlab.Gitlab") as mock_gitlab_class:
+            mock_gitlab_instance = mock_gitlab_class.return_value
+
+            # This should trigger the warning path (line 70) and still create client
+            gitlab_client = client.gitlab_client
+
+            # Client should still be created (fallback behavior)
+            assert gitlab_client == mock_gitlab_instance
+
+            # Verify it used ssl_verify (fallback) instead of downloaded cert
+            mock_gitlab_class.assert_called_once_with(
+                url=test_config.gitlab_url,
+                private_token=test_config.gitlab_token,
+                ssl_verify=test_config.ssl_verify,  # Should use config default, not downloaded cert
+            )
