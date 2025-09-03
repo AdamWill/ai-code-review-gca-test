@@ -624,44 +624,33 @@ AI generated review feedback for test purposes. The code changes appear well-str
         assert "**Project Context:**" in result
         assert context_content in result
 
-    def test_load_project_context_uses_config_path(self, chdir_tmp) -> None:
-        """Test that context loading uses the configured path."""
+    @pytest.mark.parametrize(
+        "context_path, content",
+        [
+            ("custom-context.md", "Custom context file content"),
+            ("docs/ai-context.md", "AI context in docs directory"),
+            ("config/project-info.txt", "Project info in config directory"),
+            ("README.md", "README content as context"),
+        ],
+    )
+    def test_load_project_context_uses_custom_config_path(
+        self, chdir_tmp, context_path: str, content: str
+    ) -> None:
+        """Test that context loading uses the configured custom path."""
 
         config = Config(
             gitlab_token="test_token",
             ai_provider=AIProvider.OLLAMA,
             ai_model="qwen2.5-coder:7b",
-            project_context_file="custom-context.md",
+            project_context_file=context_path,
         )
 
-        # Create context file with custom name
-        context_content = "Custom context file content"
-        context_file = chdir_tmp / "custom-context.md"
-        context_file.write_text(context_content)
+        # Create context file at custom path (create directory if needed)
+        context_file = chdir_tmp / context_path
+        context_file.parent.mkdir(parents=True, exist_ok=True)
+        context_file.write_text(content)
 
         engine = ReviewEngine(config)
         result = engine._load_project_context_file()
 
-        assert result == context_content
-
-    def test_load_project_context_custom_subdirectory_path(self, chdir_tmp) -> None:
-        """Test that context loading works with custom paths in subdirectories."""
-
-        config = Config(
-            gitlab_token="test_token",
-            ai_provider=AIProvider.OLLAMA,
-            ai_model="qwen2.5-coder:7b",
-            project_context_file="docs/ai-context.md",
-        )
-
-        # Create context file in custom subdirectory
-        docs_dir = chdir_tmp / "docs"
-        docs_dir.mkdir()
-        context_content = "AI context in docs directory"
-        context_file = docs_dir / "ai-context.md"
-        context_file.write_text(context_content)
-
-        engine = ReviewEngine(config)
-        result = engine._load_project_context_file()
-
-        assert result == context_content
+        assert result == content
