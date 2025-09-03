@@ -161,11 +161,8 @@ class TestConfig:
         assert config.temperature == 0.1
         assert config.max_tokens == 8000
 
-    def test_config_env_file_loading(
-        self, tmp_path: Path, monkeypatch: MonkeyPatch
-    ) -> None:
+    def test_config_env_file_loading(self, chdir_tmp, monkeypatch: MonkeyPatch) -> None:
         """Test that config can load from .env file."""
-        import os
 
         # Clear all environment variables that could interfere
         env_vars_to_clear = [
@@ -192,7 +189,7 @@ class TestConfig:
             monkeypatch.delenv(var, raising=False)
 
         # Create a temporary .env file
-        env_file = tmp_path / ".env"
+        env_file = chdir_tmp / ".env"
         env_content = """
 GITLAB_TOKEN=env-token
 AI_PROVIDER=openai
@@ -203,19 +200,13 @@ DRY_RUN=true
 """
         env_file.write_text(env_content.strip())
 
-        # Temporarily change directory to where .env file is
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
-
-        try:
-            config = Config()  # type: ignore[call-arg] # Config loads from .env file
-            assert config.gitlab_token == "env-token"
-            assert config.ai_provider.value == "openai"
-            assert config.temperature == 0.7
-            assert config.max_tokens == 2048
-            assert config.dry_run is True
-        finally:
-            os.chdir(original_dir)
+        # Change to test directory with fixture
+        config = Config()  # type: ignore[call-arg] # Config loads from .env file
+        assert config.gitlab_token == "env-token"
+        assert config.ai_provider.value == "openai"
+        assert config.temperature == 0.7
+        assert config.max_tokens == 2048
+        assert config.dry_run is True
 
     def test_config_url_validation(self) -> None:
         """Test URL validation for gitlab_url and ollama_base_url."""

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -378,22 +377,15 @@ AI generated review feedback for test purposes. The code changes appear well-str
         assert "Primary Language: python" in context
 
     def test_get_project_context_without_hint(
-        self, test_config: Config, tmp_path
+        self, test_config: Config, chdir_tmp
     ) -> None:
         """Test project context without language hint."""
 
         test_config.language_hint = None
 
-        # Change to temporary directory where no project context file exists
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
-
-        try:
-            engine = ReviewEngine(test_config)
-            context = engine._get_project_context()
-            assert "No additional project context available" in context
-        finally:
-            os.chdir(original_dir)
+        engine = ReviewEngine(test_config)
+        context = engine._get_project_context()
+        assert "No additional project context available" in context
 
     @pytest.mark.asyncio
     async def test_post_review_to_platform_success(self, test_config: Config) -> None:
@@ -519,69 +511,48 @@ AI generated review feedback for test purposes. The code changes appear well-str
         assert "**Mode:** DRY RUN" in footer
 
     def test_load_project_context_file_exists(
-        self, test_config: Config, tmp_path
+        self, test_config: Config, chdir_tmp
     ) -> None:
         """Test loading project context when file exists."""
 
         # Create a project context file
-        project_dir = tmp_path / ".ai_review"
+        project_dir = chdir_tmp / ".ai_review"
         project_dir.mkdir()
         context_file = project_dir / "project.md"
         context_content = "# Project Context\nThis is a test project."
         context_file.write_text(context_content)
 
-        # Change to test directory
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
+        engine = ReviewEngine(test_config)
+        result = engine._load_project_context_file()
 
-        try:
-            engine = ReviewEngine(test_config)
-            result = engine._load_project_context_file()
-
-            assert result == context_content
-        finally:
-            os.chdir(original_dir)
+        assert result == context_content
 
     def test_load_project_context_file_not_exists(
-        self, test_config: Config, tmp_path
+        self, test_config: Config, chdir_tmp
     ) -> None:
         """Test loading project context when file doesn't exist."""
 
-        # Change to temporary directory where no project context file exists
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
-
-        try:
-            engine = ReviewEngine(test_config)
-            result = engine._load_project_context_file()
-            assert result is None
-        finally:
-            os.chdir(original_dir)
+        engine = ReviewEngine(test_config)
+        result = engine._load_project_context_file()
+        assert result is None
 
     def test_load_project_context_file_empty(
-        self, test_config: Config, tmp_path
+        self, test_config: Config, chdir_tmp
     ) -> None:
         """Test loading empty project context file."""
 
         # Create an empty project context file
-        project_dir = tmp_path / ".ai_review"
+        project_dir = chdir_tmp / ".ai_review"
         project_dir.mkdir()
         context_file = project_dir / "project.md"
         context_file.write_text("")
 
-        # Change to test directory
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
+        engine = ReviewEngine(test_config)
+        result = engine._load_project_context_file()
 
-        try:
-            engine = ReviewEngine(test_config)
-            result = engine._load_project_context_file()
+        assert result is None
 
-            assert result is None
-        finally:
-            os.chdir(original_dir)
-
-    def test_get_project_context_with_enabled_context(self, tmp_path) -> None:
+    def test_get_project_context_with_enabled_context(self, chdir_tmp) -> None:
         """Test getting project context when enabled and file exists."""
 
         config = Config(
@@ -592,26 +563,19 @@ AI generated review feedback for test purposes. The code changes appear well-str
         )
 
         # Create a project context file
-        project_dir = tmp_path / ".ai_review"
+        project_dir = chdir_tmp / ".ai_review"
         project_dir.mkdir()
         context_file = project_dir / "project.md"
         context_content = "This is project context."
         context_file.write_text(context_content)
 
-        # Change to test directory
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
+        engine = ReviewEngine(config)
+        result = engine._get_project_context()
 
-        try:
-            engine = ReviewEngine(config)
-            result = engine._get_project_context()
+        assert "**Project Context:**" in result
+        assert context_content in result
 
-            assert "**Project Context:**" in result
-            assert context_content in result
-        finally:
-            os.chdir(original_dir)
-
-    def test_get_project_context_with_disabled_context(self, tmp_path) -> None:
+    def test_get_project_context_with_disabled_context(self, chdir_tmp) -> None:
         """Test getting project context when disabled."""
 
         config = Config(
@@ -622,25 +586,20 @@ AI generated review feedback for test purposes. The code changes appear well-str
         )
 
         # Create a project context file (should be ignored)
-        project_dir = tmp_path / ".ai_review"
+        project_dir = chdir_tmp / ".ai_review"
         project_dir.mkdir()
         context_file = project_dir / "project.md"
         context_file.write_text("This is project context.")
 
-        # Change to test directory
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
+        engine = ReviewEngine(config)
+        result = engine._get_project_context()
 
-        try:
-            engine = ReviewEngine(config)
-            result = engine._get_project_context()
+        assert "**Project Context:**" not in result
+        assert "This is project context." not in result
 
-            assert "**Project Context:**" not in result
-            assert "This is project context." not in result
-        finally:
-            os.chdir(original_dir)
-
-    def test_get_project_context_with_language_hint_and_context(self, tmp_path) -> None:
+    def test_get_project_context_with_language_hint_and_context(
+        self, chdir_tmp
+    ) -> None:
         """Test getting project context with both language hint and project context."""
 
         config = Config(
@@ -652,27 +611,20 @@ AI generated review feedback for test purposes. The code changes appear well-str
         )
 
         # Create a project context file
-        project_dir = tmp_path / ".ai_review"
+        project_dir = chdir_tmp / ".ai_review"
         project_dir.mkdir()
         context_file = project_dir / "project.md"
         context_content = "Python web application"
         context_file.write_text(context_content)
 
-        # Change to test directory
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
+        engine = ReviewEngine(config)
+        result = engine._get_project_context()
 
-        try:
-            engine = ReviewEngine(config)
-            result = engine._get_project_context()
+        assert "Primary Language: Python" in result
+        assert "**Project Context:**" in result
+        assert context_content in result
 
-            assert "Primary Language: Python" in result
-            assert "**Project Context:**" in result
-            assert context_content in result
-        finally:
-            os.chdir(original_dir)
-
-    def test_load_project_context_uses_config_path(self, tmp_path) -> None:
+    def test_load_project_context_uses_config_path(self, chdir_tmp) -> None:
         """Test that context loading uses the configured path."""
 
         config = Config(
@@ -684,22 +636,15 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
         # Create context file with custom name
         context_content = "Custom context file content"
-        context_file = tmp_path / "custom-context.md"
+        context_file = chdir_tmp / "custom-context.md"
         context_file.write_text(context_content)
 
-        # Change to test directory
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
+        engine = ReviewEngine(config)
+        result = engine._load_project_context_file()
 
-        try:
-            engine = ReviewEngine(config)
-            result = engine._load_project_context_file()
+        assert result == context_content
 
-            assert result == context_content
-        finally:
-            os.chdir(original_dir)
-
-    def test_load_project_context_custom_subdirectory_path(self, tmp_path) -> None:
+    def test_load_project_context_custom_subdirectory_path(self, chdir_tmp) -> None:
         """Test that context loading works with custom paths in subdirectories."""
 
         config = Config(
@@ -710,20 +655,13 @@ AI generated review feedback for test purposes. The code changes appear well-str
         )
 
         # Create context file in custom subdirectory
-        docs_dir = tmp_path / "docs"
+        docs_dir = chdir_tmp / "docs"
         docs_dir.mkdir()
         context_content = "AI context in docs directory"
         context_file = docs_dir / "ai-context.md"
         context_file.write_text(context_content)
 
-        # Change to test directory
-        original_dir = os.getcwd()
-        os.chdir(str(tmp_path))
+        engine = ReviewEngine(config)
+        result = engine._load_project_context_file()
 
-        try:
-            engine = ReviewEngine(config)
-            result = engine._load_project_context_file()
-
-            assert result == context_content
-        finally:
-            os.chdir(original_dir)
+        assert result == context_content
