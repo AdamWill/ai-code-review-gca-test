@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -380,7 +381,6 @@ AI generated review feedback for test purposes. The code changes appear well-str
         self, test_config: Config, tmp_path
     ) -> None:
         """Test project context without language hint."""
-        import os
 
         test_config.language_hint = None
 
@@ -522,7 +522,6 @@ AI generated review feedback for test purposes. The code changes appear well-str
         self, test_config: Config, tmp_path
     ) -> None:
         """Test loading project context when file exists."""
-        import os
 
         # Create a project context file
         project_dir = tmp_path / ".ai_review"
@@ -547,7 +546,6 @@ AI generated review feedback for test purposes. The code changes appear well-str
         self, test_config: Config, tmp_path
     ) -> None:
         """Test loading project context when file doesn't exist."""
-        import os
 
         # Change to temporary directory where no project context file exists
         original_dir = os.getcwd()
@@ -564,7 +562,6 @@ AI generated review feedback for test purposes. The code changes appear well-str
         self, test_config: Config, tmp_path
     ) -> None:
         """Test loading empty project context file."""
-        import os
 
         # Create an empty project context file
         project_dir = tmp_path / ".ai_review"
@@ -586,7 +583,6 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
     def test_get_project_context_with_enabled_context(self, tmp_path) -> None:
         """Test getting project context when enabled and file exists."""
-        import os
 
         config = Config(
             gitlab_token="test_token",
@@ -617,7 +613,6 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
     def test_get_project_context_with_disabled_context(self, tmp_path) -> None:
         """Test getting project context when disabled."""
-        import os
 
         config = Config(
             gitlab_token="test_token",
@@ -647,7 +642,6 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
     def test_get_project_context_with_language_hint_and_context(self, tmp_path) -> None:
         """Test getting project context with both language hint and project context."""
-        import os
 
         config = Config(
             gitlab_token="test_token",
@@ -680,7 +674,6 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
     def test_load_project_context_uses_config_path(self, tmp_path) -> None:
         """Test that context loading uses the configured path."""
-        import os
 
         config = Config(
             gitlab_token="test_token",
@@ -692,6 +685,35 @@ AI generated review feedback for test purposes. The code changes appear well-str
         # Create context file with custom name
         context_content = "Custom context file content"
         context_file = tmp_path / "custom-context.md"
+        context_file.write_text(context_content)
+
+        # Change to test directory
+        original_dir = os.getcwd()
+        os.chdir(str(tmp_path))
+
+        try:
+            engine = ReviewEngine(config)
+            result = engine._load_project_context_file()
+
+            assert result == context_content
+        finally:
+            os.chdir(original_dir)
+
+    def test_load_project_context_custom_subdirectory_path(self, tmp_path) -> None:
+        """Test that context loading works with custom paths in subdirectories."""
+
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            project_context_file="docs/ai-context.md",
+        )
+
+        # Create context file in custom subdirectory
+        docs_dir = tmp_path / "docs"
+        docs_dir.mkdir()
+        context_content = "AI context in docs directory"
+        context_file = docs_dir / "ai-context.md"
         context_file.write_text(context_content)
 
         # Change to test directory

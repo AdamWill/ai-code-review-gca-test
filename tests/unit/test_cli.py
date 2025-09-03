@@ -486,3 +486,39 @@ class TestCLI:
 
             called_args, called_kwargs = mock_config_class.call_args
             assert "enable_project_context" not in called_kwargs
+
+    def test_cli_context_file_option(self, runner: CliRunner) -> None:
+        """Test --context-file CLI option sets custom project context file."""
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = MagicMock()
+            mock_config.gitlab_token = "test"
+            mock_config.dry_run = True
+            mock_config.log_level = "INFO"
+            mock_config.project_context_file = "custom/context.md"
+            mock_config_class.return_value = mock_config
+
+            with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
+                mock_engine = AsyncMock()
+                mock_engine.generate_review.return_value = Mock(
+                    to_markdown=lambda: "# Test Review"
+                )
+                mock_engine_class.return_value = mock_engine
+
+                result = runner.invoke(
+                    main,
+                    [
+                        "test/project",
+                        "123",
+                        "--context-file",
+                        "custom/context.md",
+                        "--dry-run",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                assert "Review completed successfully" in result.output
+
+                # Verify Config was called with custom context file
+                mock_config_class.assert_called_once()
+                config_kwargs = mock_config_class.call_args[1]
+                assert config_kwargs["project_context_file"] == "custom/context.md"

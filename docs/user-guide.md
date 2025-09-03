@@ -445,9 +445,10 @@ Enhance AI review quality by providing project-specific context. The AI can give
     # Environment variable (default: enabled if file exists)
     ENABLE_PROJECT_CONTEXT=true/false
 
-    # CLI flag
+    # CLI flags
     ai-code-review --project-context project/123     # Enable explicitly
     ai-code-review --no-project-context project/123  # Disable explicitly
+    ai-code-review --context-file docs/ai-context.md project/123  # Custom file path
     ```
 
 #### Best Practices

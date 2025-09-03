@@ -144,6 +144,11 @@ logger = structlog.get_logger(__name__)
     help="Enable/disable loading project context from .ai_review/project.md (default: enabled if file exists)",
 )
 @click.option(
+    "--context-file",
+    default=None,
+    help="Path to project context file (default: .ai_review/project.md)",
+)
+@click.option(
     "--no-mr-summary",
     is_flag=True,
     help="Skip MR Summary section and show only detailed code review",
@@ -188,6 +193,7 @@ def main(
     exclude_files: tuple[str, ...],
     no_file_filtering: bool,
     project_context: bool | None,
+    context_file: str | None,
     no_mr_summary: bool,
     ssl_cert_url: str | None,
     ssl_cert_cache_dir: str | None,
@@ -255,6 +261,8 @@ def main(
             config_overrides["log_level"] = log_level
         if project_context is not None:
             config_overrides["enable_project_context"] = project_context
+        if context_file:
+            config_overrides["project_context_file"] = context_file
         if no_mr_summary:
             config_overrides["include_mr_summary"] = False
         if ssl_cert_url:

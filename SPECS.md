@@ -143,12 +143,12 @@ containerized environments. Full multi-platform support for GitLab and GitHub.
 - **Standard Context File**: `.ai_review/project.md` - project info, stack, architecture, style guides
 - **CI/CD Configuration**: Environment variable `ENABLE_PROJECT_CONTEXT=true/false` (default: true)
 - **CLI Configuration**: `--project-context` / `--no-project-context` flags
+- **Custom Path Mode**: Specify custom path within repo via `--context-file` or env var `PROJECT_CONTEXT_FILE`
 - **Automatic Loading**: Context loaded automatically if file exists and feature enabled
 - **Safe Error Handling**: Graceful fallback if file can't be read
 
 **Future Implementation:**
 - **Auto-discovery Mode**: Automatically find README.md, CLAUDE.md, .cursorrules, etc.
-- **Custom Path Mode**: Specify custom path within repo via `--context-file` or env var
 - **External URL Mode**: Fetch context from external URL (documentation sites)
 - **Token Management**: Smart truncation when context + diff exceeds token limits
 
