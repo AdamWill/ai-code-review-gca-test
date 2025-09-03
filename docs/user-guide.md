@@ -449,6 +449,10 @@ Enhance AI review quality by providing project-specific context. The AI can give
     ai-code-review --project-context project/123     # Enable explicitly
     ai-code-review --no-project-context project/123  # Disable explicitly
     ai-code-review --context-file docs/ai-context.md project/123  # Custom file path
+
+    # Output options
+    ai-code-review project/123 -o review.md          # Save to file
+    ai-code-review project/123 --output-file reports/review-$(date +%Y%m%d).md  # Timestamped file
     ```
 
 #### Best Practices
@@ -636,6 +640,47 @@ SSL_VERIFY=false
 EOF
 
 ai-code-review internal/project 456 --post
+```
+
+### Output Options
+
+The tool provides flexible output options for different workflows:
+
+#### Terminal Display (Default)
+
+```bash
+# Review displayed in terminal (stdout)
+ai-code-review group/project 123
+
+# Clean output - logs go to stderr, review to stdout
+ai-code-review group/project 123 2>/dev/null  # Hide logs, show only review
+```
+
+#### Save to File
+
+```bash
+# Save review to file
+ai-code-review group/project 123 -o review.md
+ai-code-review group/project 123 --output-file reports/mr-123-review.md
+
+# Timestamped files for continuous review
+ai-code-review group/project 123 -o "reviews/mr-123-$(date +%Y%m%d_%H%M).md"
+
+# Save review and keep logs visible
+ai-code-review group/project 123 -o review.md
+```
+
+#### Combining with Redirection
+
+```bash
+# Logs to stderr, review to file - best of both worlds
+ai-code-review group/project 123 -o review.md
+
+# Logs to file, review to stdout (traditional)
+ai-code-review group/project 123 2>logs.txt
+
+# Everything to separate files
+ai-code-review group/project 123 -o review.md 2>logs.txt
 ```
 
 ### Local Development Workflow

@@ -168,6 +168,12 @@ logger = structlog.get_logger(__name__)
     is_flag=True,
     help="Perform health check on all components and exit",
 )
+@click.option(
+    "-o",
+    "--output-file",
+    default=None,
+    help="Save review output to file (default: display in terminal)",
+)
 @click.version_option(version="0.1.0", prog_name="ai-code-review")
 def main(
     project_id: str | None,
@@ -198,6 +204,7 @@ def main(
     ssl_cert_url: str | None,
     ssl_cert_cache_dir: str | None,
     health_check: bool,
+    output_file: str | None,
 ) -> None:
     """
     AI-powered code review tool for GitLab Merge Requests and GitHub Pull Requests.
@@ -287,9 +294,30 @@ def main(
         # Setup structured logging
         import logging
 
+        # Configure standard logging to use stderr
         logging.basicConfig(
             level=getattr(logging, config.log_level.upper()),
             format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+            stream=sys.stderr,  # Send logs to stderr, keep stdout clean for review output
+        )
+
+        # Configure structlog to also use stderr
+        import structlog
+
+        structlog.configure(
+            processors=[
+                structlog.stdlib.filter_by_level,
+                structlog.stdlib.add_logger_name,
+                structlog.stdlib.add_log_level,
+                structlog.stdlib.PositionalArgumentsFormatter(),
+                structlog.processors.TimeStamper(fmt="iso"),
+                structlog.processors.StackInfoRenderer(),
+                structlog.processors.format_exc_info,
+                structlog.dev.ConsoleRenderer(),
+            ],
+            wrapper_class=structlog.stdlib.BoundLogger,
+            logger_factory=structlog.stdlib.LoggerFactory(),
+            cache_logger_on_first_use=True,
         )
 
         # Silence noisy third-party loggers in INFO mode
@@ -355,6 +383,7 @@ def main(
                 project_id=effective_project_id,
                 pr_number=effective_pr_number,
                 post_review=post,
+                output_file=output_file,
             )
         )
 
@@ -427,6 +456,7 @@ async def _run_review(
     project_id: str,
     pr_number: int,
     post_review: bool,
+    output_file: str | None = None,
 ) -> None:
     """Run the review generation process."""
     platform_name = config.platform_provider.value
@@ -488,11 +518,34 @@ async def _run_review(
                 )
                 # Continue execution - show review in stdout as fallback
 
-        # Output review to stdout
-        click.echo("\n" + "=" * 80)
-        click.echo("AI CODE REVIEW")
-        click.echo("=" * 80)
-        click.echo(result.to_markdown())
+        # Output review
+        review_output = result.to_markdown()
+
+        if output_file:
+            # Save to file
+            try:
+                from pathlib import Path
+
+                output_path = Path(output_file)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(review_output, encoding="utf-8")
+                click.echo(f"📄 Review saved to: {output_file}")
+            except Exception as e:
+                logger.error(
+                    "Failed to write output file", file=output_file, error=str(e)
+                )
+                click.echo(f"❌ Failed to write output file: {e}", err=True)
+                # Fallback: show review in stdout
+                click.echo("\n" + "=" * 80)
+                click.echo("AI CODE REVIEW")
+                click.echo("=" * 80)
+                click.echo(review_output)
+        else:
+            # Display in terminal (stdout)
+            click.echo("\n" + "=" * 80)
+            click.echo("AI CODE REVIEW")
+            click.echo("=" * 80)
+            click.echo(review_output)
 
         click.echo("\n✅ Review completed successfully!")
 

@@ -522,3 +522,78 @@ class TestCLI:
                 mock_config_class.assert_called_once()
                 config_kwargs = mock_config_class.call_args[1]
                 assert config_kwargs["project_context_file"] == "custom/context.md"
+
+    def test_cli_output_file_option(self, runner: CliRunner, tmp_path) -> None:
+        """Test --output-file CLI option saves review to file."""
+        output_file = tmp_path / "review.md"
+
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = MagicMock()
+            mock_config.gitlab_token = "test"
+            mock_config.dry_run = True
+            mock_config.log_level = "INFO"
+            mock_config_class.return_value = mock_config
+
+            with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
+                mock_engine = AsyncMock()
+                mock_review_result = Mock()
+                mock_review_result.to_markdown.return_value = "# Test Review Content"
+                mock_engine.generate_review.return_value = mock_review_result
+                mock_engine_class.return_value = mock_engine
+
+                result = runner.invoke(
+                    main,
+                    [
+                        "test/project",
+                        "123",
+                        "--output-file",
+                        str(output_file),
+                        "--dry-run",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                assert "Review saved to:" in result.output
+                assert str(output_file) in result.output
+
+                # Verify file was created with correct content
+                assert output_file.exists()
+                saved_content = output_file.read_text()
+                assert saved_content == "# Test Review Content"
+
+    def test_cli_output_file_error_fallback(self, runner: CliRunner) -> None:
+        """Test --output-file fallback when file write fails."""
+
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = MagicMock()
+            mock_config.gitlab_token = "test"
+            mock_config.dry_run = True
+            mock_config.log_level = "INFO"
+            mock_config_class.return_value = mock_config
+
+            with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
+                mock_engine = AsyncMock()
+                mock_review_result = Mock()
+                mock_review_result.to_markdown.return_value = "# Test Review Content"
+                mock_engine.generate_review.return_value = mock_review_result
+                mock_engine_class.return_value = mock_engine
+
+                # Use an invalid path (directory as file)
+                invalid_path = "/dev/null/invalid/path.md"
+
+                result = runner.invoke(
+                    main,
+                    [
+                        "test/project",
+                        "123",
+                        "--output-file",
+                        invalid_path,
+                        "--dry-run",
+                    ],
+                )
+
+                assert result.exit_code == 0
+                assert "Failed to write output file" in result.output
+                # Should fall back to stdout display
+                assert "AI CODE REVIEW" in result.output
+                assert "# Test Review Content" in result.output
