@@ -139,7 +139,8 @@ ai-code-review project/123 2>logs.txt            # Logs to stderr
 
 ## 🤖 AI Tools Disclaimer
 
-This project was developed with the assistance of artificial intelligence tools:
+<details>
+<summary>This project was developed with the assistance of artificial intelligence tools</summary>
 
 **Tools used:**
 - **Cursor**: Code editor with AI capabilities
@@ -161,6 +162,7 @@ This project was developed with the assistance of artificial intelligence tools:
 - ✅ Final validation of concepts and approaches
 
 **Collaboration philosophy**: AI tools served as a highly capable technical assistant, while all design decisions, educational objectives, and project directions were defined and validated by the human.
+</details>
 
 ## 📄 License
 
