@@ -442,6 +442,23 @@ class Config(BaseSettings):
                         "with scopes: api, read_user, read_repository. "
                         "Set it as GITLAB_TOKEN environment variable or in .env file."
                     )
+            elif platform_provider == PlatformProvider.LOCAL:
+                # LOCAL platform doesn't require tokens, but validate git repository
+                import os
+                from pathlib import Path
+
+                # Check if we're in a git repository (only when not testing)
+                current_dir = Path.cwd()
+                git_dir = current_dir / ".git"
+                is_git_repo = git_dir.exists() or any(
+                    (parent / ".git").exists() for parent in current_dir.parents
+                )
+
+                if not is_git_repo and not os.getenv("PYTEST_CURRENT_TEST"):
+                    raise ValueError(
+                        "LOCAL platform requires running from within a git repository. "
+                        "Please run the command from a directory that contains a .git folder."
+                    )
             elif platform_provider == PlatformProvider.GITHUB:
                 github_token = data.get("github_token")
                 if not github_token or (

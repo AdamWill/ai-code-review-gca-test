@@ -86,7 +86,7 @@ class LocalGitClient(BasePlatformClient):
                 target_branch=self._target_branch,
                 author=await self._get_current_user(),
                 state="local",
-                web_url=f"file://{self.repo.working_dir}",
+                web_url=f"file://{Path(self.repo.working_dir)}",
             )
 
             # Get diffs and commits
@@ -286,7 +286,7 @@ class LocalGitClient(BasePlatformClient):
 
     def format_project_url(self, project_id: str) -> str:
         """Format the project URL for local repositories."""
-        return f"file://{self.repo.working_dir}"
+        return f"file://{Path(self.repo.working_dir)}"
 
     def _create_mock_pr_data(self, project_id: str, pr_number: int) -> PullRequestData:
         """Create mock PR data for dry run mode."""

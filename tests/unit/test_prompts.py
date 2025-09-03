@@ -95,6 +95,35 @@ class TestPromptGeneration:
         # Should be a valid chain object
         assert chain is not None
 
+    def test_system_prompt_includes_local_sections(self) -> None:
+        """Test that local mode includes the correct sections."""
+        prompt = create_system_prompt(local_mode=True)
+
+        # Should have local-specific sections
+        assert "### 🔍 Code Analysis" in prompt
+        assert "### 📂 File Reviews" in prompt
+        assert "### ✅ Summary" in prompt
+
+        # Should NOT have MR-specific sections
+        assert "### 📋 MR Summary" not in prompt
+        assert "### Detailed Code Review" not in prompt
+
+    def test_system_prompt_different_formats(self) -> None:
+        """Test that different modes produce different prompts."""
+        full_prompt = create_system_prompt(include_mr_summary=True, local_mode=False)
+        compact_prompt = create_system_prompt(
+            include_mr_summary=False, local_mode=False
+        )
+        local_prompt = create_system_prompt(include_mr_summary=True, local_mode=True)
+
+        # All should be different
+        assert full_prompt != compact_prompt
+        assert full_prompt != local_prompt
+        assert compact_prompt != local_prompt
+
+        # Local should always exclude MR summary regardless of flag
+        assert "### 📋 MR Summary" not in local_prompt
+
 
 class MockLLM:
     """Mock LLM for testing."""

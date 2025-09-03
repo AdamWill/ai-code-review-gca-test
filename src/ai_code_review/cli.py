@@ -318,6 +318,24 @@ def main(
             )
             sys.exit(1)
 
+        # Check for ignored options when using --local
+        if local:
+            ignored_options = []
+            if project_id or project_id_option:
+                ignored_options.append("--project-id")
+            if mr_iid or pr_number_option or gitlab_mr_iid:
+                ignored_options.append("--pr-number/--mr-iid")
+            if gitlab_url:
+                ignored_options.append("--gitlab-url")
+            if github_url:
+                ignored_options.append("--github-url")
+
+            if ignored_options:
+                click.echo(
+                    f"⚠️  Warning: The following options are ignored in local mode: {', '.join(ignored_options)}",
+                    err=True,
+                )
+
         config = Config(**config_overrides)
 
         # Setup structured logging
