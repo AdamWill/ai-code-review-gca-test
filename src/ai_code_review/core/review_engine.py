@@ -200,11 +200,19 @@ class ReviewEngine:
             auto_big_diffs = original_total_chars > 60000 and not manual_big_diffs
 
             # Estimate tokens using real codebase analysis (2.5 chars/token average)
-            estimated_input_tokens = int(
-                len(diff_content) / 2.5
-            )  # Real ratio from codebase analysis
-            estimated_prompt_tokens = 500  # Rough estimate for prompt template
-            total_estimated_tokens = estimated_input_tokens + estimated_prompt_tokens
+            try:
+                estimated_input_tokens = int(
+                    len(diff_content) / 2.5
+                )  # Real ratio from codebase analysis
+                estimated_prompt_tokens = 500  # Rough estimate for prompt template
+                total_estimated_tokens = (
+                    estimated_input_tokens + estimated_prompt_tokens
+                )
+            except (ZeroDivisionError, ValueError) as e:
+                logger.warning("Failed to calculate token estimates", error=str(e))
+                estimated_input_tokens = 0
+                estimated_prompt_tokens = 500
+                total_estimated_tokens = 500
 
             logger.debug(
                 "Invoking AI for review",
@@ -389,7 +397,7 @@ class ReviewEngine:
             hasattr(self.config, "platform_provider")
             and self.config.platform_provider.value == "local"
         )
-        
+
         # Use appropriate header and summary format
         if local_mode:
             header = "## Local Code Review"

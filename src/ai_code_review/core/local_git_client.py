@@ -106,9 +106,12 @@ class LocalGitClient(BasePlatformClient):
         """Get the current branch name."""
         try:
             return await asyncio.to_thread(lambda: self.repo.active_branch.name)
-        except Exception:
+        except (TypeError, GitCommandError) as e:
             # Fallback for detached HEAD
+            logger.debug("Detached HEAD detected, using commit hash", error=str(e))
             return await asyncio.to_thread(lambda: self.repo.head.commit.hexsha[:8])
+        except Exception as e:
+            raise GitLocalError(f"Failed to get current branch: {e}") from e
 
     async def _get_merge_base(self) -> str:
         """Get the merge base between current branch and target branch."""
