@@ -174,6 +174,16 @@ logger = structlog.get_logger(__name__)
     default=None,
     help="Save review output to file (default: display in terminal)",
 )
+@click.option(
+    "--local",
+    is_flag=True,
+    help="Review local git changes instead of remote PR/MR (compares current branch to target)",
+)
+@click.option(
+    "--target-branch",
+    default="main",
+    help="Target branch for local comparison (default: main)",
+)
 @click.version_option(version="0.1.0", prog_name="ai-code-review")
 def main(
     project_id: str | None,
@@ -205,6 +215,8 @@ def main(
     ssl_cert_cache_dir: str | None,
     health_check: bool,
     output_file: str | None,
+    local: bool,
+    target_branch: str,
 ) -> None:
     """
     AI-powered code review tool for GitLab Merge Requests and GitHub Pull Requests.
@@ -229,6 +241,12 @@ def main(
         # CI/CD mode (uses CI environment variables)
         ai-code-review --post
 
+        # Local review (analyze local changes)
+        ai-code-review --local
+        ai-code-review --local --target-branch develop
+        ai-code-review --local --output-file local-review.md
+        ai-code-review --local --provider ollama  # Use local LLM for cost-free review
+
         # Health check
         ai-code-review --health-check
 
@@ -238,7 +256,9 @@ def main(
     try:
         # Setup configuration by merging environment and CLI overrides
         config_overrides: dict[str, Any] = {}
-        if platform:
+        if local:
+            config_overrides["platform_provider"] = PlatformProvider.LOCAL
+        elif platform:
             config_overrides["platform_provider"] = PlatformProvider(platform)
         if gitlab_url:
             config_overrides["gitlab_url"] = gitlab_url
@@ -288,6 +308,15 @@ def main(
             config_overrides["exclude_patterns"] = default_patterns + list(
                 exclude_files
             )
+
+        # Validate incompatible options
+        if local and post:
+            click.echo(
+                "❌ Error: --local and --post are incompatible. "
+                "Local reviews cannot be posted. Use --output-file to save the review.",
+                err=True,
+            )
+            sys.exit(1)
 
         config = Config(**config_overrides)
 
@@ -343,8 +372,13 @@ def main(
             or config.get_effective_pull_request_number()
         )
 
-        # Validate that we have required parameters
-        if not effective_project_id or not effective_pr_number:
+        # For local mode, set default values
+        if config.platform_provider == PlatformProvider.LOCAL:
+            effective_project_id = "local"
+            effective_pr_number = 0
+
+        # Validate that we have required parameters (skip for local mode)
+        elif not effective_project_id or not effective_pr_number:
             platform_name = config.platform_provider.value
             if config.is_ci_mode():
                 if platform_name == "gitlab":
@@ -384,6 +418,7 @@ def main(
                 pr_number=effective_pr_number,
                 post_review=post,
                 output_file=output_file,
+                target_branch=target_branch if local else None,
             )
         )
 
@@ -457,6 +492,7 @@ async def _run_review(
     pr_number: int,
     post_review: bool,
     output_file: str | None = None,
+    target_branch: str | None = None,
 ) -> None:
     """Run the review generation process."""
     platform_name = config.platform_provider.value
@@ -487,6 +523,13 @@ async def _run_review(
     try:
         # Initialize review engine
         engine = ReviewEngine(config)
+
+        # Configure LocalGitClient if in local mode
+        if config.platform_provider == PlatformProvider.LOCAL and target_branch:
+            from ai_code_review.core.local_git_client import LocalGitClient
+
+            if isinstance(engine.platform_client, LocalGitClient):
+                engine.platform_client.set_target_branch(target_branch)
 
         # Generate review (always uses unified approach)
         platform_name = config.platform_provider.value.title()

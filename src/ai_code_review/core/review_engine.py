@@ -49,6 +49,10 @@ class ReviewEngine:
             from ai_code_review.core.github_client import GitHubClient
 
             return GitHubClient(config)
+        elif config.platform_provider == PlatformProvider.LOCAL:
+            from ai_code_review.core.local_git_client import LocalGitClient
+
+            return LocalGitClient(config)
         else:
             raise AIProviderError(
                 f"Platform provider '{config.platform_provider}' not supported",
@@ -380,16 +384,35 @@ class ReviewEngine:
 
     def _create_mock_review(self) -> CodeReview:
         """Create mock review for dry-run mode."""
-        # Common summary section (avoid duplication)
-        summary_content = """### ✅ Summary
+        # Check if local mode
+        local_mode = (
+            hasattr(self.config, "platform_provider")
+            and self.config.platform_provider.value == "local"
+        )
+        
+        # Use appropriate header and summary format
+        if local_mode:
+            header = "## Local Code Review"
+            summary_content = """### ✅ Summary
+
+**Overall Assessment:** [MOCK] Good code quality for testing
+
+**Priority Issues:**
+- [MOCK] No critical issues identified
+
+**Minor Suggestions:**
+- [MOCK] Consider adding more comprehensive tests"""
+        else:
+            header = "## AI Code Review"
+            summary_content = """### ✅ Summary
 - **Overall Assessment:** [MOCK] Good code quality for testing
 - **Priority Issues:** [MOCK] No critical issues identified
 - **Minor Suggestions:** [MOCK] Consider adding more comprehensive tests"""
 
         # Build content parts to avoid duplication
-        parts = ["## AI Code Review"]
+        parts = [header]
 
-        if self.config.include_mr_summary:
+        if self.config.include_mr_summary and not local_mode:
             parts.append("""### 📋 MR Summary
 [DRY RUN] Mock merge request for testing purposes.
 
@@ -397,7 +420,18 @@ class ReviewEngine:
 - **Impact:** Testing environment only, no production impact
 - **Risk Level:** Low - Mock changes for development testing""")
 
-        parts.append("""### Detailed Code Review
+        if local_mode:
+            parts.append("""### 🔍 Code Analysis
+
+[DRY RUN] Mock code analysis generated. This would be replaced with actual AI feedback in real execution.
+
+### 📂 File Reviews
+
+**📄 `example.py`** - Mock file review
+- **Review:** [MOCK] Example review feedback
+- **Suggestion:** [MOCK] Example improvement suggestion""")
+        else:
+            parts.append("""### Detailed Code Review
 
 [DRY RUN] Mock code review generated. This would be replaced with actual AI feedback in real execution.""")
 

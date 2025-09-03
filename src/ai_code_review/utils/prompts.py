@@ -67,16 +67,55 @@ _FORMAT_EXAMPLE_COMPACT = """## AI Code Review
 - **Minor Suggestions:** [Optional improvements]"""
 
 
-def create_system_prompt(include_mr_summary: bool = True) -> str:
+_FORMAT_EXAMPLE_LOCAL = """## Local Code Review
+
+### 🔍 Code Analysis
+
+[Technical review focusing on logic, security, performance, architecture]
+
+### 📂 File Reviews
+
+**📄 `filename`** - Brief issue summary
+- **Review:** Actionable review with reasoning
+- **Question:** Clarifying questions (if needed)
+- **Suggestion:** Improvement suggestions (if needed)
+
+**📄 `filename2`** - Brief issue summary
+- **Review:** Another file review
+- **Suggestion:** Improvements for this file
+
+### ✅ Summary
+
+**Overall Assessment:** [Quality rating + key recommendations]
+
+**Priority Issues:**
+- [Most critical item 1]
+- [Most critical item 2]
+
+**Minor Suggestions:**
+- [Optional improvement 1]
+- [Optional improvement 2]"""
+
+
+def create_system_prompt(
+    include_mr_summary: bool = True, local_mode: bool = False
+) -> str:
     """Create system prompt for code review.
 
     Args:
         include_mr_summary: Whether to include MR Summary section in the output
+        local_mode: Whether this is a local git review (simpler format)
 
     Returns:
         System prompt with appropriate format requirements
     """
-    if include_mr_summary:
+    if local_mode:
+        sections = [
+            "   - ### 🔍 Code Analysis",
+            "   - ### 📂 File Reviews",
+            "   - ### ✅ Summary",
+        ]
+    elif include_mr_summary:
         sections = [
             "   - ### 📋 MR Summary",
             "   - ### Detailed Code Review",
@@ -92,33 +131,41 @@ def create_system_prompt(include_mr_summary: bool = True) -> str:
 
     section_list = "\n".join(sections)
 
+    header_title = "## Local Code Review" if local_mode else "## AI Code Review"
+
     return f"""You are an expert senior software engineer and a meticulous code reviewer.
 
 CRITICAL FORMAT REQUIREMENTS - FAILURE TO FOLLOW WILL RESULT IN REJECTED OUTPUT:
-1. You MUST start with exactly "## AI Code Review"
+1. You MUST start with exactly "{header_title}"
 2. You MUST use exactly these section headers in order:
 {section_list}
 3. Do NOT create your own format or headings
 4. Do NOT write free-form analysis - follow the structure
 5. Each section should be concise and focused
 
-Your goal is to provide concise, high-quality, constructive feedback on merge requests.
+Your goal is to provide concise, high-quality, constructive feedback on code changes.
 Focus ONLY on the changes in the diff, not the entire codebase.
 Your tone should be helpful, collaborative, and professional."""
 
 
-def create_review_prompt(include_mr_summary: bool = True) -> ChatPromptTemplate:
+def create_review_prompt(
+    include_mr_summary: bool = True, local_mode: bool = False
+) -> ChatPromptTemplate:
     """Create unified prompt template that generates both review and summary in one call.
 
     Args:
         include_mr_summary: Whether to include MR Summary section in the output
+        local_mode: Whether this is a local git review (simpler format)
 
     Returns:
         ChatPromptTemplate configured for the requested format
     """
-    format_example = (
-        _FORMAT_EXAMPLE_FULL if include_mr_summary else _FORMAT_EXAMPLE_COMPACT
-    )
+    if local_mode:
+        format_example = _FORMAT_EXAMPLE_LOCAL
+    else:
+        format_example = (
+            _FORMAT_EXAMPLE_FULL if include_mr_summary else _FORMAT_EXAMPLE_COMPACT
+        )
 
     template = f"""IGNORE any tendency to write free-form analysis. You MUST follow this EXACT template.
 
@@ -188,7 +235,9 @@ def _create_project_context_section(input_data: dict[str, Any]) -> str:
     return ""
 
 
-def _create_system_prompt_func(include_mr_summary: bool) -> Any:
+def _create_system_prompt_func(
+    include_mr_summary: bool, local_mode: bool = False
+) -> Any:
     """Create a system prompt function with configuration baked in.
 
     This factory pattern is used because the LangChain Expression Language (LCEL)
@@ -202,6 +251,7 @@ def _create_system_prompt_func(include_mr_summary: bool) -> Any:
 
     Args:
         include_mr_summary: Whether to include MR Summary section
+        local_mode: Whether this is a local git review (simpler format)
 
     Returns:
         Function that returns system prompt (ignores input_data but follows LCEL signature)
@@ -209,22 +259,27 @@ def _create_system_prompt_func(include_mr_summary: bool) -> Any:
 
     def _get_system_prompt(input_data: dict[str, Any]) -> str:
         """Get system prompt with configuration already determined."""
-        return create_system_prompt(include_mr_summary=include_mr_summary)
+        return create_system_prompt(
+            include_mr_summary=include_mr_summary, local_mode=local_mode
+        )
 
     return _get_system_prompt
 
 
-def _build_chain_inputs(include_mr_summary: bool) -> dict[str, Any]:
+def _build_chain_inputs(
+    include_mr_summary: bool, local_mode: bool = False
+) -> dict[str, Any]:
     """Build input transformation functions for review chain.
 
     Args:
         include_mr_summary: Whether to include MR Summary section
+        local_mode: Whether this is a local git review (simpler format)
 
     Returns:
         Dictionary mapping template variables to transformation functions
     """
     return {
-        "system_prompt": _create_system_prompt_func(include_mr_summary),
+        "system_prompt": _create_system_prompt_func(include_mr_summary, local_mode),
         "diff_content": _extract_diff_content,
         "language_hint_section": _create_language_hint_section,
         "project_context_section": _create_project_context_section,
@@ -237,13 +292,14 @@ def create_review_chain(llm: Any, config: Config) -> Any:
     This function creates a single processing pipeline that generates:
     - Optional executive summary (for managers/stakeholders)
     - Detailed code review (for developers)
+    - Local-optimized format (for terminal-friendly local reviews)
 
     This unified approach provides:
     - 50% reduction in LLM invocations and token costs
     - Lower latency (single round-trip)
     - Better consistency between summary and detailed review
     - Simplified application logic
-    - Configurable output format (with/without MR Summary)
+    - Configurable output format (full/compact/local)
 
     Args:
         llm: Language model instance to use for generating reviews
@@ -259,11 +315,21 @@ def create_review_chain(llm: Any, config: Config) -> Any:
         ...     "language": "Python",
         ...     "context": "This is a web API project"
         ... })
-        >>> # Result contains review in configured format (with/without MR Summary)
+        >>> # Result contains review in configured format (full/compact/local)
     """
-    prompt_template = create_review_prompt(include_mr_summary=config.include_mr_summary)
+    # Determine if local mode based on platform
+    local_mode = (
+        hasattr(config, "platform_provider")
+        and config.platform_provider.value == "local"
+    )
+
+    prompt_template = create_review_prompt(
+        include_mr_summary=config.include_mr_summary and not local_mode,
+        local_mode=local_mode,
+    )
     input_transformations = _build_chain_inputs(
-        include_mr_summary=config.include_mr_summary
+        include_mr_summary=config.include_mr_summary and not local_mode,
+        local_mode=local_mode,
     )
 
     # Create LangChain pipeline: input_transformations -> prompt -> llm -> parser

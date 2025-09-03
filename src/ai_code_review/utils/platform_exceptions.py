@@ -42,3 +42,11 @@ class GitHubAPIError(PlatformAPIError):
     ) -> None:
         """Initialize GitHub API error."""
         super().__init__(message, platform="github", response_code=response_code)
+
+
+class GitLocalError(PlatformAPIError):
+    """Local git operations error."""
+
+    def __init__(self, message: str) -> None:
+        """Initialize local git error."""
+        super().__init__(message, platform="local", response_code=None)

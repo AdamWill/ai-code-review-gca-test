@@ -22,6 +22,7 @@ class PlatformProvider(str, Enum):
 
     GITLAB = "gitlab"
     GITHUB = "github"
+    LOCAL = "local"
 
 
 def get_default_exclude_patterns() -> list[str]:
