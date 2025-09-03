@@ -65,7 +65,7 @@ ai-code-review --platform github owner/repo 456 --post
 Add to `.gitlab-ci.yml`:
 ```yaml
 ai-review:
-  stage: review
+  stage: code-review
   image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY  # Set in CI/CD variables
@@ -94,11 +94,11 @@ jobs:
     container:
       image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
     steps:
-      - name: AI Review
+      - name: Run AI Review
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: ai-code-review --post
+        run: ai-code-review --pr-number ${{ github.event.pull_request.number }} --post
 ```
 
 ## 🔧 Configuration

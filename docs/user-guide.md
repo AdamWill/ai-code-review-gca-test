@@ -2,6 +2,29 @@
 
 Simple guide to get AI-powered code reviews for your **GitLab Merge Requests** and **GitHub Pull Requests**.
 
+## 📑 Table of Contents
+
+- [🚀 Quick Setup Options](#-quick-setup-options)
+  - [Option 1: GitLab CI/CD (Pre-built Container)](#option-1-gitlab-cicd-pre-built-container)
+  - [Option 2: GitHub Actions (Using GitLab Container)](#option-2-github-actions-using-gitlab-container)
+  - [Option 3: Build Your Own Container](#option-3-build-your-own-container)
+  - [Option 4: Install from Repository](#option-4-install-from-repository)
+- [⚙️ Advanced Configuration](#️-advanced-configuration)
+  - [CI/CD Variables Configuration](#cicd-variables-configuration)
+  - [SSL Configuration for Internal GitLab Instances](#ssl-configuration-for-internal-gitlab-instances)
+  - [🎯 Project Context Configuration](#-project-context-configuration)
+  - [📝 Review Format Configuration](#-review-format-configuration)
+- [💻 Local Usage](#-local-usage)
+  - [Prerequisites](#prerequisites)
+  - [Local Usage Examples](#local-usage-examples)
+  - [Output Options](#output-options)
+  - [Local Development Workflow](#local-development-workflow)
+- [🔧 Troubleshooting](#-troubleshooting)
+  - [Common Issues](#common-issues)
+  - [SSL Certificate Errors](#ssl-certificate-errors)
+  - [Debug Mode](#debug-mode)
+- [📚 More Information](#-more-information)
+
 ## 🚀 Quick Setup Options
 
 ### Option 1: GitLab CI/CD (Pre-built Container)
@@ -11,15 +34,15 @@ Add this job to your `.gitlab-ci.yml`:
 ```yaml
 stages:
   - test
-  - review
+  - code-review
 
 ai-code-review:
-  stage: review
+  stage: code-review
   image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY   # Set as protected/masked variable
   script:
-    - ai-code-review --platform gitlab --post
+    - ai-code-review --post
   allow_failure: true  # Don't block MRs if review fails
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -83,11 +106,11 @@ jobs:
 - Add `GEMINI_API_KEY` as **Repository Secret**
 - Get your Gemini key from: <https://makersuite.google.com/app/apikey>
 
-### Option 2: Build Your Own Container
+### Option 3: Build Your Own Container
 
 Create your own container and publish to your registry:
 
-#### 2.1. Use Project's Containerfile
+#### 3.1. Use Project's Containerfile
 
 Use the existing `Containerfile` from the project:
 
@@ -110,7 +133,7 @@ COPY --from=builder /code/dist/*.whl /tmp/
 RUN pip3.12 install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
 ```
 
-#### 2.2. Build and Push
+#### 3.2. Build and Push
 
 ```bash
 # Build container
@@ -120,11 +143,11 @@ podman build -t $CI_REGISTRY_IMAGE/ai-review:latest .
 podman push $CI_REGISTRY_IMAGE/ai-review:latest
 ```
 
-#### 2.3. Use in CI/CD
+#### 3.3. Use in CI/CD
 
 ```yaml
 ai-code-review:
-  stage: review
+  stage: code-review
   image: $CI_REGISTRY_IMAGE/ai-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
@@ -135,7 +158,7 @@ ai-code-review:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 ```
 
-### Option 3: Install from Repository
+### Option 4: Install from Repository
 
 Install directly from the repository in your CI job:
 
@@ -143,7 +166,7 @@ Install directly from the repository in your CI job:
 
 ```yaml
 ai-code-review:
-  stage: review
+  stage: code-review
   image: python:3.12-slim
   variables:
     AI_API_KEY: $GEMINI_API_KEY
@@ -151,7 +174,7 @@ ai-code-review:
     # Install from GitLab repository (not published on PyPI yet)
     - pip install git+https://gitlab.com/redhat/edge/ci-cd/ai-code-review.git
   script:
-    - ai-code-review --platform gitlab --post
+    - ai-code-review --post
   allow_failure: true
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
@@ -303,7 +326,7 @@ Simply provide the URL where your certificate can be downloaded:
 
 ```yaml
 ai-code-review:
-  stage: review
+  stage: code-review
   image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
@@ -328,7 +351,7 @@ ai-code-review:
 
 ```yaml
 ai-code-review:
-  stage: review
+  stage: code-review
   image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
@@ -346,7 +369,7 @@ ai-code-review:
 
 ```yaml
 ai-code-review:
-  stage: review
+  stage: code-review
   image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
@@ -364,7 +387,7 @@ ai-code-review:
 ```yaml
 stages:
   - test
-  - review
+  - code-review
 
 # Your existing tests
 test:
@@ -374,7 +397,7 @@ test:
 
 # AI Code Review
 ai-code-review:
-  stage: review
+  stage: code-review
   image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
@@ -509,7 +532,7 @@ ai-code-review group/project 123 --no-mr-summary --post
 
 ```yaml
 ai-code-review:
-  stage: review
+  stage: code-review
   image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
   variables:
     AI_API_KEY: $GEMINI_API_KEY
@@ -591,8 +614,7 @@ For private or internal GitLab instances:
 # Basic custom GitLab URL
 GITLAB_TOKEN=your_token \
 AI_API_KEY=your_key \
-ai-code-review --gitlab-url https://gitlab.company.com \
-  --project-id "internal/project" --mr-iid 456 --post
+ai-code-review --gitlab-url https://gitlab.company.com internal/project 456 --post
 ```
 
 **For Internal GitLab with SSL Certificates:**

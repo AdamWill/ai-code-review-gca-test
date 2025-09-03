@@ -2,6 +2,29 @@
 
 Guide for developers who want to understand, modify, or extend the AI Code Review project.
 
+## 📑 Table of Contents
+
+- [🏗️ Project Architecture](#️-project-architecture)
+  - [High-Level Overview](#high-level-overview)
+  - [Key Design Principles](#key-design-principles)
+- [📁 Project Structure](#-project-structure)
+  - [Key Files Explained](#key-files-explained)
+- [🛠️ Technology Stack](#️-technology-stack)
+  - [Core Dependencies](#core-dependencies)
+  - [Development Tools](#development-tools)
+- [🔧 Common Modification Scenarios](#-common-modification-scenarios)
+  - [1. Adding a New Platform](#1-adding-a-new-platform-eg-bitbucket)
+  - [2. Modifying AI Prompts](#2-modifying-ai-prompts)
+  - [3. Adding New AI Providers](#3-adding-new-ai-providers)
+  - [4. Adding Configuration Options](#4-adding-configuration-options)
+  - [5. Modifying File Filtering](#5-modifying-file-filtering)
+- [🧪 Development Workflow](#-development-workflow)
+  - [Setup Development Environment](#setup-development-environment)
+  - [Testing Strategy](#testing-strategy)
+  - [Code Quality Checks](#code-quality-checks)
+  - [Debugging Tips](#debugging-tips)
+- [📚 Additional Resources](#-additional-resources)
+
 ## 🏗️ Project Architecture
 
 ### High-Level Overview
@@ -511,28 +534,25 @@ Run specific tests:
 uv run pytest tests/unit/test_review_engine.py -k "project_context" -v
 ```
 
-### 3. Adding New AI Providers
+### 4. Modifying File Filtering
 
-**Files:** `src/ai_code_review/providers/`
+**File:** `src/ai_code_review/models/config.py`
 
-#### Step 1: Create Provider Implementation
+Current filtering happens in `get_default_exclude_patterns()`:
 
 ```python
-# src/ai_code_review/providers/anthropic.py (ALREADY IMPLEMENTED!)
-from langchain_anthropic import ChatAnthropic
-from ai_code_review.providers.base import BaseAIProvider
-
-class AnthropicProvider(BaseAIProvider):
-    def _create_client(self) -> BaseChatModel:
-        return ChatAnthropic(
-            model=self.config.ai_model,
-            anthropic_api_key=self.config.ai_api_key,
-            temperature=self.config.temperature,
-            max_tokens=self.config.max_tokens,
-        )
-
-    def is_available(self) -> bool:
-        return bool(self.config.ai_api_key) if not self.config.dry_run else True
+def get_default_exclude_patterns() -> list[str]:
+    return [
+        "*.lock",              # Lockfiles
+        "*.min.js",            # Minified files
+        "node_modules/**",     # Dependencies
+        "__pycache__/**",      # Python cache
+        "dist/**",             # Build output
+        # Add new patterns here
+        "*.generated.ts",      # Generated TypeScript
+        "**/migrations/**",    # Database migrations
+        "coverage/**",         # Coverage reports
+    ]
 ```
 
 #### Step 2: Update Configuration
@@ -582,7 +602,7 @@ def test_anthropic_provider_creation(test_config):
     assert provider.is_available() == True
 ```
 
-### 3. Adding Configuration Options
+### 5. Adding Configuration Options
 
 **File:** `src/ai_code_review/models/config.py`
 
@@ -647,27 +667,6 @@ def main(custom_timeout: int | None, no_mr_summary: bool, ...):
 async def some_operation(self):
     timeout = self.config.custom_timeout
     # Use the configuration value
-```
-
-### 4. Modifying File Filtering
-
-**File:** `src/ai_code_review/models/config.py`
-
-Current filtering happens in `get_default_exclude_patterns()`:
-
-```python
-def get_default_exclude_patterns() -> list[str]:
-    return [
-        "*.lock",              # Lockfiles
-        "*.min.js",            # Minified files
-        "node_modules/**",     # Dependencies
-        "__pycache__/**",      # Python cache
-        "dist/**",             # Build output
-        # Add new patterns here
-        "*.generated.ts",      # Generated TypeScript
-        "**/migrations/**",    # Database migrations
-        "coverage/**",         # Coverage reports
-    ]
 ```
 
 **Testing File Filtering:**
