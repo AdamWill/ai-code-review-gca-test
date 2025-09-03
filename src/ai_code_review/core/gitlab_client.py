@@ -87,7 +87,7 @@ class GitLabClient(BasePlatformClient):
                 ssl_verify = self._ssl_cert_path
 
             self._gitlab_client = gitlab.Gitlab(
-                url=self.config.gitlab_url,
+                url=self.config.get_effective_server_url(),
                 private_token=self.config.get_platform_token(),
                 ssl_verify=ssl_verify,
             )

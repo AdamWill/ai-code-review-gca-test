@@ -63,7 +63,7 @@ class TestGitHubClient:
             mock_auth.Token.assert_called_once_with(test_config.github_token)
             mock_github.assert_called_once_with(
                 auth=mock_auth_token,
-                base_url=test_config.github_url,
+                base_url=test_config.get_effective_server_url(),
             )
 
     def test_get_platform_name(self, test_config: Config) -> None:

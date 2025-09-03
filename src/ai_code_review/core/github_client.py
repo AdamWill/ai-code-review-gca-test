@@ -37,7 +37,7 @@ class GitHubClient(BasePlatformClient):
         if self._github_client is None:
             self._github_client = Github(
                 auth=Auth.Token(self.config.get_platform_token()),
-                base_url=self.config.github_url,
+                base_url=self.config.get_effective_server_url(),
             )
         return self._github_client
 

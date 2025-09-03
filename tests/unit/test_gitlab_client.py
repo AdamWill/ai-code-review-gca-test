@@ -59,7 +59,7 @@ class TestGitLabClient:
             _ = client.gitlab_client
 
             mock_gitlab.assert_called_once_with(
-                url=test_config.gitlab_url,
+                url=test_config.get_effective_server_url(),
                 private_token=test_config.gitlab_token,
                 ssl_verify=True,  # Default value
             )
@@ -81,7 +81,7 @@ class TestGitLabClient:
             _ = client.gitlab_client
 
             mock_gitlab.assert_called_once_with(
-                url=config.gitlab_url,
+                url=config.get_effective_server_url(),
                 private_token=config.gitlab_token,
                 ssl_verify=False,
             )
@@ -109,7 +109,7 @@ class TestGitLabClient:
             _ = client.gitlab_client
 
             mock_gitlab.assert_called_once_with(
-                url=config.gitlab_url,
+                url=config.get_effective_server_url(),
                 private_token=config.gitlab_token,
                 ssl_verify=str(cert_file),  # Path to certificate file
             )
@@ -736,7 +736,7 @@ class TestGitLabClient:
 
             # Verify GitLab was created with downloaded certificate path
             mock_gitlab_class.assert_called_once_with(
-                url=test_config.gitlab_url,
+                url=test_config.get_effective_server_url(),
                 private_token=test_config.gitlab_token,
                 ssl_verify="/tmp/downloaded_cert.pem",
             )
@@ -906,7 +906,7 @@ class TestGitLabClient:
 
             # Verify it used ssl_verify (fallback) instead of downloaded cert
             mock_gitlab_class.assert_called_once_with(
-                url=test_config.gitlab_url,
+                url=test_config.get_effective_server_url(),
                 private_token=test_config.gitlab_token,
                 ssl_verify=test_config.ssl_verify,  # Should use config default, not downloaded cert
             )
