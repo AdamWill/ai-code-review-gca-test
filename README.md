@@ -48,6 +48,8 @@ export AI_API_KEY=your_gemini_api_key_here
 
 **Review your local changes before committing:**
 
+> **Prerequisites:** Git must be installed ([git-scm.com](https://git-scm.com/))
+
 ```bash
 # Review current local changes vs main branch
 ai-code-review --local

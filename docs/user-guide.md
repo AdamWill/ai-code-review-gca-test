@@ -807,9 +807,15 @@ ai-code-review --local
 #### "LOCAL platform requires running from within a git repository"
 
 ```bash
-# Solution: Run from inside your git project
+# Solution 1: Run from inside your git project
 cd /path/to/your/git/project
 ai-code-review --local
+
+# Solution 2: Make sure Git is installed
+# Fedora/CentOS/RHEL: sudo dnf install git-core
+# Ubuntu/Debian: sudo apt install git
+# macOS: brew install git
+# Windows: Download from https://git-scm.com/
 ```
 
 #### "AI provider not available"

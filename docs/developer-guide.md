@@ -130,10 +130,11 @@ src/ai_code_review/
 #### 🔍 `core/local_git_client.py` - Local Git Client
 
 - Implements **local Git review functionality**
-- Uses `GitPython` for local repository operations
+- Uses `GitPython` for local repository operations (**requires Git binary**)
 - Extracts diffs between local changes and target branch
 - No authentication required - works with local repos only
 - Cannot post reviews (returns mock success)
+- **Prerequisites:** Git must be installed and accessible in PATH
 - **Modify when:** Extending local Git functionality or diff processing
 
 #### 💬 `utils/prompts.py` - AI Prompt Management
@@ -177,7 +178,7 @@ pydantic-settings>=2.10.1 # Settings management
 structlog>=23.2.0        # Structured logging
 
 # Git Integration
-GitPython>=3.1.40        # Local Git operations
+GitPython>=3.1.40        # Local Git operations (requires Git binary installed)
 ```
 
 ### Development Tools

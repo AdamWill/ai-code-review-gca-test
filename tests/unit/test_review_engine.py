@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from ai_code_review.core.review_engine import ReviewEngine
 from ai_code_review.models.config import AIProvider, Config
 from ai_code_review.models.platform import (
     PostReviewResponse,
@@ -17,6 +16,11 @@ from ai_code_review.models.platform import (
 )
 from ai_code_review.models.review import CodeReview, ReviewResult, ReviewSummary
 from ai_code_review.utils.exceptions import AIProviderError
+from tests.conftest import create_gitpython_mock
+
+# Mock GitPython completely to avoid git binary requirement in CI
+with patch.dict("sys.modules", {"git": create_gitpython_mock()}):
+    from ai_code_review.core.review_engine import ReviewEngine
 
 
 class TestReviewEngine:
@@ -668,15 +672,23 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
         github_engine = ReviewEngine(github_config)
         assert github_engine.platform_client is not None
+        assert github_engine.platform_client.get_platform_name() == "github"
 
-        # Test LOCAL client creation
+        # Test LOCAL client creation (mock to avoid GitPython)
         local_config = Config(
             platform_provider=PlatformProvider.LOCAL,
             ai_provider=AIProvider.OLLAMA,
         )
 
-        local_engine = ReviewEngine(local_config)
-        assert local_engine.platform_client is not None
+        # Mock the entire _create_platform_client method for LOCAL to avoid GitPython
+        with patch.object(ReviewEngine, "_create_platform_client") as mock_create:
+            mock_local_client = Mock()
+            mock_local_client.get_platform_name.return_value = "local"
+            mock_create.return_value = mock_local_client
+
+            local_engine = ReviewEngine(local_config)
+            assert local_engine.platform_client is not None
+            assert local_engine.platform_client.get_platform_name() == "local"
 
     def test_load_project_context_file_exception_handling(
         self, test_config: Config, chdir_tmp
