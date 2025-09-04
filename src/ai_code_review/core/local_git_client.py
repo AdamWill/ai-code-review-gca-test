@@ -40,6 +40,11 @@ class LocalGitClient(BasePlatformClient):
                 # Try to find the repository root from current directory
                 current_path = Path.cwd()
                 self._repo = Repo(current_path, search_parent_directories=True)
+                logger.debug(
+                    "Initialized git repository",
+                    repo_path=self._repo.working_dir,
+                    current_dir=str(current_path),
+                )
             except InvalidGitRepositoryError as e:
                 raise GitLocalError(
                     "Not in a git repository. Please run from within a git repository."
@@ -116,6 +121,9 @@ class LocalGitClient(BasePlatformClient):
     async def _get_merge_base(self) -> str:
         """Get the merge base between current branch and target branch."""
         try:
+            # Check if local target branch is out of date with remote
+            await self._check_target_branch_status()
+
             # Try with origin/target_branch first
             target_ref = f"origin/{self._target_branch}"
             if target_ref in [ref.name for ref in self.repo.references]:
@@ -141,6 +149,43 @@ class LocalGitClient(BasePlatformClient):
                 f"Could not find merge base with {self._target_branch}. "
                 f"Make sure the target branch exists locally or as origin/{self._target_branch}"
             ) from e
+
+    async def _check_target_branch_status(self) -> None:
+        """Check if local target branch is out of date with remote and warn user."""
+        try:
+            local_target = self._target_branch
+            remote_target = f"origin/{self._target_branch}"
+
+            # Check if both exist
+            ref_names = [ref.name for ref in self.repo.references]
+            if local_target in ref_names and remote_target in ref_names:
+                # Get commit hashes
+                local_commit = await asyncio.to_thread(
+                    lambda: self.repo.commit(local_target).hexsha
+                )
+                remote_commit = await asyncio.to_thread(
+                    lambda: self.repo.commit(remote_target).hexsha
+                )
+
+                # Warn if local is behind remote
+                if local_commit != remote_commit:
+                    # Check if local is behind (remote is ahead)
+                    merge_base_result = await asyncio.to_thread(
+                        self.repo.merge_base, local_commit, remote_commit
+                    )
+                    if (
+                        merge_base_result
+                        and merge_base_result[0].hexsha == local_commit
+                    ):
+                        logger.warning(
+                            "Local target branch appears to be behind remote",
+                            local_branch=local_target,
+                            remote_branch=remote_target,
+                            suggestion=f"Consider running: git pull origin {self._target_branch}",
+                        )
+        except Exception as e:
+            # Don't fail the entire operation if this check fails
+            logger.debug("Could not check target branch status", error=str(e))
 
     def _get_diff_content(self, diff_item: Any) -> str:
         """Get diff content as string."""
