@@ -707,9 +707,12 @@ AI generated review feedback for test purposes. The code changes appear well-str
     ) -> None:
         """Test _generate_review exception handling - hits lines 274-278."""
         # Mock AI provider that raises exception
-        mock_ai_provider = AsyncMock()
+        mock_ai_provider = Mock()
         mock_ai_provider.provider_name = "test_provider"
-        mock_ai_provider.generate_review.side_effect = Exception("AI service down")
+        mock_ai_provider.is_available.return_value = True  # Sync method
+        mock_ai_provider.generate_review = AsyncMock(
+            side_effect=Exception("AI service down")
+        )
 
         # Mock platform client
         mock_platform_client = Mock()
