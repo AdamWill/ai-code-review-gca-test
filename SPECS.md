@@ -3,37 +3,50 @@
 ## 📋 Project Overview
 
 AI-powered Python CLI tool that provides automated code review assistance for
-**GitLab Merge Requests** and **GitHub Pull Requests**. The tool analyzes diffs using AI models and generates
+**GitLab Merge Requests**, **GitHub Pull Requests**, and **Local Git changes**. The tool analyzes diffs using AI models and generates
 structured feedback to support human reviewers in identifying potential issues,
-security vulnerabilities, and code quality improvements across both platforms.
+security vulnerabilities, and code quality improvements across three main workflows:
+
+1. **Local Code Review**: Review uncommitted/unpushed changes in your local Git repository
+2. **Remote Code Review**: Analyze existing MRs/PRs from the terminal with optional posting
+3. **CI Integration**: Automated reviews in GitLab CI and GitHub Actions pipelines
 
 ### Core Functionality
 
-**Code Analysis**: Fetches MR diffs from GitLab API and analyzes changes for
-logic issues, security concerns, performance problems, and architectural
-patterns. Focuses on high-level feedback that complements static analysis tools.
+**Code Analysis**: Analyzes code changes from multiple sources:
+- Local Git repository changes (uncommitted/unpushed) using GitPython
+- Remote MR diffs from GitLab API
+- Remote PR diffs from GitHub API
+Focuses on logic issues, security concerns, performance problems, and architectural
+patterns with high-level feedback that complements static analysis tools.
 
 **Context Integration**: Implemented feature to read project documentation (`.ai_review/project.md`)
 to provide contextually relevant reviews that align with project-specific practices and conventions.
 
-**Structured Output**: Generates collapsible markdown reviews with
-file-by-file analysis, actionable suggestions, and executive summaries
-suitable for both technical and non-technical stakeholders.
+**Structured Output**: Generates markdown reviews with multiple formats:
+- **Full Format**: Collapsible sections with MR summaries for remote/CI workflows
+- **Local Format**: Terminal-friendly simplified markdown for local development
+File-by-file analysis, actionable suggestions, and executive summaries
+suitable for both technical and non-technical stakeholders across all workflows.
 
 ### Usage Model
 
-The tool integrates into **both GitLab CI/CD and GitHub Actions** pipelines as an additional job that runs
-automatically on merge request/pull request events. It fetches the diff, processes it
-through the configured AI provider, and posts the review as a **discussion thread** (GitLab) or **comment** (GitHub).
-This provides immediate feedback to assist human reviewers without replacing
-the human review process.
+The tool supports **three primary workflows**:
+
+1. **Local Development**: Run directly from your Git repository to review uncommitted/unpushed changes before creating MRs/PRs
+2. **Remote Analysis**: Analyze existing MRs/PRs from the terminal with optional posting to discussions
+3. **CI/CD Integration**: Automated reviews in GitLab CI/GitHub Actions pipelines that fetch diffs and post reviews as **discussion threads** (GitLab) or **comments** (GitHub)
+
+This provides immediate feedback to assist human reviewers without replacing the human review process.
 
 ### Technical Implementation
 
-Built with Python 3.12+, LangChain for AI provider abstraction, and modern
-development tooling (uv, ruff, mypy). Supports local development with Ollama
-and production deployment with cloud AI providers (Gemini default, Anthropic alternative) in
-containerized environments. Full multi-platform support for GitLab and GitHub.
+Built with Python 3.12+, LangChain for AI provider abstraction, GitPython for local Git operations, and modern
+development tooling (uv, ruff, mypy). Supports three deployment modes:
+- **Local Development**: Ollama + Local Git analysis (no external dependencies)
+- **Remote Terminal**: Cloud providers for analyzing remote MRs/PRs
+- **CI/CD Integration**: Containerized deployment with cloud AI providers (Gemini default, Anthropic alternative)
+Full multi-platform support for GitLab, GitHub, and Local Git repositories.
 
 ## 🎯 Functional Requirements
 
@@ -56,6 +69,16 @@ containerized environments. Full multi-platform support for GitLab and GitHub.
 - ✅ Handle authentication via GitHub Personal Access Token or GitHub Actions token
 - ✅ Support configurable GitHub API URLs (GitHub.com and GitHub Enterprise)
 - ✅ Post reviews as **PR comments**
+- ✅ Full integration with GitHub Actions workflows
+
+**Local Git Support:**
+
+- ✅ Analyze uncommitted and unpushed changes directly from Git repository
+- ✅ Compare against target branch (main, develop, custom) using merge-base
+- ✅ GitPython integration for robust Git operations
+- ✅ Terminal-friendly output format (simplified markdown without collapsible sections)
+- ✅ Branch freshness validation with helpful warnings
+- ✅ Support for detached HEAD states and complex Git scenarios
 
 **Auto-Detection:**
 
@@ -104,8 +127,8 @@ containerized environments. Full multi-platform support for GitLab and GitHub.
 - **Production Default**: Google Gemini (gemini-2.5-pro)
 - **High-Quality Alternative**: Anthropic Claude (claude-sonnet-4-20250514)
 
-**Planned (Configured but Not Implemented):**
-- **OpenAI GPT Models**: Configuration ready, provider implementation pending
+**Planned (Not Implemented):**
+- **OpenAI GPT Models**: Future consideration
 
 **Provider Features:**
 - ✅ Health check endpoints for all providers
@@ -115,10 +138,10 @@ containerized environments. Full multi-platform support for GitLab and GitHub.
 - ✅ Provider-specific timeout and retry handling
 
 **Planned Future Support:**
-- OpenAI GPT provider implementation (configuration already exists)
 - Provider load balancing and fallback mechanisms
 - Extended model selection per provider
 - Cost optimization with provider switching
+- Additional local LLM providers beyond Ollama
 
 **Architecture Features:**
 - Extensible provider system via LangChain abstraction
@@ -196,7 +219,7 @@ containerized environments. Full multi-platform support for GitLab and GitHub.
 **Planned Enhancements:**
 - Context-aware content prioritization based on project context
 
-### FR-012: Error Handling & Resilience (Partially Implemented)
+### FR-012: Error Handling & Resilience (Implemented)
 
 **Current Features:**
 - ✅ Custom exception hierarchy for different error types
@@ -205,12 +228,41 @@ containerized environments. Full multi-platform support for GitLab and GitHub.
 - ✅ Dry-run mode for testing without API calls
 - ✅ HTTP timeout configuration for API calls
 - ✅ Structured logging for troubleshooting
+- ✅ SSL certificate validation and error handling
+- ✅ GitPython error handling for local Git operations
 
 **Planned Enhancements:**
 - API failure retry logic with backoff strategies
 - Graceful degradation on partial failures
 - Advanced rate limit handling
 - Network resilience improvements
+
+### FR-013: Local Git Integration (New Feature - Implemented)
+
+**Core Functionality:**
+- ✅ **Local Change Analysis**: Review uncommitted and unpushed changes in current Git repository
+- ✅ **Smart Merge Base**: Calculate diff against target branch using Git merge-base algorithm
+- ✅ **Branch Comparison**: Support for custom target branches (main, develop, etc.)
+- ✅ **GitPython Integration**: Robust Git operations without external git binary dependency in tests
+- ✅ **Terminal-Optimized Output**: Simplified markdown format without collapsible sections
+
+**Advanced Features:**
+- ✅ **Branch Freshness Check**: Warn users when local target branch is behind remote origin
+- ✅ **Detached HEAD Support**: Handle complex Git states gracefully
+- ✅ **File Filtering**: Apply same exclusion patterns as remote reviews
+- ✅ **Commit History**: Include local commit information in analysis context
+- ✅ **Project URL Generation**: File-based URLs for local repository context
+
+**CLI Integration:**
+- ✅ `--local` flag to enable local Git analysis mode
+- ✅ `--target-branch` option to specify comparison branch (defaults to main)
+- ✅ `--output-file` support for saving local reviews to files
+
+**Use Cases:**
+- Pre-commit code quality checks
+- Feature branch review before creating MR/PR
+- Local development workflow integration
+- Offline code analysis without platform APIs
 
 ## 🔧 Non-Functional Requirements
 
@@ -273,12 +325,14 @@ containerized environments. Full multi-platform support for GitLab and GitHub.
 **Core Runtime Dependencies:**
 - **CLI Framework**: `click` (modern CLI interface with better UX)
 - **HTTP Clients**: `aiohttp` + `httpx` (async HTTP for better performance)
-- **GitLab API**: `python-gitlab` (mature GitLab integration)
+- **Platform APIs**: `python-gitlab` (GitLab integration), `PyGithub` (GitHub integration)
+- **Git Operations**: `GitPython` (local Git repository analysis)
 - **LLM Framework**: `langchain` + `langchain-community` (prompt management, LLM abstraction)
 
 **AI Providers (Implemented):**
 - **Local Development**: `ollama` + `langchain-ollama` (cost-free local LLM)
 - **Production**: `langchain-google-genai` (Gemini integration)
+- **High-Quality Alternative**: `langchain-anthropic` (Claude integration)
 
 **Configuration & Validation:**
 - **Settings Management**: `pydantic` v2+ + `pydantic-settings` (validation and settings)
@@ -374,6 +428,29 @@ The AI must generate reviews following one of two configurable structures:
 - **Minor Suggestions:** [Optional improvements]
 ```
 
+#### Local Format (`--local` workflow)
+
+```markdown
+## AI Code Review
+
+### Code Analysis
+[Technical analysis focusing on logic, security, performance, architecture]
+
+**Files Changed:** file1.py, file2.js, file3.md
+
+#### 📄 file1.py
+- **[Review]** Actionable review with reasoning
+- **[Suggestion]** Improvement suggestions
+
+#### 📄 file2.js
+- **[Review]** Actionable review with reasoning
+
+### ✅ Summary
+- **Overall Assessment:** [Quality rating + key recommendations]
+- **Priority Issues:** [Most critical items]
+- **Minor Suggestions:** [Optional improvements]
+```
+
 ### Content Requirements
 
 #### Technical Analysis Focus Areas
@@ -419,30 +496,41 @@ Generated reviews must:
 ai-code-review/
 ├── src/ai_code_review/
 │   ├── __init__.py
-│   ├── cli.py                 # CLI entry point
-│   ├── models/                # Pydantic models
+│   ├── cli.py                        # CLI entry point with 3 workflow support
+│   ├── models/                       # Pydantic models
 │   │   ├── __init__.py
-│   │   ├── config.py          # Configuration models
-│   │   ├── gitlab.py          # GitLab data models
-│   │   └── review.py          # Review data models
-│   ├── core/                  # Core business logic
+│   │   ├── config.py                 # Configuration models with platform auto-detection
+│   │   ├── platform.py               # Platform-agnostic data models (GitLab + GitHub + Local)
+│   │   └── review.py                 # Review data models
+│   ├── core/                         # Core business logic
 │   │   ├── __init__.py
-│   │   ├── gitlab_client.py   # GitLab API client
-│   │   └── review_engine.py   # Review orchestration
-│   ├── providers/             # AI provider implementations via LangChain
+│   │   ├── base_platform_client.py   # Abstract platform client interface
+│   │   ├── gitlab_client.py          # GitLab API client with SSL support
+│   │   ├── github_client.py          # GitHub API client
+│   │   ├── local_git_client.py       # Local Git operations with GitPython
+│   │   └── review_engine.py          # Multi-platform review orchestration
+│   ├── providers/                    # AI provider implementations via LangChain
 │   │   ├── __init__.py
-│   │   ├── base.py            # Abstract base provider using LangChain
-│   │   ├── ollama.py          # Ollama local LLM implementation
-│   │   └── gemini.py          # Gemini implementation via langchain-google-genai
-│   └── utils/                 # Utility functions
+│   │   ├── base.py                   # Abstract base provider using LangChain
+│   │   ├── ollama.py                 # Ollama local LLM implementation
+│   │   ├── gemini.py                 # Gemini implementation via langchain-google-genai
+│   │   └── anthropic.py              # Anthropic Claude implementation
+│   └── utils/                        # Utility functions
 │       ├── __init__.py
-│       ├── prompts.py         # LangChain prompt templates and chains
-│       └── exceptions.py      # Custom exceptions
+│       ├── prompts.py                # LangChain prompt templates with multi-format support
+│       ├── exceptions.py             # Custom exceptions
+│       ├── platform_exceptions.py   # Platform-specific exceptions
+│       └── ssl_utils.py              # SSL certificate utilities
 ├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── fixtures/
-├── docs/
+│   ├── conftest.py                   # Shared test utilities and GitPython mocking
+│   ├── unit/                         # Comprehensive unit tests (89% coverage)
+│   ├── integration/                  # End-to-end workflow tests
+│   └── fixtures/                     # Test data and mock responses
+├── docs/                             # Comprehensive documentation
+│   ├── user-guide.md                 # 3 use cases guide
+│   ├── developer-guide.md            # Architecture and development guide
+│   └── developer-guide-footer.md     # Shared documentation components
+├── .ai_review/                       # Project context for AI reviews
 ├── pyproject.toml
 ├── uv.lock
 └── README.md
@@ -457,12 +545,26 @@ ai-code-review/
 - CLI argument parsing and merging
 - Support for config files (TOML/YAML)
 
-#### GitLab Integration
+#### Platform Integration
 
+**GitLab Integration:**
 - Async HTTP client for GitLab API
 - Robust error handling and retry logic
 - Support for multiple GitLab instances
-- Efficient diff fetching and processing
+- SSL certificate support for internal instances
+- Discussion thread management
+
+**GitHub Integration:**
+- GitHub API client with Enterprise support
+- Pull Request diff analysis
+- Comment posting and management
+- GitHub Actions integration
+
+**Local Git Integration:**
+- GitPython for repository operations
+- Smart merge-base calculations
+- Branch freshness validation
+- Detached HEAD state handling
 
 #### AI Provider Abstraction via LangChain
 
@@ -511,14 +613,18 @@ ai-code-review/
 - **Multi-Platform API Integration:**
   - GitLab API integration (Merge Requests, discussion threads)
   - GitHub API integration (Pull Requests, comments)
+  - Local Git integration (GitPython, uncommitted/unpushed changes)
 - **AI Provider Integration:**
   - Ollama local LLM integration (local development only)
   - Google Gemini cloud provider integration
   - Anthropic Claude cloud provider integration
-  - OpenAI GPT models (legacy support)
 - **CI/CD Platform Testing:**
   - GitLab CI/CD with automatic platform detection
   - GitHub Actions with automatic platform detection
+- **Local Development Testing:**
+  - Git repository state testing
+  - Branch comparison and merge-base validation
+  - Terminal output format verification
 - Container-based testing with cloud providers only
 
 ### Test Tools and Fixtures
@@ -534,14 +640,17 @@ ai-code-review/
 ### Environment Variables
 
 ```bash
-# Required - Platform Access Tokens (choose one or both)
-GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # For GitLab platform
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx   # For GitHub platform
+# Platform Access Tokens (choose based on workflow)
+GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # For GitLab platform (not needed for --local)
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx   # For GitHub platform (not needed for --local)
 
 # Platform Configuration
-PLATFORM_PROVIDER=gitlab                # gitlab or github (auto-detected in CI/CD)
+PLATFORM_PROVIDER=gitlab                # gitlab, github, or local (auto-detected in CI/CD)
 GITLAB_URL=https://gitlab.com           # GitLab instance URL (supports self-hosted)
 GITHUB_URL=https://api.github.com       # GitHub API URL (supports Enterprise)
+
+# Local Git Configuration (for --local workflow)
+# No tokens required for local analysis - uses GitPython directly
 
 # Core AI Configuration
 AI_PROVIDER=gemini                      # gemini, anthropic, ollama (openai: configured but not implemented)
@@ -589,66 +698,91 @@ EXCLUDE_PATTERNS=*.lock,*.min.js,node_modules/**,dist/**,build/**
 - Log levels are validated against standard Python logging levels
 - `EXCLUDE_PATTERNS` can be set to empty string to disable all filtering
 - `BIG_DIFFS` is auto-activated for diffs >60K characters for optimal performance
+- **Local mode** requires Git repository and optional Git binary (GitPython handles most operations)
+- Platform tokens not required for `--local` workflow
 
 ### CLI Interface
 
 ```bash
-ai-code-review [OPTIONS] [PROJECT_ID] [MR_IID]
+# Multi-workflow support
+ai-code-review [OPTIONS] [PROJECT_ID] [MR_IID]  # Remote workflow
+ai-code-review --local [OPTIONS]                # Local workflow
 
-Options:
+Core Options:
+  --local                     Enable local Git review mode (analyze uncommitted/unpushed changes)
+  --target-branch TEXT        Target branch for local comparison (default: main)
+
+Platform Options:
   --gitlab-url TEXT           GitLab instance URL (or use CI_SERVER_URL)
+  --github-url TEXT           GitHub API URL (or use GITHUB_API_URL)
   --project-id TEXT           Project ID (or use CI_PROJECT_PATH)
   --mr-iid INTEGER            MR IID (or use CI_MERGE_REQUEST_IID)
-  --provider [ollama|gemini]  AI provider to use (gemini default)
-  --model TEXT                AI model name (gemini-2.5-pro default)
+  --owner TEXT                GitHub repository owner
+  --repo TEXT                 GitHub repository name
+  --pr-number INTEGER         GitHub PR number
+
+AI Provider Options:
+  --provider [ollama|gemini|anthropic]  AI provider to use (gemini default)
+  --model TEXT                AI model name (provider-specific defaults)
   --ollama-url TEXT           Ollama server URL (http://localhost:11434 default)
   --temperature FLOAT         AI temperature 0.0-2.0 (0.1 default)
   --max-tokens INTEGER        Maximum AI response tokens (8000 default)
+
+Processing Options:
   --language-hint TEXT        Programming language hint
   --max-chars INTEGER         Maximum diff characters to process (100000 default)
   --max-files INTEGER         Maximum number of files to process (100 default)
-  --post                      Post review as GitLab MR comment
+  --exclude-files TEXT        Additional file patterns to exclude (can be repeated)
+  --no-file-filtering         Disable all file filtering (include lockfiles, etc.)
+
+Output Options:
+  --post                      Post review as platform comment/discussion
+  --output-file PATH          Save review to file (supports local workflow)
+  --no-mr-summary             Disable MR summary section (compact format)
+
+Development Options:
   --dry-run                   Dry run mode (no API calls, for testing)
   --big-diffs                 Force large context window (24K tokens)
   --log-level [DEBUG|INFO|WARNING|ERROR|CRITICAL]  Logging level
-  --exclude-files TEXT        Additional file patterns to exclude (can be repeated)
-  --no-file-filtering         Disable all file filtering (include lockfiles, etc.)
   --health-check              Check AI provider connectivity and exit
   --help                      Show help message
 
 Exit Codes:
   0    Success - Review completed successfully
   1    General error (configuration, network, etc.)
-  2    GitLab API error (authentication, permissions, etc.)
+  2    Platform API error (authentication, permissions, etc.)
   3    AI provider error (API limits, model unavailable, etc.)
   4    Timeout error
-  5    Empty MR (no changes to review)
+  5    Empty changes (no changes to review)
 ```
 
 **CLI Usage Examples:**
 
 ```bash
-# Basic usage with Gemini (production)
-AI_API_KEY=your_key ai-code-review group/project 123
+# LOCAL WORKFLOW - Review uncommitted/unpushed changes
+ai-code-review --local                                    # Compare against main branch
+ai-code-review --local --target-branch develop           # Compare against develop
+ai-code-review --local --provider ollama                 # Use Ollama for local analysis
+ai-code-review --local --output-file review.md           # Save local review to file
 
-# Post review to GitLab (typical CI/CD usage)
-AI_API_KEY=your_key ai-code-review group/project 123 --post
+# REMOTE WORKFLOW - Analyze existing MRs/PRs
+AI_API_KEY=your_key ai-code-review group/project 123     # GitLab MR analysis
+AI_API_KEY=your_key ai-code-review --owner user --repo project --pr-number 456  # GitHub PR
+ai-code-review group/project 123 --provider ollama       # Local Ollama for remote MR
 
-# Local development with Ollama (no API key needed)
-ai-code-review group/project 123 --provider ollama
+# CI/CD WORKFLOW - Automated reviews
+ai-code-review --post                                     # Auto-detect from CI environment
+AI_API_KEY=your_key ai-code-review --post                # Post review to MR/PR
 
-# Large MR with manual big-diffs flag
-ai-code-review group/project 123 --big-diffs
-
-# Custom file filtering
-ai-code-review group/project 123 --exclude-files "*.test.js" --exclude-files "docs/**"
-
-# Health check connectivity
-AI_API_KEY=your_key ai-code-review --health-check
+# ADVANCED OPTIONS
+ai-code-review --local --big-diffs --exclude-files "*.lock"        # Large local changes
+AI_API_KEY=your_key ai-code-review group/project 123 --no-mr-summary  # Compact format
+ai-code-review --health-check --provider gemini                    # Provider connectivity
 ```
 
-### GitLab CI Usage
+### Platform CI Usage
 
+**GitLab CI:**
 ```bash
 # Automatic mode (uses CI environment variables)
 ai-code-review --post
@@ -658,6 +792,15 @@ ai-code-review --project-id "$CI_PROJECT_PATH" --mr-iid "$CI_MERGE_REQUEST_IID" 
 
 # With health check for reliability
 ai-code-review --health-check && ai-code-review --post
+```
+
+**GitHub Actions:**
+```bash
+# Automatic mode (uses GitHub environment variables)
+ai-code-review --post
+
+# Manual mode with explicit parameters
+ai-code-review --owner "$GITHUB_REPOSITORY_OWNER" --repo "$GITHUB_REPOSITORY_NAME" --pr-number "$PR_NUMBER" --post
 ```
 
 ## 📈 Development Phases
@@ -701,8 +844,10 @@ ai-code-review --health-check && ai-code-review --post
 
 - ✅ Generate high-quality code reviews comparable to current tool
 - ✅ Support all GitLab MR workflows
-- ✅ Handle edge cases gracefully
-- ✅ Provide clear, actionable feedback
+- ✅ Support all GitHub PR workflows
+- ✅ Support local Git review workflows
+- ✅ Handle edge cases gracefully across all 3 platforms
+- ✅ Provide clear, actionable feedback in appropriate formats
 
 ### Quality
 
@@ -713,13 +858,16 @@ ai-code-review --health-check && ai-code-review --post
 
 ### Performance Goals
 
-- ✅ <30s review generation for typical MRs
-- ✅ Handle large MRs (100+ files) efficiently
-- ✅ Minimal resource usage
+- ✅ <30s review generation for typical MRs/PRs
+- ✅ <5s local review generation for typical changes
+- ✅ Handle large MRs (100+ files) efficiently across all platforms
+- ✅ Minimal resource usage with smart context management
 
 ### Maintainability Goals
 
-- ✅ Modular, extensible architecture
-- ✅ Clear separation of concerns
-- ✅ Easy to add new AI providers
-- ✅ Comprehensive error handling
+- ✅ Modular, extensible architecture with platform abstraction
+- ✅ Clear separation of concerns across 3 workflow types
+- ✅ Easy to add new AI providers via LangChain
+- ✅ Easy to add new platforms via PlatformClientInterface
+- ✅ Comprehensive error handling and CI compatibility
+- ✅ 89% test coverage with robust GitPython mocking strategy
