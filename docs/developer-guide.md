@@ -32,7 +32,7 @@ Guide for developers who want to understand, modify, or extend the AI Code Revie
 ```
 User/CI → CLI → Review Engine → AI Provider
                ↓              ↓
-          Platform Client → GitLab/GitHub API
+          Platform Client → GitLab/GitHub/Local Git
                ↓
           Configuration
                ↓
@@ -43,14 +43,14 @@ The project follows a **layered architecture** with clear separation of concerns
 
 - **CLI Layer**: User interface and command-line argument handling
 - **Business Logic**: Review orchestration and processing
-- **Platform Layer**: GitLab and GitHub API abstraction
-- **Provider Layer**: AI model abstraction (Gemini, Anthropic, OpenAI, Ollama)
+- **Platform Layer**: GitLab, GitHub, and Local Git abstraction
+- **Provider Layer**: AI model abstraction (Gemini, Anthropic, Ollama)
 - **Data Layer**: Configuration, models, and platform-agnostic data structures
 - **Utils**: Shared utilities, prompts, and exceptions
 
 ### Key Design Principles
 
-- **Platform Abstraction**: Support for multiple code hosting platforms (GitLab, GitHub)
+- **Platform Abstraction**: Support for multiple platforms (GitLab, GitHub, Local Git)
 - **Provider Abstraction**: Easy to add new AI providers via LangChain
 - **Configuration-First**: All behavior configurable via environment variables
 - **Type Safety**: Full type annotations and strict mypy checking
@@ -66,71 +66,91 @@ src/ai_code_review/
 │   ├── base_platform_client.py # 🔧 Abstract platform client base
 │   ├── gitlab_client.py        # 📡 GitLab API integration
 │   ├── github_client.py        # 🐙 GitHub API integration
+│   ├── local_git_client.py     # 🔍 Local Git integration
 │   └── review_engine.py        # ⚙️  Platform-agnostic review orchestration
 ├── models/                     # 📋 Data models and validation
-│   ├── config.py              # ⚙️  Multi-platform configuration with Pydantic
-│   ├── platform.py            # 🌐 Platform-agnostic data models
-│   ├── gitlab.py              # 📊 GitLab-specific data models (legacy)
-│   └── review.py              # 📝 Review data structures
+│   ├── config.py               # ⚙️  Multi-platform configuration with Pydantic
+│   ├── platform.py             # 🌐 Platform-agnostic data models
+│   └── review.py               # 📝 Review data structures
 ├── providers/                  # 🤖 AI provider implementations
-│   ├── base.py                # 🔧 Abstract base provider
-│   ├── anthropic.py           # 🟠 Anthropic Claude implementation
-│   ├── gemini.py              # 🟢 Google Gemini implementation
-│   └── ollama.py              # 🔵 Ollama local LLM implementation
+│   ├── base.py                 # 🔧 Abstract base provider
+│   ├── anthropic.py            # 🟠 Anthropic Claude implementation
+│   ├── gemini.py               # 🟢 Google Gemini implementation
+│   └── ollama.py               # 🔵 Ollama local LLM implementation
 └── utils/                      # 🛠️  Shared utilities
     ├── exceptions.py           # ❌ Custom exceptions
-    ├── platform_exceptions.py # 🚫 Platform-specific exceptions
-    └── prompts.py              # 💬 LangChain prompt templates
+    ├── platform_exceptions.py  # 🚫 Platform-specific exceptions
+    ├── prompts.py              # 💬 LangChain prompt templates
+    └── ssl_utils.py            # 🔒 SSL certificate utilities
 ```
 
 ### Key Files Explained
 
 #### 🎯 `cli.py` - Command Line Interface
 
-- Click-based CLI with comprehensive options
-- Handles configuration merging (env vars + CLI args)
+- Click-based CLI with **3 main workflows** support
+- Handles `--local`, `--platform`, and posting options
+- Configuration merging (env vars + CLI args)
 - Entry point: `main()` function
 - **Modify when:** Adding new CLI options or commands
 
 #### ⚙️ `core/review_engine.py` - Main Business Logic
 
-- Orchestrates the entire review process
+- Orchestrates the entire review process for **all 3 workflows**
+- **Factory pattern** for platform clients (Local/GitLab/GitHub)
 - Handles file filtering and diff processing
 - Manages AI provider selection and invocation
-- **Modify when:** Changing review logic or adding features
+- Token calculation and content optimization
+- **Modify when:** Changing review workflow or adding new platforms
 
-#### 📡 Platform Clients - GitLab/GitHub Integration
+#### 🔧 `core/base_platform_client.py` - Platform Abstraction
 
-**`core/base_platform_client.py`** - Abstract Base Class:
-- Common functionality for all platform clients
+- Abstract base class for **all platform types**
+- Defines common interface: `get_pull_request_data()`, `post_review()`
 - File filtering and content limit logic
-- Platform-agnostic interface definition
+- Platform-agnostic data model conversion
+- **Implementations:** `GitLabClient`, `GitHubClient`, `LocalGitClient`
 
-**`core/gitlab_client.py`** - GitLab Implementation:
-- Fetches MR diffs and metadata
+#### 📡 `core/gitlab_client.py` - GitLab Remote Client
+
+- Implements remote GitLab MR analysis via API
+- Fetches MR diffs, metadata, and commit information
 - Posts review comments back to GitLab
-- Handles GitLab API authentication
-- **Modify when:** Adding GitLab features or fixing API issues
+- Handles GitLab API authentication with tokens
+- **Modify when:** Adding GitLab-specific features or API fixes
 
-**`core/github_client.py`** - GitHub Implementation:
-- Fetches PR diffs and metadata
+#### 🐙 `core/github_client.py` - GitHub Remote Client
+
+- Implements remote GitHub PR analysis via API
+- Fetches PR diffs, metadata, and commit information
 - Posts review comments to GitHub
-- Handles GitHub API authentication
-- **Modify when:** Adding GitHub features or fixing API issues
+- Handles GitHub API authentication with tokens
+- **Modify when:** Adding GitHub-specific features or API fixes
+
+#### 🔍 `core/local_git_client.py` - Local Git Client
+
+- Implements **local Git review functionality**
+- Uses `GitPython` for local repository operations
+- Extracts diffs between local changes and target branch
+- No authentication required - works with local repos only
+- Cannot post reviews (returns mock success)
+- **Modify when:** Extending local Git functionality or diff processing
 
 #### 💬 `utils/prompts.py` - AI Prompt Management
 
-- LangChain prompt templates and chains
-- Defines the structure and content requirements for AI
-- Most commonly modified file
-- **Modify when:** Improving AI output quality or format
+- LangChain prompt templates for **different review formats**
+- **Full format:** Collapsible sections with MR summary (remote reviews)
+- **Local format:** Simple, terminal-friendly output (local reviews)
+- Helper functions for content extraction and formatting
+- **Modify when:** Improving AI output quality or adding new formats
 
 #### ⚙️ `models/config.py` - Configuration System
 
 - Pydantic models for type-safe configuration
-- Environment variable validation
-- Default values and constraints
-- **Modify when:** Adding new configuration options
+- **3 platform providers:** `GITLAB`, `GITHUB`, `LOCAL`
+- Environment variable validation and Git repository detection
+- AI provider and model configuration
+- **Modify when:** Adding new configuration options or platforms
 
 ## 🛠️ Technology Stack
 
@@ -155,6 +175,9 @@ langchain-ollama>=0.2.0         # Ollama LangChain integration
 pydantic>=2.5.0          # Data validation and settings
 pydantic-settings>=2.10.1 # Settings management
 structlog>=23.2.0        # Structured logging
+
+# Git Integration
+GitPython>=3.1.40        # Local Git operations
 ```
 
 ### Development Tools
@@ -178,7 +201,17 @@ uv                  # Package management
 
 ## 🔧 Common Modification Scenarios
 
-### 1. Adding a New Platform (e.g., Bitbucket)
+### 1. Understanding the 3 Use Cases
+
+The tool now supports **3 distinct workflows**:
+
+1. **Local Reviews**: `LocalGitClient` - Reviews local Git changes using GitPython
+2. **Remote Reviews**: `GitLabClient`/`GitHubClient` - Reviews existing MRs/PRs via API
+3. **CI Integration**: Same as remote but with `--post-review` flag
+
+All clients implement `BasePlatformClient` interface for consistency.
+
+### 2. Adding a New Platform (e.g., Bitbucket)
 
 **Files to modify:**
 
@@ -188,7 +221,8 @@ uv                  # Package management
 class PlatformProvider(str, Enum):
     GITLAB = "gitlab"
     GITHUB = "github"
-    BITBUCKET = "bitbucket"  # Add new platform
+    LOCAL = "local"          # Already added!
+    BITBUCKET = "bitbucket"  # NEW
 ```
 
 1. **Create Platform Client** (`core/bitbucket_client.py`):
@@ -197,11 +231,11 @@ class PlatformProvider(str, Enum):
 class BitbucketClient(BasePlatformClient):
     """Bitbucket API client implementation."""
 
-    async def get_pull_request_data(self, project_id: str, pr_number: int) -> PullRequestData:
+    async def get_pull_request_data(self) -> PullRequestData:
         # Implement Bitbucket API calls
         pass
 
-    async def post_review(self, project_id: str, pr_number: int, review_content: str) -> PostReviewResponse:
+    async def post_review(self, review_content: str) -> None:
         # Implement posting to Bitbucket
         pass
 ```
@@ -227,88 +261,102 @@ bitbucket_url: str = Field(default="https://api.bitbucket.org/2.0")
 
 Create comprehensive test suite following existing patterns.
 
-### 2. Modifying AI Prompts
+### 3. Modifying AI Prompts
 
 **File:** `src/ai_code_review/utils/prompts.py`
 
-The prompts determine what the AI generates. This is the **most commonly modified** part.
+The prompt system supports **3 different output formats**:
+
+1. **Full Format** (remote reviews): Collapsible sections with MR summary
+2. **Compact Format** (remote reviews): No MR summary, technical focus
+3. **Local Format** (local reviews): Terminal-friendly, no collapsible sections
 
 #### Current Structure
 
 ```python
-# Format templates (extracted as constants for maintainability)
+# Format templates for different review types
 _FORMAT_EXAMPLE_FULL = """## AI Code Review
 ### 📋 MR Summary
-..."""
+<details><summary>Click to expand</summary>..."""
 
 _FORMAT_EXAMPLE_COMPACT = """## AI Code Review
-### Detailed Code Review
-..."""
+### 🔍 Detailed Code Review
+Technical analysis without summary..."""
 
-def create_system_prompt(include_mr_summary: bool = True) -> str:
-    """System prompt - defines AI role and behavior"""
-    return """You are an expert senior software engineer..."""
+_FORMAT_EXAMPLE_LOCAL = """## 🔍 Code Analysis
+Brief analysis for terminal display
 
-def create_review_prompt(include_mr_summary: bool = True) -> ChatPromptTemplate:
-    """User prompt template - defines output format"""
-    format_example = _FORMAT_EXAMPLE_FULL if include_mr_summary else _FORMAT_EXAMPLE_COMPACT
-    template = f"""IGNORE any tendency to write free-form analysis...
-    {format_example}..."""
-    return ChatPromptTemplate.from_messages([...])
+## 📂 File Reviews
+File-by-file review
 
-def _create_system_prompt_func(include_mr_summary: bool) -> Any:
-    """Factory pattern for LangChain Expression Language (LCEL) compatibility.
+## ✅ Summary
+Key findings and recommendations"""
 
-    Returns a closure with configuration baked in, avoiding the need to pass
-    configuration through .ainvoke() input dictionary every time.
-    """
-    def _get_system_prompt(input_data: dict[str, Any]) -> str:
-        return create_system_prompt(include_mr_summary=include_mr_summary)
-    return _get_system_prompt
+def create_system_prompt(include_mr_summary: bool = True, local_mode: bool = False) -> str:
+    """System prompt with format-specific instructions"""
+    # Different instructions for local vs remote reviews
 
-def create_review_chain(llm: Any, config: Config) -> Any:
-    """LangChain pipeline combining prompts with AI model"""
-    # Input transformations + prompt + LLM + output parser
-    prompt_template = create_review_prompt(include_mr_summary=config.include_mr_summary)
-    input_transformations = _build_chain_inputs(include_mr_summary=config.include_mr_summary)
-    return input_transformations | prompt_template | llm | StrOutputParser()
+def create_review_prompt(include_mr_summary: bool = True, local_mode: bool = False) -> ChatPromptTemplate:
+    """User prompt template with format selection"""
+    if local_mode:
+        format_example = _FORMAT_EXAMPLE_LOCAL
+    else:
+        format_example = _FORMAT_EXAMPLE_FULL if include_mr_summary else _FORMAT_EXAMPLE_COMPACT
+
+# Helper functions for modular content processing
+def _extract_diff_content(input_data: dict[str, Any]) -> str:
+def _create_language_hint_section(input_data: dict[str, Any]) -> str:
+def _create_project_context_section(input_data: dict[str, Any]) -> str:
 ```
 
 #### How to Modify Prompts
 
+##### Example 1: Add new output format
+
 ```python
-# 1. Change system behavior
-def create_system_prompt(include_mr_summary: bool = True) -> str:
-    return """You are a security-focused code reviewer.
-    Focus primarily on security vulnerabilities and best practices..."""
+# 1. Create new format template
+_FORMAT_EXAMPLE_SECURITY = """## 🔒 Security Review
+### 🚨 Critical Security Issues
+High-priority vulnerabilities requiring immediate attention
 
-# 2. Modify output format templates
-_SECURITY_FORMAT_EXAMPLE = """## Security Review
-### 🔒 Security Analysis
-### 🚨 Critical Issues
-### ✅ Security Recommendations"""
+### ⚠️ Security Considerations
+Medium-priority security improvements
 
-def create_review_prompt(include_mr_summary: bool = True) -> ChatPromptTemplate:
-    format_example = _SECURITY_FORMAT_EXAMPLE  # Use your custom format
-    template = f"""Generate a security-focused review with this structure:
+### ✅ Security Recommendations
+Best practices and preventive measures"""
 
-    {format_example}
+# 2. Update system prompt function
+def create_system_prompt(include_mr_summary: bool = True, local_mode: bool = False, security_focus: bool = False) -> str:
+    if security_focus:
+        return """You are a senior security engineer focused on code security.
+        Prioritize identifying vulnerabilities, security anti-patterns..."""
+    # ... existing logic
 
-    {{diff_content}}"""
-    return ChatPromptTemplate.from_messages([("system", "{{system_prompt}}"), ("human", template)])
+# 3. Update review prompt function
+def create_review_prompt(include_mr_summary: bool = True, local_mode: bool = False, security_focus: bool = False) -> ChatPromptTemplate:
+    if security_focus:
+        format_example = _FORMAT_EXAMPLE_SECURITY
+    elif local_mode:
+        format_example = _FORMAT_EXAMPLE_LOCAL
+    # ... existing logic
+```
 
-# 3. Add new input variables to chain
+##### Example 2: Add new helper function
+
+```python
 def _create_security_context_section(input_data: dict[str, Any]) -> str:
+    """Create security context section if security data is provided."""
     security_context = input_data.get("security_context")
-    if security_context:
-        return f"## Security Context\n{security_context}"
+    if security_context and security_context.strip():
+        return f"## 🔒 Security Context\n{security_context}"
     return ""
 
-def _build_chain_inputs(include_mr_summary: bool) -> dict[str, Any]:
+# Add to _build_chain_inputs()
+def _build_chain_inputs(include_mr_summary: bool, local_mode: bool) -> dict[str, Any]:
     return {
-        "system_prompt": _create_system_prompt_func(include_mr_summary),
-        "security_context_section": _create_security_context_section,  # Add new section
-        # ... other transformations
+        "system_prompt": _create_system_prompt_func(include_mr_summary, local_mode),
+        "security_context_section": _create_security_context_section,  # NEW
+        # ... existing helpers
     }
 ```
 
@@ -329,46 +377,57 @@ ai-code-review group/project 123 --no-mr-summary --dry-run  # Short format
 ai-code-review group/project 123 --dry-run                  # Full format (default)
 ```
 
-### 2. Review Format Configuration
+### 4. Review Format Configuration
 
 **Files:** `src/ai_code_review/models/config.py`, `src/ai_code_review/cli.py`, `src/ai_code_review/utils/prompts.py`
 
-The project supports **configurable review formats** to match different team preferences and use cases.
+The project supports **3 review formats** optimized for different workflows:
 
 #### Available Formats
 
-**Full Format (Default):**
-- 📋 **MR Summary**: High-level change overview
+**1. Full Format (Remote Reviews - Default):**
+- 📋 **MR Summary**: High-level change overview with collapsible sections
 - 📝 **Detailed Code Review**: Technical analysis
 - ✅ **Summary**: Key findings and recommendations
 
-**Compact Format (`--no-mr-summary`):**
+**2. Compact Format (Remote Reviews - `--no-mr-summary`):**
 - 📝 **Detailed Code Review**: Technical analysis (main focus)
 - ✅ **Summary**: Key findings and recommendations
 
+**3. Local Format (Local Reviews - `--local`):**
+- 🔍 **Code Analysis**: Brief technical analysis
+- 📂 **File Reviews**: File-by-file review
+- ✅ **Summary**: Key findings and recommendations
+- **No collapsible sections** - optimized for terminal display
+
 #### Configuration Methods
+
+**CLI Flags:**
+```bash
+# Local format (terminal-friendly)
+ai-code-review --local
+
+# Remote formats
+ai-code-review group/project 123                  # Full format (default)
+ai-code-review group/project 123 --no-mr-summary  # Compact format
+```
 
 **Environment Variable:**
 ```bash
-export INCLUDE_MR_SUMMARY=false  # Enable compact format
+export INCLUDE_MR_SUMMARY=false  # Enable compact format for remote reviews
 export INCLUDE_MR_SUMMARY=true   # Enable full format (default)
-```
-
-**CLI Flag:**
-```bash
-ai-code-review group/project 123 --no-mr-summary  # Compact format
-ai-code-review group/project 123                  # Full format (default)
 ```
 
 **Programmatic Configuration:**
 ```python
-from ai_code_review.models.config import Config
+from ai_code_review.models.config import Config, PlatformProvider
 
-# Compact format
-config = Config(include_mr_summary=False)
+# Local format (automatic when using LOCAL platform)
+config = Config(platform_provider=PlatformProvider.LOCAL)
 
-# Full format (default)
-config = Config()  # include_mr_summary defaults to True
+# Remote formats
+config = Config(include_mr_summary=False)  # Compact
+config = Config()                          # Full format (default)
 ```
 
 #### Implementation Details
@@ -377,7 +436,7 @@ The format configuration affects:
 
 1. **Prompt Templates** (`utils/prompts.py`):
    ```python
-   # Constants for maintainability
+   # Constants for all 3 formats
    _FORMAT_EXAMPLE_FULL = """## AI Code Review
    ### 📋 MR Summary
    ### Detailed Code Review
@@ -387,27 +446,36 @@ The format configuration affects:
    ### Detailed Code Review
    ### ✅ Summary"""
 
-   # Dynamic format selection
-   def create_review_prompt(include_mr_summary: bool = True) -> ChatPromptTemplate:
-       format_example = _FORMAT_EXAMPLE_FULL if include_mr_summary else _FORMAT_EXAMPLE_COMPACT
+   _FORMAT_EXAMPLE_LOCAL = """## 🔍 Code Analysis
+   ### 📂 File Reviews
+   ### ✅ Summary"""
+
+   # Format selection logic
+   def create_review_prompt(include_mr_summary: bool = True, local_mode: bool = False) -> ChatPromptTemplate:
+       if local_mode:
+           format_example = _FORMAT_EXAMPLE_LOCAL
+       else:
+           format_example = _FORMAT_EXAMPLE_FULL if include_mr_summary else _FORMAT_EXAMPLE_COMPACT
    ```
 
-2. **System Prompts** (also conditional based on format)
-3. **Mock Reviews** (for dry-run testing)
+2. **System Prompts** (conditional based on format and mode)
+3. **Mock Reviews** (format-aware for dry-run testing)
 
 #### Testing Format Options
 
 ```bash
-# Test both formats
-ai-code-review group/project 123 --dry-run                  # Full format
-ai-code-review group/project 123 --dry-run --no-mr-summary  # Compact format
+# Test all 3 formats
+ai-code-review --local --dry-run                           # Local format
+ai-code-review group/project 123 --dry-run                 # Full remote format
+ai-code-review group/project 123 --dry-run --no-mr-summary # Compact remote format
 
 # Integration testing
+uv run pytest tests/unit/test_prompts.py -k "local_mode" -v
 uv run pytest tests/unit/test_prompts.py -k "mr_summary" -v
-uv run pytest tests/unit/test_review_engine.py -k "mr_summary" -v
+uv run pytest tests/unit/test_review_engine.py -k "format" -v
 ```
 
-### 3. Project Context Integration
+### 5. Project Context Integration
 
 **Files:** `src/ai_code_review/core/review_engine.py`, `src/ai_code_review/models/config.py`, `src/ai_code_review/cli.py`
 
@@ -443,7 +511,7 @@ The **Project Context** feature allows AI reviews to understand project-specific
        context_file_path = self.config.project_context_file
        # Safe file loading with error handling...
 
-   def _get_project_context(self, mr_data: MergeRequestData | None = None) -> str:
+   def _get_project_context(self, pr_data: PullRequestData | None = None) -> str:
        """Get project context for AI review."""
        if self.config.enable_project_context:
            project_context_content = self._load_project_context_file()
@@ -620,10 +688,15 @@ class Config(BaseSettings):
         le=300,  # Max 5 minutes
     )
 
-    # Real example from the project: Optional MR Summary section
+    # Real examples from the project:
     include_mr_summary: bool = Field(
         default=True,
-        description="Include MR Summary section in reviews (disable for shorter, code-focused reviews)"
+        description="Include MR Summary section in reviews"
+    )
+
+    target_branch: str = Field(
+        default="main",
+        description="Target branch for local reviews"
     )
 
     # Add validation if needed
@@ -639,44 +712,19 @@ class Config(BaseSettings):
 #### Update CLI Arguments
 
 ```python
-# src/ai_code_review/cli.py
-@click.option(
-    "--custom-timeout",
-    type=int,
-    default=None,
-    help="Custom timeout in seconds (10-300)"
-)
-# Real example from the project: MR Summary control
-@click.option(
-    "--no-mr-summary",
-    is_flag=True,
-    help="Disable MR Summary section for shorter, code-focused reviews"
-)
-def main(custom_timeout: int | None, no_mr_summary: bool, ...):
-    config = Config(
-        custom_timeout=custom_timeout,
-        include_mr_summary=not no_mr_summary,
-        # ... other config
-    )
-```
 
-#### Use in Code
-
-```python
-# src/ai_code_review/core/review_engine.py
-async def some_operation(self):
-    timeout = self.config.custom_timeout
-    # Use the configuration value
-```
 
 **Testing File Filtering:**
 
 ```bash
-# Test filtering
+# Test local filtering
+ai-code-review --local --exclude-files "*.test.*,docs/**"
+
+# Test remote filtering
 ai-code-review group/project 123 --exclude-files "*.test.*" --exclude-files "docs/**"
 
-# Disable filtering to see all files
-ai-code-review group/project 123 --no-file-filtering
+# Test with different file limits
+ai-code-review --local --max-files 5 --max-file-context 1000
 ```
 
 ## 🧪 Development Workflow
@@ -722,12 +770,18 @@ uv run pytest tests/unit/test_prompts.py::test_create_review_chain -v
 #### Integration Testing
 
 ```bash
-# Test with real GitLab but dry-run AI
+# Test local reviews (no tokens needed!)
+ai-code-review --local --dry-run             # Mock local review
+ai-code-review --local                       # Real local review with AI
+
+# Test remote reviews
 GITLAB_TOKEN=your_token ai-code-review group/project 123 --dry-run
+GITHUB_TOKEN=your_token ai-code-review --platform github owner/repo 456 --dry-run
 
 # Test with Ollama locally
 ollama serve  # In another terminal
-ai-code-review group/project 123 --provider ollama
+ai-code-review --local --ai-provider ollama  # Local review with local AI
+ai-code-review group/project 123 --ai-provider ollama  # Remote review with local AI
 
 # Test health checks
 AI_API_KEY=your_key ai-code-review --health-check
@@ -757,7 +811,10 @@ uv run pre-commit run --all-files
 #### Enable Debug Logging
 
 ```bash
-# Local debugging
+# Local review debugging
+LOG_LEVEL=DEBUG ai-code-review --local
+
+# Remote review debugging
 LOG_LEVEL=DEBUG ai-code-review group/project 123
 
 # In code
