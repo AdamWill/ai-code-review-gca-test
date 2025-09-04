@@ -654,3 +654,71 @@ AI generated review feedback for test purposes. The code changes appear well-str
         result = engine._load_project_context_file()
 
         assert result == content
+
+    def test_create_platform_client_factory_methods(self) -> None:
+        """Test platform client factory creation - hits lines 48-57."""
+        from ai_code_review.models.config import PlatformProvider
+
+        # Test GitHub client creation
+        github_config = Config(
+            github_token="test_token",
+            platform_provider=PlatformProvider.GITHUB,
+            ai_provider=AIProvider.OLLAMA,
+        )
+
+        github_engine = ReviewEngine(github_config)
+        assert github_engine.platform_client is not None
+
+        # Test LOCAL client creation
+        local_config = Config(
+            platform_provider=PlatformProvider.LOCAL,
+            ai_provider=AIProvider.OLLAMA,
+        )
+
+        local_engine = ReviewEngine(local_config)
+        assert local_engine.platform_client is not None
+
+    def test_load_project_context_file_exception_handling(
+        self, test_config: Config, chdir_tmp
+    ) -> None:
+        """Test _load_project_context_file exception handling - hits lines 385-391."""
+
+        # Create directory but with permission issues
+        project_dir = chdir_tmp / ".ai_review"
+        project_dir.mkdir()
+
+        engine = ReviewEngine(test_config)
+
+        # Mock file operations to raise exception
+        with patch(
+            "pathlib.Path.read_text", side_effect=PermissionError("Access denied")
+        ):
+            result = engine._load_project_context_file()
+
+            # Should handle exception gracefully and return None - hits lines 385-391
+            assert result is None
+
+    def test_anthropic_provider_creation(self) -> None:
+        """Test Anthropic provider creation - hits lines 70-73."""
+        config = Config(
+            ai_api_key="test_key",  # Use generic ai_api_key field
+            ai_provider=AIProvider.ANTHROPIC,
+        )
+
+        engine = ReviewEngine(config)
+        assert engine.ai_provider is not None
+        assert engine.ai_provider.provider_name == "anthropic"
+
+    def test_gemini_provider_creation(self) -> None:
+        """Test Gemini provider creation - hits lines 67-69."""
+        config = Config(
+            ai_api_key="test_key",  # Use generic ai_api_key field
+            ai_provider=AIProvider.GEMINI,
+        )
+
+        engine = ReviewEngine(config)
+        assert engine.ai_provider is not None
+        assert engine.ai_provider.provider_name == "gemini"
+
+    # Note: Removed extremely dangerous test that patched len() builtin
+    # It was causing real Ollama connections and 14+ second execution times

@@ -124,6 +124,60 @@ class TestPromptGeneration:
         # Local should always exclude MR summary regardless of flag
         assert "### 📋 MR Summary" not in local_prompt
 
+    def test_extract_diff_content(self) -> None:
+        """Test _extract_diff_content function."""
+        from ai_code_review.utils.prompts import _extract_diff_content
+
+        test_input = {"diff": "+ new code\n- old code"}
+        result = _extract_diff_content(test_input)
+
+        assert result == "+ new code\n- old code"
+
+    def test_create_language_hint_section_with_language(self) -> None:
+        """Test _create_language_hint_section with language provided."""
+        from ai_code_review.utils.prompts import _create_language_hint_section
+
+        test_input = {"language": "Python"}
+        result = _create_language_hint_section(test_input)
+
+        assert result == "**Primary Language:** Python"
+
+    def test_create_language_hint_section_no_language(self) -> None:
+        """Test _create_language_hint_section without language."""
+        from ai_code_review.utils.prompts import _create_language_hint_section
+
+        test_input = {}
+        result = _create_language_hint_section(test_input)
+
+        assert result == ""
+
+    def test_create_project_context_section_with_context(self) -> None:
+        """Test _create_project_context_section with context provided."""
+        from ai_code_review.utils.prompts import _create_project_context_section
+
+        test_input = {"context": "This is a Django web application"}
+        result = _create_project_context_section(test_input)
+
+        assert result == "## Project Context\nThis is a Django web application"
+
+    def test_create_project_context_section_no_context(self) -> None:
+        """Test _create_project_context_section without context."""
+        from ai_code_review.utils.prompts import _create_project_context_section
+
+        test_input = {}
+        result = _create_project_context_section(test_input)
+
+        assert result == ""
+
+    def test_create_project_context_section_empty_context(self) -> None:
+        """Test _create_project_context_section with empty/whitespace context."""
+        from ai_code_review.utils.prompts import _create_project_context_section
+
+        test_input = {"context": "   "}
+        result = _create_project_context_section(test_input)
+
+        assert result == ""
+
 
 class MockLLM:
     """Mock LLM for testing."""
