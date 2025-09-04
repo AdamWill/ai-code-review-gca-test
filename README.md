@@ -1,6 +1,10 @@
 # AI Code Review
 
-AI-powered code review tool for **GitLab** and **GitHub**. Analyzes pull/merge requests and provides intelligent feedback to improve code quality.
+AI-powered code review tool with **3 powerful use cases**:
+
+🔍 **Local Reviews** - Review your local changes before committing
+🌐 **Remote Reviews** - Analyze existing MRs/PRs from the terminal
+🤖 **CI Integration** - Automated reviews in your CI/CD pipeline
 
 ## 🚀 Quick Start
 
@@ -14,16 +18,21 @@ uv sync
 pip install -e .
 ```
 
+> To install or learn more about `uv`, check here:
+[uv](https://docs.astral.sh/uv)
+
 ### Required Setup
 
-#### 1. Platform Token
+#### 1. Platform Token (Not needed for local reviews)
 
 ```bash
-# For GitLab
+# For GitLab remote reviews
 export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
 
-# For GitHub
+# For GitHub remote reviews
 export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+
+# Local reviews don't need platform tokens! 🎉
 ```
 
 #### 2. AI API Key
@@ -35,9 +44,25 @@ export AI_API_KEY=your_gemini_api_key_here
 
 ## 📋 Usage
 
-### Local Development
+### 🔍 Use Case 1: Local Code Review
 
-**Review without posting (analysis only):**
+**Review your local changes before committing:**
+
+```bash
+# Review current local changes vs main branch
+ai-code-review --local
+
+# Review against specific target branch
+ai-code-review --local --target-branch develop
+
+# Save review to file (terminal-friendly format)
+ai-code-review --local -o local-review.md
+```
+
+### 🌐 Use Case 2: Remote Code Review
+
+**Analyze existing MRs/PRs from terminal (no posting):**
+
 ```bash
 # GitLab MR
 ai-code-review group/project 123
@@ -47,18 +72,12 @@ ai-code-review --platform github owner/repo 456
 
 # Save to file
 ai-code-review group/project 123 -o review.md
-```
 
-**Review and post comment:**
-```bash
-# GitLab MR
+# Post the review to the MR/PR
 ai-code-review group/project 123 --post
-
-# GitHub PR
-ai-code-review --platform github owner/repo 456 --post
 ```
 
-### CI/CD Integration
+### 🤖 Use Case 3: CI/CD Integration
 
 #### GitLab CI
 

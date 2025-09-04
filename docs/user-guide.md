@@ -1,33 +1,146 @@
 # User Guide: AI Code Review
 
-Simple guide to get AI-powered code reviews for your **GitLab Merge Requests** and **GitHub Pull Requests**.
+Simple guide to get AI-powered code reviews with **3 powerful workflows**:
+
+🔍 **Local Reviews** - Review your changes before committing
+🌐 **Remote Reviews** - Analyze existing MRs/PRs from terminal
+🤖 **CI Integration** - Automated reviews in CI/CD pipelines
 
 ## 📑 Table of Contents
 
-- [🚀 Quick Setup Options](#-quick-setup-options)
-  - [Option 1: GitLab CI/CD (Pre-built Container)](#option-1-gitlab-cicd-pre-built-container)
-  - [Option 2: GitHub Actions (Using GitLab Container)](#option-2-github-actions-using-gitlab-container)
-  - [Option 3: Build Your Own Container](#option-3-build-your-own-container)
-  - [Option 4: Install from Repository](#option-4-install-from-repository)
+- [🔍 Local Code Reviews](#-local-code-reviews)
+  - [Local Setup](#local-setup)
+  - [Local Basic Usage](#local-basic-usage)
+  - [Advanced Local Options](#advanced-local-options)
+- [🌐 Remote Code Reviews](#-remote-code-reviews)
+  - [Prerequisites](#prerequisites)
+  - [Remote Usage Examples](#remote-usage-examples)
+  - [Output Options](#output-options)
+  - [Local Development Workflow](#local-development-workflow)
+- [🤖 CI Integration](#-ci-integration)
+  - [GitLab CI/CD (Pre-built Container)](#gitlab-cicd-pre-built-container)
+  - [GitHub Actions (Using GitLab Container)](#github-actions-using-gitlab-container)
+  - [Build Your Own Container](#build-your-own-container)
+  - [Install from Repository](#install-from-repository)
 - [⚙️ Advanced Configuration](#️-advanced-configuration)
   - [CI/CD Variables Configuration](#cicd-variables-configuration)
   - [SSL Configuration for Internal GitLab Instances](#ssl-configuration-for-internal-gitlab-instances)
   - [🎯 Project Context Configuration](#-project-context-configuration)
   - [📝 Review Format Configuration](#-review-format-configuration)
-- [💻 Local Usage](#-local-usage)
-  - [Prerequisites](#prerequisites)
-  - [Local Usage Examples](#local-usage-examples)
-  - [Output Options](#output-options)
-  - [Local Development Workflow](#local-development-workflow)
 - [🔧 Troubleshooting](#-troubleshooting)
   - [Common Issues](#common-issues)
   - [SSL Certificate Errors](#ssl-certificate-errors)
   - [Debug Mode](#debug-mode)
 - [📚 More Information](#-more-information)
 
-## 🚀 Quick Setup Options
+## 🔍 Local Code Reviews
 
-### Option 1: GitLab CI/CD (Pre-built Container)
+Review your **local Git changes** before committing. No platform tokens required!
+
+### Local Setup
+
+#### ption 1: Ollama (Completely Local - Recommended)
+
+```bash
+# Install and start Ollama
+ollama serve
+ollama pull qwen2.5-coder:7b
+
+# Review from any git repository
+cd your-git-project
+ai-code-review --local
+```
+
+#### Option 2: Cloud AI Providers
+
+```bash
+# Gemini (recommended for production)
+export AI_API_KEY=your_gemini_api_key
+ai-code-review --local --ai-provider gemini
+
+# Anthropic Claude
+export AI_API_KEY=your_anthropic_api_key
+ai-code-review --local --ai-provider anthropic
+```
+
+### Local Basic Usage
+
+```bash
+# Review current changes vs main
+ai-code-review --local
+
+# Review vs different target branch
+ai-code-review --local --target-branch develop
+
+# Save review (simple format, no collapsible sections)
+ai-code-review --local -o local-review.md
+
+# Dry run (no AI costs)
+ai-code-review --local --dry-run
+```
+
+### Advanced Local Options
+
+```bash
+# Custom model and file limits
+ai-code-review --local \
+  --ai-model qwen2.5-coder:14b \
+  --max-files 10 \
+  --max-file-context 2000
+
+# Specific language hint
+ai-code-review --local --language-hint "Python web API"
+
+# Exclude specific files
+ai-code-review --local --exclude-files "**/test_*,**/*lock*"
+```
+
+## 🌐 Remote Code Reviews
+
+Analyze existing MRs/PRs from your terminal.
+
+### Prerequisites
+
+Before running remotely, ensure you have:
+
+1. **Platform Access Token**: GitLab Personal Access Token or GitHub Token
+2. **AI API Key**: API key for your chosen AI provider (Gemini, Anthropic, or local Ollama)
+3. **Project Access**: Read access to the GitLab project or GitHub repository
+
+### Remote Usage Examples
+
+#### 1. Analyze Existing MRs/PRs (No Posting)
+
+```bash
+# GitLab MR analysis
+AI_API_KEY=your_key ai-code-review group/project 123
+
+# GitHub PR analysis
+AI_API_KEY=your_key ai-code-review --platform github owner/repo 456
+
+# With custom settings
+ai-code-review group/project 123 \
+  --language-hint python \
+  --exclude-files "**/*test*" \
+  --big-diffs
+
+# Code-focused review (without MR Summary section)
+ai-code-review group/project 123 --no-mr-summary
+```
+
+#### 2. Post Review as Comment
+
+```bash
+# GitLab MR - post review
+AI_API_KEY=your_key ai-code-review group/project 123 --post-review
+
+# GitHub PR - post review
+AI_API_KEY=your_key ai-code-review --platform github owner/repo 456 --post-review
+```
+
+## 🤖 CI Integration
+
+### GitLab CI/CD (Pre-built Container)
 
 Add this job to your `.gitlab-ci.yml`:
 
@@ -48,7 +161,7 @@ ai-code-review:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 ```
 
-### Option 2: GitHub Actions (Using GitLab Container)
+### GitHub Actions (Using GitLab Container)
 
 Add this workflow to `.github/workflows/ai-review.yml`:
 
@@ -106,7 +219,7 @@ jobs:
 - Add `GEMINI_API_KEY` as **Repository Secret**
 - Get your Gemini key from: <https://makersuite.google.com/app/apikey>
 
-### Option 3: Build Your Own Container
+### Build Your Own Container
 
 Create your own container and publish to your registry:
 
@@ -158,7 +271,7 @@ ai-code-review:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 ```
 
-### Option 4: Install from Repository
+### Install from Repository
 
 Install directly from the repository in your CI job:
 
@@ -544,66 +657,38 @@ ai-code-review:
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
 ```
+t
 
-## 💻 Local Usage
+### Recommended Workflows
 
-Use AI Code Review locally to analyze GitLab MRs.
-
-### Prerequisites
+#### For Daily Development
 
 ```bash
-# Install locally from GitLab repository (not published on PyPI yet)
-pip install git+https://gitlab.com/redhat/edge/ci-cd/ai-code-review.git
+# 1. Make your changes
+git add .
 
-# Required: GitLab Personal Access Token
+# 2. Quick review before committing (fast with Ollama)
+ai-code-review --local --ai-provider ollama
+
+# 3. Fix issues, then commit
+git commit -m "fix: apply AI review suggestions"
+```
+
+#### For Team Code Reviews
+
+```bash
+# 1. Set up tokens (one time)
 export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+export AI_API_KEY=your_gemini_key
 
-# Optional: AI provider (Gemini/Anthropic for production, Ollama for local)
-export AI_API_KEY=your_gemini_api_key     # For Gemini
-export AI_API_KEY=your_anthropic_api_key  # For Anthropic
-# OR use Ollama (no API key needed)
-```
+# 2. Test configuration
+ai-code-review group/project 123 --dry-run
 
-### Local Usage Examples
+# 3. Analyze MR/PR
+ai-code-review group/project 123
 
-#### 1. Review and Display Only
-
-Analyze an MR and see the review output:
-
-```bash
-# Using Gemini (production quality)
-AI_API_KEY=your_key ai-code-review group/project 123
-
-# Using Anthropic Claude (production quality)
-AI_API_KEY=your_key ai-code-review group/project 123 --provider anthropic
-
-# Using Ollama (local, free)
-ai-code-review group/project 123 --provider ollama
-
-# With custom settings
-ai-code-review group/project 123 \
-  --language-hint python \
-  --exclude-files "**/*test*" \
-  --big-diffs
-
-# Code-focused review (without MR Summary section)
-ai-code-review group/project 123 --no-mr-summary
-```
-
-#### 2. Review and Post to GitLab
-
-Generate review and post it as MR comment:
-
-```bash
-# Post review to GitLab MR
-AI_API_KEY=your_key ai-code-review group/project 123 --post
-
-# Post code-focused review (without MR Summary section)
-AI_API_KEY=your_key ai-code-review group/project 123 --post --no-mr-summary
-
-# With health check first (recommended)
-AI_API_KEY=your_key ai-code-review --health-check && \
-AI_API_KEY=your_key ai-code-review group/project 123 --post
+# 4. Post review if helpful
+ai-code-review group/project 123 --post-review
 ```
 
 #### 3. Custom GitLab Instance
@@ -705,23 +790,6 @@ ai-code-review group/project 123 2>logs.txt
 ai-code-review group/project 123 -o review.md 2>logs.txt
 ```
 
-### Local Development Workflow
-
-```bash
-# 1. Set up environment
-export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
-export AI_API_KEY=your_gemini_key
-
-# 2. Test with dry-run (no API costs)
-ai-code-review group/project 123 --dry-run
-
-# 3. Generate review locally
-ai-code-review group/project 123
-
-# 4. If satisfied, post to GitLab
-ai-code-review group/project 123 --post
-```
-
 ## 🔧 Troubleshooting
 
 ### Common Issues
@@ -729,8 +797,19 @@ ai-code-review group/project 123 --post
 #### "GitLab token not configured"
 
 ```bash
-# Solution: Set your GitLab token
+# Solution for remote reviews: Set your GitLab token
 export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+
+# OR: Use local reviews (no tokens needed!)
+ai-code-review --local
+```
+
+#### "LOCAL platform requires running from within a git repository"
+
+```bash
+# Solution: Run from inside your git project
+cd /path/to/your/git/project
+ai-code-review --local
 ```
 
 #### "AI provider not available"
