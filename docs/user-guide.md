@@ -2,9 +2,9 @@
 
 Simple guide to get AI-powered code reviews with **3 powerful workflows**:
 
-🔍 **Local Reviews** - Review your changes before committing
-🌐 **Remote Reviews** - Analyze existing MRs/PRs from terminal
-🤖 **CI Integration** - Automated reviews in CI/CD pipelines
+- 🔍 **Local Reviews** - Review your changes before committing
+- 🌐 **Remote Reviews** - Analyze existing MRs/PRs from terminal
+- 🤖 **CI Integration** - Automated reviews in CI/CD pipelines
 
 ## 📑 Table of Contents
 

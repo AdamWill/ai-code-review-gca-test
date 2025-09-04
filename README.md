@@ -2,9 +2,9 @@
 
 AI-powered code review tool with **3 powerful use cases**:
 
-🔍 **Local Reviews** - Review your local changes before committing
-🌐 **Remote Reviews** - Analyze existing MRs/PRs from the terminal
-🤖 **CI Integration** - Automated reviews in your CI/CD pipeline
+- 🔍 **Local Reviews** - Review your local changes before committing
+- 🌐 **Remote Reviews** - Analyze existing MRs/PRs from the terminal
+- 🤖 **CI Integration** - Automated reviews in your CI/CD pipeline
 
 ## 🚀 Quick Start
 
@@ -191,6 +191,6 @@ MIT License - see LICENSE file for details.
 
 ## 👥 Author
 
-**Author:** Juanje Ojeda\
-**Email:** juanje@redhat.com\
-**URL:** <https://gitlab.com/redhat/edge/ci-cd/ai-code-review>
+- **Author:** Juanje Ojeda
+- **Email:** juanje@redhat.com
+- **URL:** <https://gitlab.com/redhat/edge/ci-cd/ai-code-review>
