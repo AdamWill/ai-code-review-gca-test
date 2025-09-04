@@ -690,6 +690,49 @@ AI generated review feedback for test purposes. The code changes appear well-str
             assert local_engine.platform_client is not None
             assert local_engine.platform_client.get_platform_name() == "local"
 
+    def test_create_platform_client_unsupported_provider(self) -> None:
+        """Test unsupported platform provider raises error - hits lines 56-60."""
+        # Create a mock config with an invalid platform provider that looks like enum
+        mock_config = Mock()
+        mock_provider = Mock()
+        mock_provider.value = "UNSUPPORTED"
+        mock_config.platform_provider = mock_provider  # Mock enum-like object
+
+        with pytest.raises(AIProviderError, match="Platform provider .* not supported"):
+            ReviewEngine(mock_config)
+
+    @patch("ai_code_review.core.review_engine.create_review_chain")
+    async def test_generate_review_exception_handling(
+        self, mock_chain: Mock, test_config: Config
+    ) -> None:
+        """Test _generate_review exception handling - hits lines 274-278."""
+        # Mock AI provider that raises exception
+        mock_ai_provider = AsyncMock()
+        mock_ai_provider.provider_name = "test_provider"
+        mock_ai_provider.generate_review.side_effect = Exception("AI service down")
+
+        # Mock platform client
+        mock_platform_client = Mock()
+        mock_platform_client.get_platform_name.return_value = "test_platform"
+
+        # Mock review chain creation
+        mock_chain.return_value = Mock()
+
+        engine = ReviewEngine(test_config)
+        engine.ai_provider = mock_ai_provider
+        engine.platform_client = mock_platform_client
+
+        # Mock PR data
+        mock_pr_data = Mock()
+        mock_pr_data.info = Mock()
+        mock_pr_data.diffs = []
+
+        # Should raise AIProviderError with provider context - hits lines 274-278
+        with pytest.raises(
+            AIProviderError, match="Failed to generate review with test_provider"
+        ):
+            await engine._generate_review_response(mock_pr_data)
+
     def test_load_project_context_file_exception_handling(
         self, test_config: Config, chdir_tmp
     ) -> None:

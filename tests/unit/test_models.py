@@ -239,6 +239,49 @@ DRY_RUN=true
                 ollama_base_url="ftp://invalid",
             )
 
+    def test_config_url_validation_errors(self) -> None:
+        """Test URL validation error cases - hits line 244."""
+        # Test empty URL - hits line 244
+        with pytest.raises(ValueError, match="URL cannot be empty"):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                gitlab_url="",  # Empty URL
+            )
+
+    def test_config_ssl_validation_errors(self, tmp_path: Path) -> None:
+        """Test SSL certificate validation error cases - hits lines 268, 280, 284."""
+        # Test SSL cert file not readable - hits line 268
+        ssl_file = tmp_path / "test.pem"
+        ssl_file.write_text("test cert")
+        ssl_file.chmod(0o000)  # Remove read permissions
+
+        with pytest.raises(ValueError, match="SSL certificate file is not readable"):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                ssl_cert_path=str(ssl_file),
+            )
+
+        # Restore permissions for cleanup
+        ssl_file.chmod(0o644)
+
+        # Test empty SSL cert URL - hits line 280
+        with pytest.raises(ValueError, match="SSL certificate URL cannot be empty"):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                ssl_cert_url="   ",  # Whitespace only
+            )
+
+        # Test invalid SSL cert URL format - hits line 284
+        with pytest.raises(ValueError, match="Invalid SSL certificate URL format"):
+            Config(
+                gitlab_token="test_token",
+                ai_provider=AIProvider.OLLAMA,
+                ssl_cert_url="invalid_ssl_url",
+            )
+
     def test_config_ai_model_validation(self) -> None:
         """Test AI model name validation."""
 
