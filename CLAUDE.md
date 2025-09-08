@@ -7,15 +7,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Development Setup
 
 ```bash
-# Install dependencies
+# Install dependencies (includes GitPython for local Git support)
 uv sync --dev
 
 # Install pre-commit hooks
 uv run pre-commit install
 
-# Setup environment (REQUIRED)
+# Setup environment (choose based on workflow)
 cp env.example .env
-# Edit .env and set GITLAB_TOKEN and AI_API_KEY
+# Edit .env and set tokens based on your use case:
+# - GITLAB_TOKEN: For GitLab MRs (not needed for --local)
+# - GITHUB_TOKEN: For GitHub PRs (not needed for --local)
+# - AI_API_KEY: For cloud providers (not needed for --provider ollama)
+# - LOCAL workflow: Only needs Git repository (no tokens required)
 ```
 
 ### Code Quality & Testing
@@ -41,32 +45,44 @@ uv run pytest tests/unit/test_cli.py -v      # Single test file with verbose
 # Health check (verify AI provider connectivity)
 ai-code-review --health-check
 
-# Local development with Ollama (no API key needed)
-ai-code-review group/project 123 --provider ollama --dry-run
+# LOCAL WORKFLOW - Review uncommitted/unpushed changes
+ai-code-review --local                                    # Compare against main
+ai-code-review --local --target-branch develop           # Compare against develop
+ai-code-review --local --provider ollama --output-file review.md
 
-# Production with Gemini (requires API key)
-AI_API_KEY=your_key ai-code-review group/project 123 --dry-run
+# REMOTE WORKFLOW - Analyze existing MRs/PRs
+ai-code-review group/project 123 --provider ollama --dry-run           # GitLab MR
+ai-code-review --owner user --repo project --pr-number 456 --dry-run   # GitHub PR
 
-# Short format (compact review without MR Summary)
-ai-code-review group/project 123 --provider ollama --no-mr-summary --dry-run
+# CI/CD WORKFLOW - Automated reviews (auto-detects platform)
+ai-code-review --post                                     # GitLab or GitHub CI
+AI_API_KEY=your_key ai-code-review --post                # With cloud provider
 
-# Post review to GitLab MR
-ai-code-review group/project 123 --post
+# FORMAT OPTIONS
+ai-code-review group/project 123 --no-mr-summary         # Compact format
+ai-code-review --local --provider gemini                 # Local with cloud AI
 ```
 
 ## High-Level Architecture
 
 ### System Overview
 
-This is an **AI-powered CLI tool** that generates automated code reviews for GitLab Merge Requests. It's designed as a **CI/CD-ready application** with both local development support and production cloud deployment capabilities.
+This is an **AI-powered CLI tool** that generates automated code reviews for **GitLab Merge Requests**, **GitHub Pull Requests**, and **Local Git changes**. It's designed to support **three primary workflows**:
+
+1. **Local Code Review**: Analyze uncommitted/unpushed changes in your Git repository (`--local`)
+2. **Remote Code Review**: Analyze existing MRs/PRs from terminal with optional posting
+3. **CI/CD Integration**: Automated reviews in GitLab CI/GitHub Actions pipelines
+
+The tool provides both **local development support** (Ollama, no API keys) and **production cloud deployment** capabilities (Gemini, Anthropic).
 
 ### Core Design Principles
 
-#### Dual AI Strategy
+#### Multi-Modal AI Strategy
 
 - **Local Development**: Ollama with `qwen2.5-coder:7b` (cost-free, no API keys required)
 - **Production/CI**: Google Gemini `gemini-2.5-pro` (default cloud provider)
-- **Extensible**: LangChain abstraction allows easy addition of other providers (OpenAI, Anthropic)
+- **High-Quality Alternative**: Anthropic Claude `claude-sonnet-4-20250514`
+- **Extensible**: LangChain abstraction supports multiple providers
 
 #### Adaptive Context Management
 
@@ -77,17 +93,30 @@ This is an **AI-powered CLI tool** that generates automated code reviews for Git
 #### Unified Review Generation
 
 - **Single LLM Call**: Combines detailed review + executive summary in one efficient request
-- **Structured Output**: Enforces strict markdown format with collapsible sections
+- **Multi-Format Output**:
+  - **Full**: Collapsible sections with MR summaries (remote/CI workflows)
+  - **Compact**: Same as Full but without MR summary (`--no-mr-summary`)
+  - **Local**: Terminal-friendly simplified markdown (`--local` workflow)
 - **Business + Technical**: Serves both developer and stakeholder audiences
 
 ### Architecture Flow
 
 ```
-CLI Input → Config Validation → GitLab Client → Review Engine → AI Provider → Structured Output
-    ↓            ↓                    ↓               ↓             ↓              ↓
-Arguments    Environment       MR Data Fetch    Context Prep   LangChain     Markdown +
-+ Env Vars   + Validation      + Diff Parse     + Filtering    Invocation    GitLab Post
+                                  ┌─ GitLab Client ─┐
+                                  │                 │
+CLI Input → Config Validation → Platform Factory → │ Review Engine │ → AI Provider → Structured Output
+    ↓            ↓                  │                 │      ↓             ↓              ↓
+Arguments    Environment         ├─ GitHub Client ─┤  Context Prep   LangChain     Format-Specific
++ Env Vars   + Auto-Detection    │                 │  + Filtering    Invocation    Markdown Output
+                                  └─ Local Git ─────┘      ↓             ↓              ↓
+                                                      File Analysis   Provider      Terminal/File/Post
+                                                      + Diff Parse    Selection     Based on Workflow
 ```
+
+**Platform Selection Logic:**
+- **`--local`** → LocalGitClient (GitPython)
+- **CI Environment** → Auto-detect GitLab/GitHub from env vars
+- **Explicit args** → GitLab/GitHub client with provided credentials
 
 ### Key Components
 
@@ -98,8 +127,10 @@ Arguments    Environment       MR Data Fetch    Context Prep   LangChain     Mar
 - **Cloud Provider Detection**: Automatic API key requirement validation
 
 **Review Engine (`core/review_engine.py`)**:
-- **Orchestrator**: Coordinates GitLab API + AI provider interactions
-- **Context Builder**: Formats diffs, adds commit history, applies file filtering
+- **Multi-Platform Orchestrator**: Coordinates GitLab/GitHub/Local Git + AI provider interactions
+- **Factory Pattern**: Creates appropriate platform client based on configuration/CLI args
+- **Context Builder**: Formats diffs, adds commit history, applies file filtering across all platforms
+- **Format Selection**: Chooses output format (Full/Compact/Local) based on workflow
 - **Adaptive Processing**: Dynamic context window sizing based on diff size
 - **Error Recovery**: Comprehensive error handling with specific exit codes (0-5)
 
@@ -109,11 +140,26 @@ Arguments    Environment       MR Data Fetch    Context Prep   LangChain     Mar
 - **Adaptive Context**: Each provider reports optimal context window sizes
 - **Async Operations**: Non-blocking AI API calls with proper timeout handling
 
-**GitLab Integration (`core/gitlab_client.py`)**:
+**Platform Integration (`core/` clients)**:
+
+**GitLab Client (`core/gitlab_client.py`)**:
 - **Multi-Instance Support**: Works with GitLab.com and self-hosted instances
 - **CI/CD Optimized**: Automatic detection of GitLab CI environment variables
 - **Project ID Flexibility**: Handles both numeric IDs and path-based IDs (`group/project`)
-- **MR Operations**: Fetch diffs, metadata, commit history, post review comments
+- **SSL Certificate Support**: Custom certificates for internal GitLab instances
+- **Discussion Threads**: Posts reviews as collapsible discussion threads
+
+**GitHub Client (`core/github_client.py`)**:
+- **GitHub.com + Enterprise**: Full API support for both hosting types
+- **Actions Integration**: Automatic detection of GitHub Actions environment
+- **Repository Flexibility**: Handles owner/repo format for PR identification
+- **PR Comments**: Posts reviews as standard PR comments
+
+**Local Git Client (`core/local_git_client.py`)**:
+- **GitPython Integration**: Direct Git repository analysis without external APIs
+- **Smart Merge Base**: Calculates diffs against target branch using Git algorithms
+- **Branch Validation**: Warns when local target branch is behind remote origin
+- **Terminal Format**: Generates simplified markdown optimized for terminal viewing
 
 **Prompt Management (`utils/prompts.py`)**:
 - **Structured Templates**: LangChain prompt templates with strict output format enforcement
@@ -132,15 +178,24 @@ Arguments    Environment       MR Data Fetch    Context Prep   LangChain     Mar
 **Provider Configuration Patterns:**
 
 ```bash
-# Local Development (no API keys)
+# Local Git Reviews (no tokens needed, works offline)
 AI_PROVIDER=ollama
 AI_MODEL=qwen2.5-coder:7b
 OLLAMA_BASE_URL=http://localhost:11434
+# Usage: ai-code-review --local
 
-# Production (API key required)
+# Remote Reviews with Local AI (GitLab/GitHub tokens needed)
+AI_PROVIDER=ollama
+GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+# Usage: ai-code-review group/project 123
+
+# Production CI/CD (API key required)
 AI_PROVIDER=gemini
 AI_MODEL=gemini-2.5-pro
 AI_API_KEY=your_gemini_api_key_here
+GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # Or GITHUB_TOKEN for GitHub
+# Usage: ai-code-review --post (in CI)
 ```
 
 ### Error Handling Strategy
@@ -162,19 +217,55 @@ AI_API_KEY=your_gemini_api_key_here
 ### Development Patterns
 
 **Testing Strategy:**
-- **Unit Tests**: Mock all external dependencies (GitLab API, AI APIs)
-- **Integration Tests**: Real Ollama testing locally, cloud provider testing in CI
-- **Dry-Run Mode**: Full pipeline testing without API costs
-- **Health Checks**: Connectivity verification before processing
+- **Unit Tests**: Mock all external dependencies (GitLab/GitHub APIs, AI APIs, GitPython in CI)
+- **Integration Tests**: Real Ollama testing locally, cloud provider testing in CI, local Git testing
+- **CI Compatibility**: GitPython mocking strategy for tests in environments without git binary
+- **Dry-Run Mode**: Full pipeline testing without API costs across all 3 workflows
+- **Health Checks**: Connectivity verification before processing for all providers
 
 **Code Organization:**
-- **models/**: Pydantic models for configuration, GitLab data, review structures
-- **core/**: Business logic (GitLab client, review engine)
+- **models/**: Pydantic models for configuration, platform-agnostic data structures, review models
+  - `config.py`: Multi-platform configuration with auto-detection
+  - `platform.py`: Unified data models (PullRequestData, PlatformClientInterface)
+  - `review.py`: Review and summary structures
+- **core/**: Multi-platform business logic
+  - `review_engine.py`: Orchestrates all 3 workflows with factory pattern
+  - `gitlab_client.py`: GitLab API integration with SSL support
+  - `github_client.py`: GitHub API integration
+  - `local_git_client.py`: Local Git operations with GitPython
+  - `base_platform_client.py`: Abstract interface for platform clients
 - **providers/**: AI provider implementations with LangChain integration
-- **utils/**: Shared utilities (prompts, exceptions, logging)
+  - `ollama.py`, `gemini.py`, `anthropic.py`: Provider-specific implementations
+- **utils/**: Shared utilities
+  - `prompts.py`: Multi-format prompt templates (Full/Compact/Local)
+  - `exceptions.py`, `platform_exceptions.py`: Comprehensive error handling
+  - `ssl_utils.py`: SSL certificate management for internal GitLab
 
 **Development Workflow:**
 - **Pre-commit Hooks**: Automatic code quality checks on commit
 - **Type Safety**: Strict mypy configuration with full annotation coverage
 - **Modern Tooling**: uv for package management, ruff for linting/formatting
 - **Structured Logging**: contextual logging for debugging and monitoring
+
+### Local Git Workflow Details
+
+**Key Dependencies:**
+- **GitPython**: Core library for Git repository operations (requires Git binary)
+- **pathlib**: Cross-platform path handling for repository URLs
+- **asyncio**: Async Git operations to prevent blocking
+
+**Local Review Process:**
+1. **Repository Detection**: Auto-finds Git repo from current directory (searches parent dirs)
+2. **Branch Analysis**: Gets current branch, handles detached HEAD states
+3. **Merge Base Calculation**: Finds common ancestor with target branch (`origin/main` preferred)
+4. **Branch Freshness Check**: Warns if local target branch is behind remote
+5. **Diff Generation**: Creates diffs between current state and merge base
+6. **Commit History**: Includes local commits for context
+7. **Terminal Output**: Simplified markdown format optimized for terminal/file viewing
+
+**Local-Specific Features:**
+- No external API dependencies (works offline)
+- Terminal-friendly output (no collapsible sections)
+- File-based URLs for project context
+- Smart handling of Git edge cases (detached HEAD, missing remotes)
+- Integration with existing file filtering and AI provider selection
