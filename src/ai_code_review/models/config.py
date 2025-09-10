@@ -15,6 +15,29 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings
 
+# Default file exclusion patterns - defined once to avoid duplication
+_DEFAULT_EXCLUDE_PATTERNS = [
+    "*.lock",  # All lockfiles (uv.lock, pdm.lock, etc.)
+    "package-lock.json",  # npm lockfile
+    "yarn.lock",  # Yarn lockfile
+    "Pipfile.lock",  # Pipenv lockfile
+    "poetry.lock",  # Poetry lockfile
+    "pnpm-lock.yaml",  # PNPM lockfile
+    "*.min.js",  # Minified JS files
+    "*.min.css",  # Minified CSS files
+    "*.map",  # Source map files
+    "node_modules/**",  # Node modules (top level)
+    "**/node_modules/**",  # Node modules (nested)
+    "__pycache__/**",  # Python cache (top level)
+    "**/__pycache__/**",  # Python cache (nested)
+    "dist/**",  # Build distributions (top level)
+    "**/dist/**",  # Build distributions (nested)
+    "build/**",  # Build directories (top level)
+    "**/build/**",  # Build directories (nested)
+    "*.egg-info/**",  # Python egg info (top level)
+    "**/*.egg-info/**",  # Python egg info (nested)
+]
+
 
 # PlatformProvider moved here to avoid circular imports
 class PlatformProvider(str, Enum):
@@ -23,54 +46,6 @@ class PlatformProvider(str, Enum):
     GITLAB = "gitlab"
     GITHUB = "github"
     LOCAL = "local"
-
-
-def get_default_exclude_patterns() -> list[str]:
-    """Get the default list of file patterns to exclude from AI review."""
-    return [
-        "*.lock",  # All lockfiles (uv.lock, pdm.lock, etc.)
-        "package-lock.json",  # npm lockfile
-        "yarn.lock",  # Yarn lockfile
-        "Pipfile.lock",  # Pipenv lockfile
-        "poetry.lock",  # Poetry lockfile
-        "pnpm-lock.yaml",  # PNPM lockfile
-        "*.min.js",  # Minified JS files
-        "*.min.css",  # Minified CSS files
-        "*.map",  # Source map files
-        "node_modules/**",  # Node modules (top level)
-        "**/node_modules/**",  # Node modules (nested)
-        "__pycache__/**",  # Python cache (top level)
-        "**/__pycache__/**",  # Python cache (nested)
-        "dist/**",  # Build distributions (top level)
-        "**/dist/**",  # Build distributions (nested)
-        "build/**",  # Build directories (top level)
-        "**/build/**",  # Build directories (nested)
-        "*.egg-info/**",  # Python egg info (top level)
-        "**/*.egg-info/**",  # Python egg info (nested)
-    ]
-
-
-def get_default_model_for_provider(provider: AIProvider) -> str:
-    """Get default model name for each AI provider.
-
-    Raises:
-        ValueError: If no default model is defined for the provider.
-    """
-    defaults = {
-        AIProvider.OLLAMA: "qwen2.5-coder:7b",
-        AIProvider.GEMINI: "gemini-2.5-pro",
-        AIProvider.ANTHROPIC: "claude-sonnet-4-20250514",
-        AIProvider.OPENAI: "gpt-5-mini",  # Default for future OpenAI implementation
-    }
-
-    if provider not in defaults:
-        raise ValueError(
-            f"No default model defined for provider '{provider.value}'. "
-            f"Please add a default model in get_default_model_for_provider() "
-            f"for provider {provider}."
-        )
-
-    return defaults[provider]
 
 
 class AIProvider(str, Enum):
@@ -88,6 +63,35 @@ CLOUD_PROVIDERS = {
     AIProvider.OPENAI,
     AIProvider.ANTHROPIC,
 }
+
+
+# Default models for each AI provider
+_DEFAULT_MODELS = {
+    AIProvider.OLLAMA: "qwen2.5-coder:7b",
+    AIProvider.GEMINI: "gemini-2.5-pro",
+    AIProvider.ANTHROPIC: "claude-sonnet-4-20250514",
+    AIProvider.OPENAI: "gpt-5-mini",  # Default for future OpenAI implementation
+}
+
+
+def get_default_model_for_provider(provider: AIProvider) -> str:
+    """Get default model name for each AI provider.
+
+    Args:
+        provider: The AI provider
+
+    Returns:
+        str: Default model name for the provider
+
+    Raises:
+        ValueError: If no default model is defined for the provider
+    """
+    if provider not in _DEFAULT_MODELS:
+        raise ValueError(
+            f"No default model defined for provider '{provider.value}'. "
+            f"Available providers: {list(_DEFAULT_MODELS.keys())}"
+        )
+    return _DEFAULT_MODELS[provider]
 
 
 class Config(BaseSettings):
@@ -136,7 +140,7 @@ class Config(BaseSettings):
     ai_provider: AIProvider = Field(
         default=AIProvider.GEMINI, description="AI provider to use"
     )
-    ai_model: str | None = Field(default=None, description="AI model name")
+    ai_model: str = Field(default="gemini-2.5-pro", description="AI model name")
     ai_api_key: str | None = Field(
         default=None, description="API key for cloud AI providers"
     )
@@ -226,13 +230,30 @@ class Config(BaseSettings):
         default=False,
         description="Force larger context window (24K) - auto-activated for diffs >60K chars",
     )
+    health_check: bool = Field(
+        default=False, description="Perform health check on all components and exit"
+    )
+    post: bool = Field(
+        default=False, description="Post review as MR comment to GitLab/GitHub"
+    )
+
+    # Output options
+    output_file: str | None = Field(
+        default=None,
+        description="Save review output to file (default: display in terminal)",
+    )
+
+    # Local mode options
+    target_branch: str = Field(
+        default="main", description="Target branch for local comparison (default: main)"
+    )
 
     # Logging
     log_level: str = Field(default="INFO", description="Logging level")
 
     # File filtering
     exclude_patterns: list[str] = Field(
-        default_factory=get_default_exclude_patterns,
+        default=_DEFAULT_EXCLUDE_PATTERNS,
         description="Glob patterns for files to exclude from AI review",
     )
 
@@ -295,11 +316,8 @@ class Config(BaseSettings):
 
     @field_validator("ai_model")
     @classmethod
-    def validate_ai_model(cls, v: str | None) -> str | None:
+    def validate_ai_model(cls, v: str) -> str:
         """Validate AI model name format."""
-        if v is None:
-            return None  # Will be set by model validator
-
         if not v or not v.strip():
             raise ValueError("AI model name cannot be empty")
 
@@ -430,6 +448,27 @@ class Config(BaseSettings):
             if isinstance(platform_provider, str):
                 platform_provider = PlatformProvider(platform_provider)
 
+            # Set default model based on provider if provider specified but model not explicitly set
+            # This handles direct Config() construction with different providers
+            provider_str = data.get("ai_provider")
+            model = data.get("ai_model")
+
+            # Only override if provider is specified and model is not explicitly set (None)
+            # Don't override if user explicitly set a model, even if it's the default GEMINI model
+            if provider_str is not None and model is None:
+                if isinstance(provider_str, str):
+                    try:
+                        provider = AIProvider(provider_str)
+                    except ValueError:
+                        # Invalid provider, let other validators handle it
+                        provider = None
+                else:
+                    provider = provider_str  # Already an AIProvider enum
+
+                # Set appropriate default model for the provider
+                if provider is not None:
+                    data["ai_model"] = get_default_model_for_provider(provider)
+
             # Validate platform-specific token requirements
             if platform_provider == PlatformProvider.GITLAB:
                 gitlab_token = data.get("gitlab_token")
@@ -471,28 +510,6 @@ class Config(BaseSettings):
                         "Set it as GITHUB_TOKEN environment variable or in .env file."
                     )
 
-            # Set default model based on provider if model not explicitly set
-            provider_str = data.get("ai_provider")
-            model = data.get("ai_model")
-
-            # Only set default if model is None (not provided at all)
-            if model is None:
-                # If no provider specified, use the default provider (GEMINI)
-                if provider_str is None:
-                    provider = AIProvider.GEMINI  # Default provider
-                elif isinstance(provider_str, str):
-                    try:
-                        provider = AIProvider(provider_str)
-                    except ValueError:
-                        # Invalid provider, let other validators handle it
-                        provider = None
-                else:
-                    provider = provider_str  # Already an AIProvider enum
-
-                # Set default model for the provider
-                if provider is not None:
-                    data["ai_model"] = get_default_model_for_provider(provider)
-
         return data
 
     @staticmethod
@@ -533,12 +550,6 @@ class Config(BaseSettings):
         """Validate that the AI model is compatible with the selected provider."""
         provider = config.ai_provider
         model = config.ai_model
-
-        # Ensure ai_model is set (should have been set by validate_required_fields)
-        if model is None:
-            raise ValueError(
-                f"AI model is required but was not set for provider {provider.value}"
-            )
 
         # Check for obvious mismatches
         if provider == AIProvider.OLLAMA:
@@ -656,3 +667,168 @@ class Config(BaseSettings):
                 "get_effective_gitlab_url() only valid for GitLab platform"
             )
         return self.get_effective_server_url()
+
+    @classmethod
+    def create_with_defaults(cls) -> Config:
+        """Create config with all defaults established.
+
+        Returns:
+            Config: Configuration object with all default values set
+        """
+        return cls()
+
+    @classmethod
+    def from_cli_and_config(cls, cli_args: dict[str, Any]) -> Config:
+        """Create config applying layers: defaults → env vars → CLI.
+
+        Args:
+            cli_args: CLI arguments/options (highest priority)
+
+        Returns:
+            Config: Fully configured Config object
+
+        Priority order (highest to lowest) - OPTIMIZED FOR CI/CD:
+        1. CLI arguments (cli_args) - Manual overrides
+        2. Environment variables - CI/CD configuration (handled by Pydantic BaseSettings)
+        3. Field defaults - System defaults
+
+        Note: Environment variables are automatically handled by Pydantic BaseSettings,
+        so they have priority over defaults, but CLI args override them.
+        """
+        # Start with empty dict - BaseSettings will automatically handle defaults + env vars
+        data = {}
+
+        # Layer CLI overrides (highest priority)
+        # Only include non-None CLI values to preserve env vars
+        cli_overrides = {k: v for k, v in cli_args.items() if v is not None}
+        data.update(cli_overrides)
+
+        # Handle ai_model/ai_provider relationship intelligently
+        # If provider changed but model wasn't explicitly set, use provider's default model
+        if "ai_provider" in cli_overrides and "ai_model" not in cli_overrides:
+            provider_str = cli_overrides["ai_provider"]
+            if isinstance(provider_str, str):
+                try:
+                    provider = AIProvider(provider_str)
+                    data["ai_model"] = get_default_model_for_provider(provider)
+                except ValueError:
+                    # Invalid provider, let validation handle it
+                    pass
+            elif isinstance(provider_str, AIProvider):
+                data["ai_model"] = get_default_model_for_provider(provider_str)
+
+        return cls(**data)
+
+    @classmethod
+    def from_cli_args(cls, cli_args: dict[str, Any]) -> Config:
+        """Create config from CLI arguments with intelligent automatic mapping.
+
+        This method handles all the complex mapping between CLI parameter names
+        and Config field names, eliminating the need for manual mapping functions.
+
+        Args:
+            cli_args: Raw CLI arguments from Click (kwargs from main function)
+
+        Returns:
+            Config: Fully configured Config object
+
+        Priority order (highest to lowest) - OPTIMIZED FOR CI/CD:
+        1. CLI arguments (cli_args) - Manual overrides
+        2. Environment variables - CI/CD configuration (handled by Pydantic BaseSettings)
+        3. Field defaults - System defaults
+        """
+        # Step 1: Auto-map CLI parameters to config fields
+        mapped_args: dict[str, Any] = {}
+
+        # CLI parameter name -> Config field name mappings
+        # IMPORTANT: This mapping must be kept in sync with CLI options defined in cli.py
+        # When adding new @click.option decorators, ensure they are either:
+        #   1. Added to this map if they need custom field mapping
+        #   2. Added to DIRECT_MAPPINGS if CLI name matches Config field name
+        #   3. Handled in special cases section if they require custom logic
+        # Missing entries will cause CLI options to be silently ignored!
+        CLI_TO_CONFIG_MAP = {
+            # AI provider mappings
+            "provider": "ai_provider",
+            "model": "ai_model",
+            "ollama_url": "ollama_base_url",
+            # Platform mappings
+            "local": "_local_flag",  # Special handling below
+            "platform": "platform_provider",
+            # Project context mappings
+            "project_context": "enable_project_context",
+            "context_file": "project_context_file",
+            "no_mr_summary": "_no_mr_summary_flag",  # Special handling below
+            # URL mappings
+            "gitlab_url": "gitlab_url",
+            "github_url": "github_url",
+            # Processing limits
+            "max_tokens": "max_tokens",
+            "max_chars": "max_chars",
+            "max_files": "max_files",
+            "language_hint": "language_hint",
+            "temperature": "temperature",
+            # Execution options
+            "dry_run": "dry_run",
+            "big_diffs": "big_diffs",
+            "log_level": "log_level",
+            # SSL options
+            "ssl_cert_url": "ssl_cert_url",
+            "ssl_cert_cache_dir": "ssl_cert_cache_dir",
+            # Project identification (handle arguments and options)
+            "project_id_option": "project_id",
+            "pr_number_option": "pr_number",
+            "gitlab_mr_iid": "gitlab_mr_iid",  # Legacy
+            "target_branch": "target_branch",
+        }
+
+        # Step 2: Apply automatic mappings (skip internal flags)
+        for cli_name, config_field in CLI_TO_CONFIG_MAP.items():
+            if cli_name in cli_args and cli_args[cli_name] is not None:
+                # Skip internal mapping fields that don't exist in Config
+                if not config_field.startswith("_"):
+                    mapped_args[config_field] = cli_args[cli_name]
+
+        # Step 3: Handle direct mappings (CLI name == config field name)
+        DIRECT_MAPPINGS = ["post", "output_file", "health_check"]
+        for field_name in DIRECT_MAPPINGS:
+            if field_name in cli_args and cli_args[field_name] is not None:
+                mapped_args[field_name] = cli_args[field_name]
+
+        # Step 4: Skip positional arguments - they're not Config fields
+        # (project_id and mr_iid are handled separately by _resolve_project_params)
+
+        # Step 5: Handle special cases that require logic
+
+        # Local mode overrides platform
+        if cli_args.get("local"):
+            mapped_args["platform_provider"] = PlatformProvider.LOCAL
+
+        # Platform enum conversion
+        if "platform_provider" in mapped_args and isinstance(
+            mapped_args["platform_provider"], str
+        ):
+            mapped_args["platform_provider"] = PlatformProvider(
+                mapped_args["platform_provider"]
+            )
+
+        # AI provider enum conversion
+        if "ai_provider" in mapped_args and isinstance(mapped_args["ai_provider"], str):
+            mapped_args["ai_provider"] = AIProvider(mapped_args["ai_provider"])
+
+        # no_mr_summary flag -> include_mr_summary = False
+        if cli_args.get("no_mr_summary"):
+            mapped_args["include_mr_summary"] = False
+
+        # Handle file filtering options
+        if cli_args.get("no_file_filtering"):
+            mapped_args["exclude_patterns"] = []
+        elif cli_args.get("exclude_files"):
+            # Get default patterns and add user patterns
+            mapped_args["exclude_patterns"] = _DEFAULT_EXCLUDE_PATTERNS + list(
+                cli_args["exclude_files"]
+            )
+        # If neither flag is set, Config defaults will apply (which include default patterns)
+
+        # Step 6: Use the existing layered construction
+        return cls.from_cli_and_config(mapped_args)

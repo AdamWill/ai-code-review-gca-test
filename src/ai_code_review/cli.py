@@ -22,6 +22,174 @@ from ai_code_review.utils.platform_exceptions import (
 logger = structlog.get_logger(__name__)
 
 
+def _get_enum_value(enum_obj: Any) -> str:
+    """Get the value from an enum safely, handling both real enums and mocks."""
+    if hasattr(enum_obj, "value"):
+        return str(enum_obj.value)
+    else:
+        return str(enum_obj)
+
+
+def _resolve_project_params(params: dict[str, Any], config: Config) -> tuple[str, int]:
+    """Resolve project ID and PR number from various sources.
+
+    Args:
+        params: CLI parameters from Click context
+        config: Configuration instance
+
+    Returns:
+        tuple[str, int]: Resolved project_id and pr_number
+
+    Raises:
+        SystemExit: If required parameters cannot be resolved
+    """
+    # Determine project_id and pr_number from arguments, options, or CI environment
+    # Precedence order: positional arg > CLI option > legacy option > config/env var
+    effective_project_id = (
+        params.get("project_id")
+        or params.get("project_id_option")
+        or config.get_effective_repository_path()
+    )
+    # Precedence order: positional arg > new CLI option > legacy option > config/env var
+    effective_pr_number = (
+        params.get("mr_iid")
+        or params.get("pr_number_option")
+        or params.get("gitlab_mr_iid")
+        or config.get_effective_pull_request_number()
+    )
+
+    # For local mode, set default values
+    if config.platform_provider == PlatformProvider.LOCAL:
+        effective_project_id = "local"
+        effective_pr_number = 0
+    elif not effective_project_id or not effective_pr_number:
+        # Validate that we have required parameters
+        platform_name = _get_enum_value(config.platform_provider)
+        if config.is_ci_mode():
+            if platform_name == "gitlab":
+                click.echo(
+                    "❌ Error: Missing GitLab CI environment variables. "
+                    "Expected CI_PROJECT_PATH and CI_MERGE_REQUEST_IID.",
+                    err=True,
+                )
+            else:
+                click.echo(
+                    "❌ Error: Missing GitHub Actions environment variables. "
+                    "Expected GITHUB_REPOSITORY and PR number from event.",
+                    err=True,
+                )
+        else:
+            if platform_name == "gitlab":
+                click.echo(
+                    "❌ Error: PROJECT_ID and MR_IID are required for GitLab.\n"
+                    "Provide them as arguments or use --project-id and --pr-number options.\n"
+                    "In GitLab CI/CD, set CI_PROJECT_PATH and CI_MERGE_REQUEST_IID environment variables.",
+                    err=True,
+                )
+            else:
+                click.echo(
+                    "❌ Error: PROJECT_ID and PR_NUMBER are required for GitHub.\n"
+                    "Provide them as arguments or use --project-id and --pr-number options.\n"
+                    "In GitHub Actions, set GITHUB_REPOSITORY and derive PR number from event.",
+                    err=True,
+                )
+        sys.exit(1)
+
+    return effective_project_id, effective_pr_number
+
+
+def _validate_local_mode_options(params: dict[str, Any]) -> None:
+    """Validate options when using local mode.
+
+    Args:
+        params: CLI parameters from Click context
+    """
+    # Validate incompatible options
+    if params.get("local") and params.get("post"):
+        click.echo(
+            "❌ Error: --local and --post are incompatible. "
+            "Local reviews cannot be posted. Use --output-file to save the review.",
+            err=True,
+        )
+        sys.exit(1)
+
+    # Check for ignored options when using --local
+    if params.get("local"):
+        ignored_options = []
+        if params.get("project_id") or params.get("project_id_option"):
+            ignored_options.append("--project-id")
+        if (
+            params.get("mr_iid")
+            or params.get("pr_number_option")
+            or params.get("gitlab_mr_iid")
+        ):
+            ignored_options.append("--pr-number/--mr-iid")
+        if params.get("gitlab_url"):
+            ignored_options.append("--gitlab-url")
+        if params.get("github_url"):
+            ignored_options.append("--github-url")
+
+        if ignored_options:
+            click.echo(
+                f"⚠️  Warning: The following options are ignored in local mode: {', '.join(ignored_options)}",
+                err=True,
+            )
+
+
+def _setup_logging(config: Config) -> None:
+    """Setup structured logging configuration.
+
+    Args:
+        config: Configuration instance with log level
+    """
+    import logging
+
+    # Configure standard logging to use stderr
+    # Handle both real strings and mocked values for test compatibility
+    log_level = config.log_level
+    if hasattr(log_level, "upper"):
+        log_level_name = log_level.upper()
+    else:
+        log_level_name = str(log_level).upper()
+
+    logging.basicConfig(
+        level=getattr(logging, log_level_name, logging.INFO),
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        stream=sys.stderr,  # Send logs to stderr, keep stdout clean for review output
+    )
+
+    # Configure structlog to also use stderr
+    import structlog
+
+    structlog.configure(
+        processors=[
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_logger_name,
+            structlog.stdlib.add_log_level,
+            structlog.stdlib.PositionalArgumentsFormatter(),
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.dev.ConsoleRenderer(),
+        ],
+        wrapper_class=structlog.stdlib.BoundLogger,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+
+    # Silence noisy third-party loggers in INFO mode
+    # Handle both real strings and mocked values for test compatibility
+    log_level_check = config.log_level
+    if hasattr(log_level_check, "upper"):
+        log_level_upper = log_level_check.upper()
+    else:
+        log_level_upper = str(log_level_check).upper()
+
+    if log_level_upper == "INFO":
+        logging.getLogger("httpx").setLevel(logging.WARNING)
+        logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
 @click.command()
 @click.argument("project_id", required=False)
 @click.argument("mr_iid", type=int, required=False)
@@ -34,12 +202,12 @@ logger = structlog.get_logger(__name__)
 @click.option(
     "--gitlab-url",
     default=None,
-    help="GitLab instance URL (default: from config or https://gitlab.com)",
+    help="GitLab instance URL (default: https://gitlab.com)",
 )
 @click.option(
     "--github-url",
     default=None,
-    help="GitHub API URL (default: from config or https://api.github.com)",
+    help="GitHub API URL (default: https://api.github.com)",
 )
 @click.option(
     "--project-id",
@@ -66,7 +234,7 @@ logger = structlog.get_logger(__name__)
     "--provider",
     type=click.Choice([p.value for p in AIProvider]),
     default=None,
-    help="AI provider to use (default: from config or gemini)",
+    help="AI provider to use (default: gemini)",
 )
 @click.option(
     "--model",
@@ -76,19 +244,19 @@ logger = structlog.get_logger(__name__)
 @click.option(
     "--ollama-url",
     default=None,
-    help="Ollama server URL (default: from config or http://localhost:11434)",
+    help="Ollama server URL (default: http://localhost:11434)",
 )
 @click.option(
     "--temperature",
     type=float,
     default=None,
-    help="AI response temperature 0.0-2.0 (default: from config or 0.1)",
+    help="AI response temperature 0.0-2.0 (default: 0.1)",
 )
 @click.option(
     "--max-tokens",
     type=int,
     default=None,
-    help="Maximum AI response tokens (default: from config or 8000)",
+    help="Maximum AI response tokens (default: 8000)",
 )
 @click.option(
     "--language-hint",
@@ -99,18 +267,18 @@ logger = structlog.get_logger(__name__)
     "--max-chars",
     type=int,
     default=None,
-    help="Maximum characters to process from diff (default: from config or 100000)",
+    help="Maximum characters to process from diff (default: 100000)",
 )
 @click.option(
     "--max-files",
     type=int,
     default=None,
-    help="Maximum number of files to process (default: from config or 100)",
+    help="Maximum number of files to process (default: 100)",
 )
 @click.option(
     "--post",
     is_flag=True,
-    help="Post review as MR comment to GitLab",
+    help="Post review as MR comment to GitLab/GitHub",
 )
 @click.option(
     "--dry-run",
@@ -126,7 +294,7 @@ logger = structlog.get_logger(__name__)
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
     default=None,
-    help="Logging level (default: from config or INFO)",
+    help="Logging level (default: INFO)",
 )
 @click.option(
     "--exclude-files",
@@ -185,39 +353,7 @@ logger = structlog.get_logger(__name__)
     help="Target branch for local comparison (default: main)",
 )
 @click.version_option(version="0.1.0", prog_name="ai-code-review")
-def main(
-    project_id: str | None,
-    mr_iid: int | None,
-    platform: str | None,
-    gitlab_url: str | None,
-    github_url: str | None,
-    project_id_option: str | None,
-    pr_number_option: int | None,
-    gitlab_mr_iid: int | None,
-    provider: str | None,
-    model: str | None,
-    ollama_url: str | None,
-    temperature: float | None,
-    max_tokens: int | None,
-    language_hint: str | None,
-    max_chars: int | None,
-    max_files: int | None,
-    post: bool,
-    dry_run: bool,
-    big_diffs: bool,
-    log_level: str | None,
-    exclude_files: tuple[str, ...],
-    no_file_filtering: bool,
-    project_context: bool | None,
-    context_file: str | None,
-    no_mr_summary: bool,
-    ssl_cert_url: str | None,
-    ssl_cert_cache_dir: str | None,
-    health_check: bool,
-    output_file: str | None,
-    local: bool,
-    target_branch: str,
-) -> None:
+def main(**kwargs: Any) -> None:
     """
     AI-powered code review tool for GitLab Merge Requests and GitHub Pull Requests.
 
@@ -233,210 +369,57 @@ def main(
         # GitLab (default platform)
         ai-code-review group/project 123
         ai-code-review --project-id group/project --pr-number 123 --post
-
+        \b
         # GitHub
         ai-code-review --platform github owner/repo 456 --post
         ai-code-review --platform github --project-id owner/repo --pr-number 456
-
+        \b
         # CI/CD mode (uses CI environment variables)
         ai-code-review --post
-
+        \b
         # Local review (analyze local changes)
         ai-code-review --local
         ai-code-review --local --target-branch develop
         ai-code-review --local --output-file local-review.md
         ai-code-review --local --provider ollama  # Use local LLM for cost-free review
-
+        \b
         # Health check
         ai-code-review --health-check
-
+        \b
         # Local testing
         ai-code-review group/project 123 --provider ollama --dry-run
     """
     try:
-        # Setup configuration by merging environment and CLI overrides
-        config_overrides: dict[str, Any] = {}
-        if local:
-            config_overrides["platform_provider"] = PlatformProvider.LOCAL
-        elif platform:
-            config_overrides["platform_provider"] = PlatformProvider(platform)
-        if gitlab_url:
-            config_overrides["gitlab_url"] = gitlab_url
-        if github_url:
-            config_overrides["github_url"] = github_url
-        if provider:
-            config_overrides["ai_provider"] = AIProvider(provider)
-        if model:
-            config_overrides["ai_model"] = model
-        if ollama_url:
-            config_overrides["ollama_base_url"] = ollama_url
-        if temperature is not None:
-            config_overrides["temperature"] = temperature
-        if max_tokens:
-            config_overrides["max_tokens"] = max_tokens
-        if language_hint:
-            config_overrides["language_hint"] = language_hint
-        if max_chars:
-            config_overrides["max_chars"] = max_chars
-        if max_files:
-            config_overrides["max_files"] = max_files
-        if dry_run:
-            config_overrides["dry_run"] = dry_run
-        if big_diffs:
-            config_overrides["big_diffs"] = big_diffs
-        if log_level:
-            config_overrides["log_level"] = log_level
-        if project_context is not None:
-            config_overrides["enable_project_context"] = project_context
-        if context_file:
-            config_overrides["project_context_file"] = context_file
-        if no_mr_summary:
-            config_overrides["include_mr_summary"] = False
-        if ssl_cert_url:
-            config_overrides["ssl_cert_url"] = ssl_cert_url
-        if ssl_cert_cache_dir:
-            config_overrides["ssl_cert_cache_dir"] = ssl_cert_cache_dir
+        # Build configuration using intelligent auto-mapping - Config handles everything
+        config = Config.from_cli_args(kwargs)
 
-        # Handle file filtering options
-        if no_file_filtering:
-            config_overrides["exclude_patterns"] = []
-        elif exclude_files:
-            # Start with defaults and add user patterns
-            from ai_code_review.models.config import get_default_exclude_patterns
-
-            default_patterns = get_default_exclude_patterns()
-            config_overrides["exclude_patterns"] = default_patterns + list(
-                exclude_files
-            )
-
-        # Validate incompatible options
-        if local and post:
-            click.echo(
-                "❌ Error: --local and --post are incompatible. "
-                "Local reviews cannot be posted. Use --output-file to save the review.",
-                err=True,
-            )
-            sys.exit(1)
-
-        # Check for ignored options when using --local
-        if local:
-            ignored_options = []
-            if project_id or project_id_option:
-                ignored_options.append("--project-id")
-            if mr_iid or pr_number_option or gitlab_mr_iid:
-                ignored_options.append("--pr-number/--mr-iid")
-            if gitlab_url:
-                ignored_options.append("--gitlab-url")
-            if github_url:
-                ignored_options.append("--github-url")
-
-            if ignored_options:
-                click.echo(
-                    f"⚠️  Warning: The following options are ignored in local mode: {', '.join(ignored_options)}",
-                    err=True,
-                )
-
-        config = Config(**config_overrides)
+        # Validate local mode options early
+        _validate_local_mode_options(kwargs)
 
         # Setup structured logging
-        import logging
+        _setup_logging(config)
 
-        # Configure standard logging to use stderr
-        logging.basicConfig(
-            level=getattr(logging, config.log_level.upper()),
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            stream=sys.stderr,  # Send logs to stderr, keep stdout clean for review output
-        )
-
-        # Configure structlog to also use stderr
-        import structlog
-
-        structlog.configure(
-            processors=[
-                structlog.stdlib.filter_by_level,
-                structlog.stdlib.add_logger_name,
-                structlog.stdlib.add_log_level,
-                structlog.stdlib.PositionalArgumentsFormatter(),
-                structlog.processors.TimeStamper(fmt="iso"),
-                structlog.processors.StackInfoRenderer(),
-                structlog.processors.format_exc_info,
-                structlog.dev.ConsoleRenderer(),
-            ],
-            wrapper_class=structlog.stdlib.BoundLogger,
-            logger_factory=structlog.stdlib.LoggerFactory(),
-            cache_logger_on_first_use=True,
-        )
-
-        # Silence noisy third-party loggers in INFO mode
-        if config.log_level.upper() == "INFO":
-            logging.getLogger("httpx").setLevel(logging.WARNING)
-            logging.getLogger("urllib3").setLevel(logging.WARNING)
-
-        # Run health check if requested
-        if health_check:
+        # Handle health check early exit
+        if config.health_check:
             asyncio.run(_run_health_check(config))
             return
 
-        # Determine project_id and pr_number from arguments, options, or CI environment
-        # Precedence order: positional arg > CLI option > legacy option > config/env var
-        effective_project_id = (
-            project_id or project_id_option or config.get_effective_repository_path()
-        )
-        # Precedence order: positional arg > new CLI option > legacy option > config/env var
-        effective_pr_number = (
-            mr_iid
-            or pr_number_option
-            or gitlab_mr_iid
-            or config.get_effective_pull_request_number()
+        # Resolve project parameters (ID and PR number) - Config knows how to do this
+        effective_project_id, effective_pr_number = _resolve_project_params(
+            kwargs, config
         )
 
-        # For local mode, set default values
-        if config.platform_provider == PlatformProvider.LOCAL:
-            effective_project_id = "local"
-            effective_pr_number = 0
-
-        # Validate that we have required parameters (skip for local mode)
-        elif not effective_project_id or not effective_pr_number:
-            platform_name = config.platform_provider.value
-            if config.is_ci_mode():
-                if platform_name == "gitlab":
-                    click.echo(
-                        "❌ Error: Missing GitLab CI environment variables. "
-                        "Expected CI_PROJECT_PATH and CI_MERGE_REQUEST_IID.",
-                        err=True,
-                    )
-                else:
-                    click.echo(
-                        "❌ Error: Missing GitHub Actions environment variables. "
-                        "Expected GITHUB_REPOSITORY and PR number from event.",
-                        err=True,
-                    )
-            else:
-                if platform_name == "gitlab":
-                    click.echo(
-                        "❌ Error: PROJECT_ID and MR_IID are required for GitLab.\n"
-                        "Provide them as arguments or use --project-id and --pr-number options.\n"
-                        "In GitLab CI/CD, set CI_PROJECT_PATH and CI_MERGE_REQUEST_IID environment variables.",
-                        err=True,
-                    )
-                else:
-                    click.echo(
-                        "❌ Error: PROJECT_ID and PR_NUMBER are required for GitHub.\n"
-                        "Provide them as arguments or use --project-id and --pr-number options.\n"
-                        "In GitHub Actions, set GITHUB_REPOSITORY and derive PR number from event.",
-                        err=True,
-                    )
-            sys.exit(1)
-
-        # Run the review process
+        # Run the review process - Config contains all needed parameters
         asyncio.run(
             _run_review(
                 config=config,
                 project_id=effective_project_id,
                 pr_number=effective_pr_number,
-                post_review=post,
-                output_file=output_file,
-                target_branch=target_branch if local else None,
+                post_review=config.post,
+                output_file=config.output_file,
+                target_branch=config.target_branch
+                if config.platform_provider == PlatformProvider.LOCAL
+                else None,
             )
         )
 
@@ -513,13 +496,13 @@ async def _run_review(
     target_branch: str | None = None,
 ) -> None:
     """Run the review generation process."""
-    platform_name = config.platform_provider.value
+    platform_name = _get_enum_value(config.platform_provider)
     logger.info(
         "Starting code review",
         project_id=project_id,
         pr_number=pr_number,
         platform=platform_name,
-        provider=config.ai_provider.value,
+        provider=_get_enum_value(config.ai_provider),
         dry_run=config.dry_run,
     )
 
@@ -528,7 +511,7 @@ async def _run_review(
     click.echo(f"  PR/MR Number: {pr_number}")
     click.echo(f"  Platform: {platform_name.title()}")
     click.echo(f"  Server URL: {config.get_effective_server_url()}")
-    click.echo(f"  AI Provider: {config.ai_provider.value}")
+    click.echo(f"  AI Provider: {_get_enum_value(config.ai_provider)}")
     click.echo(f"  Model: {config.ai_model}")
 
     if config.is_ci_mode():
@@ -550,7 +533,7 @@ async def _run_review(
                 engine.platform_client.set_target_branch(target_branch)
 
         # Generate review (always uses unified approach)
-        platform_name = config.platform_provider.value.title()
+        platform_name = _get_enum_value(config.platform_provider).title()
         click.echo(f"\n📥 Fetching PR/MR data from {platform_name}...")
         result = await engine.generate_review(project_id, pr_number)
 

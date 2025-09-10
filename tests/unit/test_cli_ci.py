@@ -8,7 +8,58 @@ import pytest
 from click.testing import CliRunner
 
 from ai_code_review.cli import main
-from ai_code_review.models.config import PlatformProvider
+from ai_code_review.models.config import AIProvider, PlatformProvider
+
+
+def create_mock_config(
+    gitlab_token: str = "test",
+    dry_run: bool = True,
+    log_level: str = "INFO",
+    platform_provider: PlatformProvider = PlatformProvider.GITLAB,
+    ai_provider: AIProvider = AIProvider.GEMINI,
+    ai_model: str = "gemini-2.5-pro",
+    **kwargs,
+) -> Mock:
+    """Create a properly configured Config mock with all required attributes."""
+    mock_config = Mock()
+
+    # Basic attributes
+    mock_config.gitlab_token = gitlab_token
+    mock_config.github_token = kwargs.get(
+        "github_token", "test" if platform_provider == PlatformProvider.GITHUB else None
+    )
+    mock_config.dry_run = dry_run
+    mock_config.log_level = log_level
+    mock_config.ai_model = ai_model
+
+    # New fields from refactoring
+    mock_config.health_check = kwargs.get("health_check", False)
+    mock_config.post = kwargs.get("post", False)
+    mock_config.output_file = kwargs.get("output_file", None)
+    mock_config.target_branch = kwargs.get("target_branch", "main")
+
+    # Enum attributes with proper .value
+    mock_config.platform_provider = platform_provider
+    mock_config.ai_provider = ai_provider
+
+    # Method returns
+    mock_config.is_ci_mode.return_value = kwargs.get("is_ci_mode", False)
+    mock_config.get_effective_server_url.return_value = kwargs.get(
+        "server_url", "https://gitlab.com"
+    )
+    mock_config.get_effective_repository_path.return_value = kwargs.get(
+        "repo_path", None
+    )
+    mock_config.get_effective_pull_request_number.return_value = kwargs.get(
+        "pr_number", None
+    )
+
+    # Additional attributes
+    for key, value in kwargs.items():
+        if not hasattr(mock_config, key):
+            setattr(mock_config, key, value)
+
+    return mock_config
 
 
 class TestCLICI:
@@ -29,29 +80,23 @@ class TestCLICI:
             "GITLAB_TOKEN": "test-token",
         }
 
-        with patch("ai_code_review.cli.Config") as mock_config:
+        with patch("ai_code_review.cli.Config") as mock_config_class:
             # Config should receive CI values automatically
-            mock_config.return_value = Mock(
+            mock_config = create_mock_config(
                 ci_project_path="group/test-project",
                 ci_merge_request_iid=456,
                 ci_server_url="https://gitlab.company.com",
                 gitlab_token="test-token",
-                dry_run=True,
-                log_level="INFO",
-                ai_provider=Mock(value="ollama"),
+                platform_provider=PlatformProvider.GITLAB,
+                ai_provider=AIProvider.OLLAMA,
                 ai_model="qwen2.5-coder:7b",
+                is_ci_mode=True,
+                repo_path="group/test-project",
+                pr_number=456,
+                server_url="https://gitlab.company.com",
             )
-            mock_config.return_value.is_ci_mode.return_value = True
-            mock_config.return_value.get_effective_repository_path.return_value = (
-                "group/test-project"
-            )
-            mock_config.return_value.get_effective_pull_request_number.return_value = (
-                456
-            )
-            mock_config.return_value.get_effective_server_url.return_value = (
-                "https://gitlab.company.com"
-            )
-            mock_config.return_value.platform_provider = Mock(value="gitlab")
+            mock_config_class.return_value = mock_config
+            mock_config_class.from_cli_args.return_value = mock_config
 
             with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
                 mock_engine = AsyncMock()
@@ -70,8 +115,10 @@ class TestCLICI:
 
     def test_cli_health_check_no_args_required(self, runner: CliRunner) -> None:
         """Test health check doesn't require project arguments."""
-        with patch("ai_code_review.cli.Config") as mock_config:
-            mock_config.return_value = Mock(log_level="INFO")
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = create_mock_config(health_check=True)
+            mock_config_class.return_value = mock_config
+            mock_config_class.from_cli_args.return_value = mock_config
 
             with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
                 mock_engine = AsyncMock()
@@ -92,23 +139,21 @@ class TestCLICI:
 
     def test_cli_mixed_arguments_and_options(self, runner: CliRunner) -> None:
         """Test CLI with mix of arguments and options."""
-        with patch("ai_code_review.cli.Config") as mock_config:
-            mock_config.return_value = Mock(
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = create_mock_config(
                 gitlab_token="test-token",
-                dry_run=True,
-                log_level="INFO",
-                ai_provider=Mock(value="ollama"),
+                platform_provider=PlatformProvider.GITLAB,
+                ai_provider=AIProvider.OLLAMA,
                 ai_model="qwen2.5-coder:7b",
+                is_ci_mode=False,
+                repo_path=None,
+                pr_number=None,
+                server_url="https://gitlab.com",
             )
-            mock_config.return_value.is_ci_mode.return_value = False
-            mock_config.return_value.get_effective_repository_path.return_value = None
-            mock_config.return_value.get_effective_pull_request_number.return_value = (
-                None
-            )
-            mock_config.return_value.platform_provider = Mock(value="gitlab")
-            mock_config.return_value.get_effective_gitlab_url.return_value = (
-                "https://gitlab.com"
-            )
+            # Add gitlab-specific method
+            mock_config.get_effective_gitlab_url.return_value = "https://gitlab.com"
+            mock_config_class.return_value = mock_config
+            mock_config_class.from_cli_args.return_value = mock_config
 
             with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
                 mock_engine = AsyncMock()
@@ -135,15 +180,16 @@ class TestCLICI:
 
     def test_cli_missing_params_error_message(self, runner: CliRunner) -> None:
         """Test descriptive error messages for missing parameters."""
-        with patch("ai_code_review.cli.Config") as mock_config:
-            config_instance = Mock()
-            config_instance.gitlab_token = "test-token"
-            config_instance.log_level = "INFO"
-            config_instance.platform_provider = PlatformProvider.GITLAB
-            config_instance.is_ci_mode.return_value = False
-            config_instance.get_effective_repository_path.return_value = None
-            config_instance.get_effective_pull_request_number.return_value = None
-            mock_config.return_value = config_instance
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = create_mock_config(
+                gitlab_token="test-token",
+                platform_provider=PlatformProvider.GITLAB,
+                is_ci_mode=False,
+                repo_path=None,
+                pr_number=None,
+            )
+            mock_config_class.return_value = mock_config
+            mock_config_class.from_cli_args.return_value = mock_config
 
             # Should fail with helpful error message
             result = runner.invoke(main, [])
@@ -162,19 +208,18 @@ class TestCLICI:
             "GITLAB_TOKEN": "test-token",
         }
 
-        with patch("ai_code_review.cli.Config") as mock_config:
-            config_instance = Mock()
-            config_instance.gitlab_token = "test-token"
-            config_instance.log_level = "INFO"
-            config_instance.platform_provider = PlatformProvider.GITLAB
-            config_instance.ci_project_path = "group/test-project"
-            config_instance.ci_merge_request_iid = None
-            config_instance.is_ci_mode.return_value = False  # Incomplete CI setup
-            config_instance.get_effective_repository_path.return_value = (
-                "group/test-project"
+        with patch("ai_code_review.cli.Config") as mock_config_class:
+            mock_config = create_mock_config(
+                gitlab_token="test-token",
+                platform_provider=PlatformProvider.GITLAB,
+                ci_project_path="group/test-project",
+                ci_merge_request_iid=None,
+                is_ci_mode=False,  # Incomplete CI setup
+                repo_path="group/test-project",
+                pr_number=None,
             )
-            config_instance.get_effective_pull_request_number.return_value = None
-            mock_config.return_value = config_instance
+            mock_config_class.return_value = mock_config
+            mock_config_class.from_cli_args.return_value = mock_config
 
             result = runner.invoke(main, [], env=ci_env)
 
