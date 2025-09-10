@@ -147,11 +147,14 @@ src/ai_code_review/
 
 #### ⚙️ `models/config.py` - Configuration System
 
-- Pydantic models for type-safe configuration
+- **Multi-layered Configuration**: YAML files + Environment variables + CLI arguments
+- **YAML Configuration Support**: Auto-detects `.ai_review/config.yml` with custom path support
+- Pydantic models for type-safe configuration with comprehensive validation
 - **3 platform providers:** `GITLAB`, `GITHUB`, `LOCAL`
 - Environment variable validation and Git repository detection
-- AI provider and model configuration
-- **Modify when:** Adding new configuration options or platforms
+- AI provider and model configuration with intelligent defaults
+- **Configuration Priority**: CLI args → Env vars → YAML file → Field defaults
+- **Modify when:** Adding new configuration options, platforms, or validation logic
 
 ## 🛠️ Technology Stack
 
@@ -476,7 +479,158 @@ uv run pytest tests/unit/test_prompts.py -k "mr_summary" -v
 uv run pytest tests/unit/test_review_engine.py -k "format" -v
 ```
 
-### 5. Project Context Integration
+### 5. YAML Configuration Architecture
+
+**Files:** `src/ai_code_review/models/config.py`, `src/ai_code_review/cli.py`
+
+The YAML configuration system provides a **layered configuration approach** that prioritizes flexibility while maintaining security and usability.
+
+#### Configuration Flow
+
+**1. Configuration Loading Pipeline:**
+
+```python
+# CLI layer - merges all configuration sources
+def _merge_layered_config(cli_args: dict[str, Any]) -> dict[str, Any]:
+    # 1. Load YAML config file (if enabled and exists)
+    config_file_data = Config._load_config_file_if_enabled(cli_args)
+
+    # 2. Create base config from YAML + environment variables
+    base_config = Config.from_layered_config(cli_args, config_file_data)
+
+    # 3. Apply CLI argument overrides
+    merged_data = Config._apply_cli_overrides(base_config, cli_args)
+
+    return merged_data
+```
+
+**2. YAML File Detection Logic:**
+
+```python
+@classmethod
+def _load_config_file_if_enabled(cls, cli_args: dict[str, Any]) -> dict[str, Any]:
+    # Skip if explicitly disabled
+    if cli_args.get("no_config_file"):
+        return {}
+
+    # Custom path via CLI argument
+    if cli_args.get("config_file"):
+        config_path = Path(cli_args["config_file"])
+        is_explicit = True
+    else:
+        # Auto-detection: .ai_review/config.yml
+        config_path = Path(".ai_review/config.yml")
+        is_explicit = False
+
+    # Load and validate YAML
+    if config_path and config_path.exists():
+        return yaml.safe_load(config_path.read_text())
+```
+
+**3. Configuration Priority System:**
+
+```python
+def from_layered_config(cls, cli_data: dict[str, Any], config_file_data: dict[str, Any]) -> Config:
+    """
+    Priority order:
+    1. CLI arguments (cli_data) - highest priority
+    2. Environment variables (from BaseSettings)
+    3. YAML config file (config_file_data)
+    4. Field defaults - lowest priority
+    """
+    # Environment variables loaded automatically by Pydantic BaseSettings
+    # YAML config merged as additional source
+    # CLI args applied as final overrides
+```
+
+#### Implementation Details
+
+**YAML Schema Validation:**
+
+```python
+# All config fields support YAML format conversion
+class Config(BaseSettings):
+    # List fields support both string and list formats
+    exclude_patterns: list[str] = Field(
+        default_factory=lambda: _DEFAULT_EXCLUDE_PATTERNS.copy()
+    )
+
+    # YAML: exclude_patterns: ["*.lock", "node_modules/**"]
+    # ENV:  EXCLUDE_PATTERNS=*.lock,node_modules/**
+    # CLI:  --exclude-files "*.lock" --exclude-files "node_modules/**"
+```
+
+**Error Handling and Validation:**
+
+```python
+# Comprehensive error handling for config files
+try:
+    data = yaml.safe_load(f) or {}
+    if not isinstance(data, dict):
+        raise ValueError(f"Config file must contain a YAML object")
+except yaml.YAMLError as e:
+    raise ValueError(f"Invalid YAML syntax: {e}")
+except OSError as e:
+    raise ValueError(f"Failed to read config file: {e}")
+```
+
+**Security Design:**
+
+- **No Secrets in YAML**: API keys and tokens must use environment variables
+- **Path Validation**: Validates config file paths for security
+- **Schema Enforcement**: Pydantic validation prevents invalid configurations
+
+#### Adding New Configuration Options
+
+**Step 1: Add field to Config class:**
+
+```python
+class Config(BaseSettings):
+    # New configuration option
+    new_feature_enabled: bool = Field(
+        default=True,
+        description="Enable the new feature functionality"
+    )
+
+    # With validation if needed
+    @field_validator("new_feature_enabled")
+    @classmethod
+    def validate_new_feature(cls, v: bool, info: ValidationInfo) -> bool:
+        # Custom validation logic
+        return v
+```
+
+**Step 2: Update CLI arguments:**
+
+```python
+@click.option(
+    "--enable-new-feature/--disable-new-feature",
+    default=None,
+    help="Enable/disable new feature"
+)
+def main(..., enable_new_feature: bool | None = None):
+    cli_args["new_feature_enabled"] = enable_new_feature
+```
+
+**Step 3: Update configuration example:**
+
+```yaml
+# .ai_review/config.yml.example
+# New Feature Configuration
+new_feature_enabled: true    # Enable new feature (default: true)
+```
+
+**Step 4: Add tests:**
+
+```python
+def test_new_feature_config_loading():
+    """Test YAML config loading for new feature."""
+    config_data = {"new_feature_enabled": False}
+    config = Config.from_layered_config({}, config_data)
+    assert config.new_feature_enabled == False
+```
+
+### 6. Project Context Integration
 
 **Files:** `src/ai_code_review/core/review_engine.py`, `src/ai_code_review/models/config.py`, `src/ai_code_review/cli.py`
 
@@ -603,7 +757,7 @@ Run specific tests:
 uv run pytest tests/unit/test_review_engine.py -k "project_context" -v
 ```
 
-### 4. Modifying File Filtering
+### 6. Modifying File Filtering
 
 **File:** `src/ai_code_review/models/config.py`
 
@@ -624,54 +778,7 @@ def get_default_exclude_patterns() -> list[str]:
     ]
 ```
 
-#### Step 2: Update Configuration
-
-```python
-# src/ai_code_review/models/config.py
-class AIProvider(str, Enum):
-    OLLAMA = "ollama"
-    GEMINI = "gemini"
-    ANTHROPIC = "anthropic"  # Add new provider
-
-# Update default model mapping if needed
-def get_default_model_for_provider(provider: AIProvider) -> str:
-    defaults = {
-        AIProvider.OLLAMA: "qwen2.5-coder:7b",
-        AIProvider.GEMINI: "gemini-2.5-pro",
-        AIProvider.ANTHROPIC: "claude-sonnet-4-20250514",  # Already implemented!
-    }
-    return defaults.get(provider, "gemini-2.5-pro")
-```
-
-#### Step 3: Update Provider Factory
-
-```python
-# src/ai_code_review/core/review_engine.py
-def _create_ai_provider(self) -> BaseAIProvider:
-    if self.config.ai_provider == AIProvider.OLLAMA:
-        from ai_code_review.providers.ollama import OllamaProvider
-        return OllamaProvider(self.config)
-    elif self.config.ai_provider == AIProvider.GEMINI:
-        from ai_code_review.providers.gemini import GeminiProvider
-        return GeminiProvider(self.config)
-    elif self.config.ai_provider == AIProvider.ANTHROPIC:  # Add new case
-        from ai_code_review.providers.anthropic import AnthropicProvider
-        return AnthropicProvider(self.config)
-```
-
-#### Step 4: Add Tests
-
-```python
-# tests/unit/test_anthropic_provider.py
-def test_anthropic_provider_creation(test_config):
-    test_config.ai_provider = AIProvider.ANTHROPIC
-    test_config.ai_api_key = "test-key"
-
-    provider = AnthropicProvider(test_config)
-    assert provider.is_available() == True
-```
-
-### 5. Adding Configuration Options
+### 7. Adding Configuration Options
 
 **File:** `src/ai_code_review/models/config.py`
 

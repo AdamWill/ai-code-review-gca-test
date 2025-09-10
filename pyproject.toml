@@ -150,6 +150,7 @@ disable-rules = [
     "MD031",  # Fenced code blocks surrounded by blank lines - too strict for specs
     "MD040",  # Fenced code blocks should have language - examples don't always need it
     "MD033",  # Inline HTML - sometimes needed for complex formatting
+    "MD024",  # Multiple headings cannot contain the same content - too restrictive for the developer guide
 ]
 
 # Configure specific rules

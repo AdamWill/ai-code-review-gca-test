@@ -23,6 +23,7 @@ Simple guide to get AI-powered code reviews with **3 powerful workflows**:
   - [Build Your Own Container](#build-your-own-container)
   - [Install from Repository](#install-from-repository)
 - [⚙️ Advanced Configuration](#️-advanced-configuration)
+  - [📄 YAML Configuration Files](#-yaml-configuration-files)
   - [CI/CD Variables Configuration](#cicd-variables-configuration)
   - [SSL Configuration for Internal GitLab Instances](#ssl-configuration-for-internal-gitlab-instances)
   - [🎯 Project Context Configuration](#-project-context-configuration)
@@ -331,6 +332,143 @@ jobs:
 **Note:** The package is not yet published on PyPI, so you must either use the container image or install from the GitLab repository.
 
 ## ⚙️ Advanced Configuration
+
+### 📄 YAML Configuration Files
+
+Starting from v1.7.0+, you can use YAML configuration files for easier project setup and team consistency. Configuration files complement environment variables and CLI arguments with a clear priority system.
+
+#### Configuration Priority Order
+
+1. **CLI Arguments** (highest priority) - `--ai-provider gemini`
+2. **Environment Variables** - `AI_PROVIDER=gemini`
+3. **YAML Configuration File** - `ai_provider: gemini`
+4. **Default Values** (lowest priority)
+
+#### Quick Setup
+
+**1. Create configuration directory and file:**
+
+```bash
+# Create configuration directory
+mkdir -p .ai_review
+
+# Copy example configuration
+cp .ai_review/config.yml.example .ai_review/config.yml
+
+# Edit for your project needs
+vim .ai_review/config.yml
+```
+
+**2. The tool auto-detects `.ai_review/config.yml` in your project root:**
+
+```bash
+# Uses .ai_review/config.yml automatically
+ai-code-review group/project 123
+
+# Skip config file loading
+ai-code-review group/project 123 --no-config-file
+
+# Use custom config file
+ai-code-review group/project 123 --config-file my-config.yml
+```
+
+#### Configuration Examples
+
+**Basic GitLab Setup:**
+
+```yaml
+# .ai_review/config.yml
+platform_provider: gitlab
+gitlab_url: https://gitlab.com
+ai_provider: gemini
+ai_model: gemini-2.5-pro
+max_files: 50
+include_mr_summary: true
+
+# Exclude common noise files
+exclude_patterns:
+  - "*.lock"
+  - "node_modules/**"
+  - "dist/**"
+  - "__pycache__/**"
+```
+
+**Local Development with Ollama:**
+
+```yaml
+# .ai_review/config.yml - Local development setup
+platform_provider: local
+ai_provider: ollama
+ai_model: qwen2.5-coder:7b
+ollama_base_url: http://localhost:11434
+target_branch: main
+log_level: INFO
+```
+
+**GitHub + Anthropic Setup:**
+
+```yaml
+# .ai_review/config.yml - GitHub with Claude
+platform_provider: github
+github_url: https://api.github.com
+ai_provider: anthropic
+ai_model: claude-3-5-sonnet-20241022
+temperature: 0.1
+max_tokens: 4000
+```
+
+**Self-hosted GitLab with SSL:**
+
+```yaml
+# .ai_review/config.yml - Internal GitLab
+platform_provider: gitlab
+gitlab_url: https://gitlab.company.com
+ssl_verify: true
+ssl_cert_path: /etc/ssl/certs/company-ca.pem
+ai_provider: gemini
+ai_model: gemini-2.5-pro
+
+# Project context
+enable_project_context: true
+project_context_file: .ai_review/project.md
+```
+
+#### Security Best Practices
+
+**❌ DO NOT store sensitive tokens in YAML files:**
+
+```yaml
+# BAD - tokens in config file (security risk)
+gitlab_token: glpat_xxxxxxxxxxxxxxxxxxxx
+ai_api_key: your_secret_api_key
+```
+
+**✅ Use environment variables for secrets:**
+
+```yaml
+# GOOD - config file without secrets
+platform_provider: gitlab
+ai_provider: gemini
+# Tokens loaded from environment variables
+```
+
+```bash
+# Secrets in environment (.env file or shell)
+export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+export AI_API_KEY=your_gemini_api_key
+```
+
+#### Available Configuration Options
+
+See the [complete example file](../.ai_review/config.yml.example) for all available options including:
+
+- Platform settings (GitLab/GitHub/Local URLs and options)
+- AI provider settings (models, parameters, timeouts)
+- Processing limits (max files, max characters, big diff handling)
+- File filtering (exclude patterns for noise reduction)
+- Project context and review format options
+- SSL/TLS settings for internal instances
+- Development options (dry-run, logging levels)
 
 ### CI/CD Variables Configuration
 

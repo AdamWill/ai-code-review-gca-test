@@ -15,7 +15,9 @@ uv run pre-commit install
 
 # Setup environment (choose based on workflow)
 cp env.example .env
-# Edit .env and set tokens based on your use case:
+# Or use YAML configuration for team consistency (v1.7.0+)
+mkdir -p .ai_review && cp .ai_review/config.yml.example .ai_review/config.yml
+# Edit .env/.ai_review/config.yml and set tokens based on your use case:
 # - GITLAB_TOKEN: For GitLab MRs (not needed for --local)
 # - GITHUB_TOKEN: For GitHub PRs (not needed for --local)
 # - AI_API_KEY: For cloud providers (not needed for --provider ollama)
