@@ -1,0 +1,144 @@
+# AI Code Review Configuration File Example
+# Copy this file to .ai_review/config.yml and customize for your project
+#
+# ⚠️  PRIORITY ORDER: CLI args > Environment variables > Config file > Field defaults
+# Values in this file are overridden by environment variables and CLI arguments
+#
+# 📝 Note: All environment variables from env.example can be used here in YAML format
+# Remove the leading variable names and use lowercase with underscores for keys
+
+#==============================================================================
+# Platform Configuration
+#==============================================================================
+
+# Platform provider: gitlab, github, or local
+# Auto-detected in CI/CD environments, set manually for local use
+platform_provider: gitlab
+
+# Platform URLs (for self-hosted instances)
+gitlab_url: https://gitlab.com
+github_url: https://api.github.com
+
+# Platform tokens (⚠️ NOT RECOMMENDED: use environment variables instead for security)
+# gitlab_token: glpat_xxxxxxxxxxxxxxxxxxxx
+# github_token: ghp_xxxxxxxxxxxxxxxxxxxx
+
+#==============================================================================
+# AI Provider Configuration
+#==============================================================================
+
+# AI provider: gemini, anthropic, ollama
+ai_provider: gemini
+
+# AI model name for selected provider
+ai_model: gemini-2.5-pro
+
+# API key (⚠️ NOT RECOMMENDED: use AI_API_KEY environment variable instead for security)
+# ai_api_key: your_api_key_here
+
+# AI model parameters
+temperature: 0.1        # 0.0-2.0, lower = more deterministic
+max_tokens: 8000        # Maximum response tokens
+http_timeout: 5.0       # HTTP timeout in seconds
+
+#==============================================================================
+# Ollama Configuration (for local AI)
+#==============================================================================
+
+# Ollama server URL (when using ollama provider)
+ollama_base_url: http://localhost:11434
+
+#==============================================================================
+# SSL Configuration (for internal/self-hosted instances)
+#==============================================================================
+
+# SSL certificate verification
+ssl_verify: true
+
+# Custom SSL certificate path (for internal instances)
+# ssl_cert_path: /path/to/cert.pem
+
+#==============================================================================
+# Processing Configuration
+#==============================================================================
+
+# Processing limits
+max_chars: 100000       # Max characters from diff
+max_files: 100          # Max files to process per review
+
+# File filtering (glob patterns)
+exclude_patterns:
+  - "*.lock"              # All lock files
+  - "package-lock.json"   # npm lock file
+  - "yarn.lock"           # Yarn lock file
+  - "Pipfile.lock"        # Pipenv lock file
+  - "poetry.lock"         # Poetry lock file
+  - "pnpm-lock.yaml"      # PNPM lock file
+  - "*.min.js"            # Minified JavaScript
+  - "*.min.css"           # Minified CSS
+  - "*.map"               # Source map files
+  - "node_modules/**"     # Node modules (top level)
+  - "**/node_modules/**"  # Node modules (nested)
+  - "__pycache__/**"      # Python cache (top level)
+  - "**/__pycache__/**"   # Python cache (nested)
+  - "dist/**"             # Build distributions
+  - "build/**"            # Build directories
+  - "*.egg-info/**"       # Python egg info
+
+#==============================================================================
+# Project Context Configuration
+#==============================================================================
+
+# Enable loading project context from file
+enable_project_context: true
+
+# Path to project context file (relative to repository root)
+project_context_file: .ai_review/project.md
+
+# Review format options
+include_mr_summary: true    # Include MR Summary section in reviews
+
+#==============================================================================
+# Development/Testing Options
+#==============================================================================
+
+# Dry run mode (no actual API calls, uses mock responses)
+dry_run: false
+
+# Force large context window (24K tokens) for processing big diffs
+# Note: Auto-activated when diffs exceed 60K characters
+big_diffs: false
+
+# Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+log_level: INFO
+
+#==============================================================================
+# Example Configurations for Different Scenarios
+#==============================================================================
+
+# Example 1: Local development with Ollama
+# ai_provider: ollama
+# ai_model: qwen2.5-coder:7b
+# ollama_base_url: http://localhost:11434
+# platform_provider: local
+# dry_run: false
+
+# Example 2: GitHub with Anthropic Claude
+# ai_provider: anthropic
+# ai_model: claude-3-5-sonnet-20241022
+# platform_provider: github
+# github_url: https://api.github.com
+# max_tokens: 4000
+
+# Example 3: Self-hosted GitLab with custom SSL
+# platform_provider: gitlab
+# gitlab_url: https://gitlab.company.com
+# ssl_verify: true
+# ssl_cert_path: /etc/ssl/certs/company-ca.pem
+# ai_provider: gemini
+# ai_model: gemini-2.5-pro
+
+# Example 4: Minimal config for basic usage
+# ai_provider: gemini
+# ai_model: gemini-2.5-pro
+# platform_provider: gitlab

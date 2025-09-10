@@ -167,8 +167,23 @@ Full multi-platform support for GitLab, GitHub, and Local Git repositories.
 
 - ✅ Environment variable configuration with validation
 - ✅ Command-line argument overrides
+- ✅ **YAML configuration file support**
+- ✅ **Layered configuration priority system**
 - ✅ Support for language hints and content limits
 - ✅ Dry-run mode for testing without API calls
+
+**Configuration File Features:**
+- ✅ Auto-detection of `.ai_review/config.yml`
+- ✅ Custom config file path via `--config-file` option
+- ✅ Disable config file loading via `--no-config-file` flag
+- ✅ Environment variables: `CONFIG_FILE`, `NO_CONFIG_FILE`
+- ✅ Full YAML validation with comprehensive error messages
+- ✅ **Priority Order**: CLI args > Env vars > Config file > Field defaults
+
+**Performance Optimizations:**
+- ✅ Lazy imports (`yaml`, `pathlib.Path`) - only loaded when needed
+- ✅ Zero overhead when config files are disabled
+- ✅ Efficient file existence checks before parsing
 - ✅ Adaptive context windows and file filtering
 - ✅ Comprehensive logging configuration
 
@@ -742,6 +757,10 @@ DRY_RUN=false                           # Enable dry-run mode (no API calls)
 BIG_DIFFS=false                         # Force large context (24K) - auto-activated for diffs >60K chars
 LOG_LEVEL=INFO                          # DEBUG, INFO, WARNING, ERROR, CRITICAL
 
+# Configuration File Options
+NO_CONFIG_FILE=false                    # Skip loading config file (auto-detected or custom)
+CONFIG_FILE=                            # Custom config file path (default: auto-detect .ai_review/config.yml)
+
 # File Filtering (comma-separated glob patterns)
 EXCLUDE_PATTERNS=*.lock,*.min.js,node_modules/**,dist/**,build/**
 ```
@@ -752,6 +771,15 @@ EXCLUDE_PATTERNS=*.lock,*.min.js,node_modules/**,dist/**,build/**
 - Log levels are validated against standard Python logging levels
 - `EXCLUDE_PATTERNS` can be set to empty string to disable all filtering
 - `BIG_DIFFS` is auto-activated for diffs >60K characters for optimal performance
+
+**Configuration File Features:**
+- **Auto-detection**: `.ai_review/config.yml` loaded automatically if it exists
+- **Priority order**: CLI args > Environment variables > Config file > Field defaults
+- **YAML format**: Supports all environment variables in YAML key: value format
+- **Custom paths**: Use `CONFIG_FILE` env var or `--config-file` CLI option
+- **Disable loading**: Use `NO_CONFIG_FILE=true` or `--no-config-file` flag
+- **Performance**: Uses lazy imports, zero overhead when disabled
+- **Validation**: Full YAML syntax validation with descriptive error messages
 - **Local mode** requires Git repository and optional Git binary (GitPython handles most operations)
 - Platform tokens not required for `--local` workflow
 
@@ -793,6 +821,10 @@ Output Options:
   --post                      Post review as platform comment/discussion
   --output-file PATH          Save review to file (supports local workflow)
   --no-mr-summary             Disable MR summary section (compact format)
+
+Configuration File Options:
+  --config-file PATH          Custom config file path (default: auto-detect .ai_review/config.yml)
+  --no-config-file            Skip loading config file (auto-detected or specified)
 
 Development Options:
   --dry-run                   Dry run mode (no API calls, for testing)

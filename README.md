@@ -124,9 +124,41 @@ jobs:
 
 ## 🔧 Configuration
 
-### Basic Configuration
+### Configuration Methods (Priority Order)
 
-Create `.env` file for local development:
+The tool supports **4 configuration methods** with the following priority:
+
+1. **🔴 CLI Arguments** (highest priority) - `--provider anthropic --model claude-3-5-sonnet`
+2. **🟡 Environment Variables** - `export AI_PROVIDER=anthropic`
+3. **🟢 Configuration File** - `.ai_review/config.yml` *(NEW!)*
+4. **⚪ Field Defaults** (lowest priority) - Built-in defaults
+
+### Configuration File
+
+Create a YAML configuration file for persistent settings:
+
+```bash
+# Create from template
+cp .ai_review/config.yml.example .ai_review/config.yml
+
+# Edit your project settings
+vim .ai_review/config.yml
+```
+
+**Key benefits:**
+- ✅ **Project-specific settings** - Different configs per repository
+- ✅ **Team sharing** - Commit to git for consistent team settings
+- ✅ **Reduced typing** - Set common options once
+- ✅ **Layered override** - CLI arguments still override everything
+
+**File locations:**
+- **Auto-detected**: `.ai_review/config.yml` (loaded automatically if exists)
+- **Custom path**: `--config-file path/to/custom.yml`
+- **Disable loading**: `--no-config-file` flag
+
+### Environment Variables
+
+For sensitive data and CI/CD environments:
 ```bash
 # Copy template
 cp env.example .env
