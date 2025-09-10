@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from enum import Enum
 from typing import Any
@@ -257,6 +258,18 @@ class Config(BaseSettings):
         description="Glob patterns for files to exclude from AI review",
     )
 
+    # Configuration file options
+    no_config_file: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("no_config_file", "NO_CONFIG_FILE"),
+        description="Skip loading config file (auto-detected or specified)",
+    )
+    config_file: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("config_file", "CONFIG_FILE"),
+        description="Custom config file path",
+    )
+
     @field_validator("gitlab_url", "github_url", "ollama_base_url")
     @classmethod
     def validate_url(cls, v: str) -> str:
@@ -279,8 +292,6 @@ class Config(BaseSettings):
 
         if not v.strip():
             raise ValueError("SSL certificate path cannot be empty")
-
-        import os
 
         if not os.path.isfile(v):
             raise ValueError(f"SSL certificate file not found: {v}")
@@ -525,7 +536,6 @@ class Config(BaseSettings):
         - Fallback: GITHUB_REPOSITORY exists (GitHub) or CI_PROJECT_PATH exists (GitLab)
         - Default: GitLab (backward compatibility)
         """
-        import os
 
         # GitLab CI detection (require both GITLAB_CI and data availability)
         if os.getenv("GITLAB_CI") == "true" and os.getenv("CI_PROJECT_PATH"):
@@ -678,29 +688,102 @@ class Config(BaseSettings):
         return cls()
 
     @classmethod
-    def from_cli_and_config(cls, cli_args: dict[str, Any]) -> Config:
-        """Create config applying layers: defaults → env vars → CLI.
+    def _load_config_file_if_enabled(cls, cli_args: dict[str, Any]) -> dict[str, Any]:
+        """Load config file based on CLI flags and auto-detection.
 
         Args:
-            cli_args: CLI arguments/options (highest priority)
+            cli_args: CLI arguments containing config file options
+
+        Returns:
+            dict: Config file data or empty dict if not found/disabled
+
+        Raises:
+            ValueError: If explicitly specified config file doesn't exist or has errors
+        """
+        # Skip if --no-config-file specified
+        if cli_args.get("no_config_file"):
+            return {}
+
+        # Lazy imports - only load when actually needed
+        from pathlib import Path
+
+        import yaml
+
+        # Determine config file path and whether it was explicitly specified
+        config_path = None
+        is_explicit = False
+
+        if cli_args.get("config_file"):
+            # Custom path specified explicitly by user
+            config_path = Path(cli_args["config_file"])
+            is_explicit = True
+        else:
+            # Auto-detect default path
+            default_path = Path(".ai_review/config.yml")
+            if default_path.exists():
+                config_path = default_path
+                is_explicit = False
+
+        # Check if explicitly specified file exists
+        if config_path and is_explicit and not config_path.exists():
+            raise ValueError(
+                f"Config file not found: {config_path}. "
+                f"Please check the path or remove --config-file to use auto-detection."
+            )
+
+        # Load and parse file if found
+        if config_path and config_path.exists():
+            try:
+                with open(config_path, encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+                    if not isinstance(data, dict):
+                        raise ValueError(
+                            f"Config file must contain a YAML object, got {type(data).__name__}"
+                        )
+                    return data
+            except OSError as e:
+                raise ValueError(
+                    f"Failed to read config file {config_path}: {e}"
+                ) from e
+            except yaml.YAMLError as e:
+                raise ValueError(
+                    f"Invalid YAML syntax in config file {config_path}: {e}"
+                ) from e
+            except Exception as e:
+                raise ValueError(
+                    f"Unexpected error loading config file {config_path}: {e}"
+                ) from e
+
+        return {}
+
+    @classmethod
+    def from_layered_config(
+        cls, cli_data: dict[str, Any], config_file_data: dict[str, Any]
+    ) -> Config:
+        """Create config with full priority layering: CLI > Env > Config File > Defaults.
+
+        Args:
+            cli_data: CLI arguments/options (highest priority)
+            config_file_data: Config file data (lower priority)
 
         Returns:
             Config: Fully configured Config object
 
         Priority order (highest to lowest) - OPTIMIZED FOR CI/CD:
-        1. CLI arguments (cli_args) - Manual overrides
+        1. CLI arguments (cli_data) - Manual overrides
         2. Environment variables - CI/CD configuration (handled by Pydantic BaseSettings)
-        3. Field defaults - System defaults
+        3. Config file (config_file_data) - Project configuration
+        4. Field defaults - System defaults
 
         Note: Environment variables are automatically handled by Pydantic BaseSettings,
-        so they have priority over defaults, but CLI args override them.
+        so they have priority over config file and defaults, but CLI args override everything.
         """
-        # Start with empty dict - BaseSettings will automatically handle defaults + env vars
-        data = {}
+        # Start with config file data as base layer
+        data = config_file_data.copy()
 
         # Layer CLI overrides (highest priority)
-        # Only include non-None CLI values to preserve env vars
-        cli_overrides = {k: v for k, v in cli_args.items() if v is not None}
+        # Only include non-None CLI values to preserve lower layers
+        cli_overrides = {k: v for k, v in cli_data.items() if v is not None}
         data.update(cli_overrides)
 
         # Handle ai_model/ai_provider relationship intelligently
@@ -780,6 +863,9 @@ class Config(BaseSettings):
             "pr_number_option": "pr_number",
             "gitlab_mr_iid": "gitlab_mr_iid",  # Legacy
             "target_branch": "target_branch",
+            # Configuration file options
+            "no_config_file": "no_config_file",
+            "config_file": "config_file",
         }
 
         # Step 2: Apply automatic mappings (skip internal flags)
@@ -830,5 +916,8 @@ class Config(BaseSettings):
             )
         # If neither flag is set, Config defaults will apply (which include default patterns)
 
-        # Step 6: Use the existing layered construction
-        return cls.from_cli_and_config(mapped_args)
+        # Step 6: Load config file if enabled
+        config_file_data = cls._load_config_file_if_enabled(cli_args)
+
+        # Step 7: Use layered construction with config file
+        return cls.from_layered_config(mapped_args, config_file_data)

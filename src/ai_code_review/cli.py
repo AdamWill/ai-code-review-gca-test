@@ -352,6 +352,16 @@ def _setup_logging(config: Config) -> None:
     default="main",
     help="Target branch for local comparison (default: main)",
 )
+@click.option(
+    "--no-config-file",
+    is_flag=True,
+    help="Skip loading config file (auto-detected .ai_review/config.yml or custom path)",
+)
+@click.option(
+    "--config-file",
+    default=None,
+    help="Custom config file path (default: auto-detect .ai_review/config.yml)",
+)
 @click.version_option(version="0.1.0", prog_name="ai-code-review")
 def main(**kwargs: Any) -> None:
     """
