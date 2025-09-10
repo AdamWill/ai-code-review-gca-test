@@ -130,7 +130,7 @@ The tool supports **4 configuration methods** with the following priority:
 
 1. **🔴 CLI Arguments** (highest priority) - `--provider anthropic --model claude-3-5-sonnet`
 2. **🟡 Environment Variables** - `export AI_PROVIDER=anthropic`
-3. **🟢 Configuration File** - `.ai_review/config.yml` *(NEW!)*
+3. **🟢 Configuration File** - `.ai_review/config.yml`
 4. **⚪ Field Defaults** (lowest priority) - Built-in defaults
 
 ### Configuration File
