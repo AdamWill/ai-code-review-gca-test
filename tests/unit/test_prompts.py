@@ -158,7 +158,12 @@ class TestPromptGeneration:
         test_input = {"context": "This is a Django web application"}
         result = _create_project_context_section(test_input)
 
-        assert result == "## Project Context\nThis is a Django web application"
+        expected_result = """## Project Context & Guidelines
+
+This is a Django web application
+
+IMPORTANT: Apply the above project guidelines and conventions systematically when reviewing the code changes below. Follow the specific patterns, requirements, checklists, and best practices outlined in the context. Reference these guidelines directly in your review and ensure compliance with the established project standards."""
+        assert result == expected_result
 
     def test_create_project_context_section_no_context(self) -> None:
         """Test _create_project_context_section without context."""

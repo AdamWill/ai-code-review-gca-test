@@ -231,7 +231,11 @@ def _create_project_context_section(input_data: dict[str, Any]) -> str:
     """
     context = input_data.get("context")
     if context and context.strip():
-        return f"## Project Context\n{context}"
+        return f"""## Project Context & Guidelines
+
+{context}
+
+IMPORTANT: Apply the above project guidelines and conventions systematically when reviewing the code changes below. Follow the specific patterns, requirements, checklists, and best practices outlined in the context. Reference these guidelines directly in your review and ensure compliance with the established project standards."""
     return ""
 
 
