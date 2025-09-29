@@ -18,6 +18,8 @@ Guide for developers who want to understand, modify, or extend the AI Code Revie
   - [3. Adding New AI Providers](#3-adding-new-ai-providers)
   - [4. Adding Configuration Options](#4-adding-configuration-options)
   - [5. Modifying File Filtering](#5-modifying-file-filtering)
+  - [6. Adaptive Context Size Management](#6-adaptive-context-size-management)
+  - [7. Project Context Integration](#7-project-context-integration)
 - [🧪 Development Workflow](#-development-workflow)
   - [Setup Development Environment](#setup-development-environment)
   - [Testing Strategy](#testing-strategy)
@@ -434,7 +436,7 @@ config = Config(include_mr_summary=False)  # Compact
 config = Config()                          # Full format (default)
 ```
 
-#### Implementation Details
+#### Format Implementation Details
 
 The format configuration affects:
 
@@ -543,7 +545,7 @@ def from_layered_config(cls, cli_data: dict[str, Any], config_file_data: dict[st
     # CLI args applied as final overrides
 ```
 
-#### Implementation Details
+#### YAML Implementation Details
 
 **YAML Schema Validation:**
 
@@ -630,13 +632,148 @@ def test_new_feature_config_loading():
     assert config.new_feature_enabled == False
 ```
 
-### 6. Project Context Integration
+### 5. Modifying File Filtering
+
+**File:** `src/ai_code_review/models/config.py`
+
+Current filtering happens in `get_default_exclude_patterns()`:
+
+```python
+def get_default_exclude_patterns() -> list[str]:
+    return [
+        "*.lock",              # Lockfiles
+        "*.min.js",            # Minified files
+        "node_modules/**",     # Dependencies
+        "__pycache__/**",      # Python cache
+        "dist/**",             # Build output
+        # Add new patterns here
+        "*.generated.ts",      # Generated TypeScript
+        "**/migrations/**",    # Database migrations
+        "coverage/**",         # Coverage reports
+    ]
+```
+
+**Testing File Filtering:**
+
+```bash
+# Test local filtering
+ai-code-review --local --exclude-files "*.test.*,docs/**"
+
+# Test remote filtering
+ai-code-review group/project 123 --exclude-files "*.test.*" --exclude-files "docs/**"
+
+# Test with different file limits
+ai-code-review --local --max-files 5 --max-file-context 1000
+```
+
+### 6. Adaptive Context Size Management
+
+**Files:**
+- `src/ai_code_review/providers/`
+- `src/ai_code_review/core/review_engine.py`
+- `src/ai_code_review/utils/constants.py`
+
+The **Adaptive Context Size** system dynamically calculates optimal context window sizes for different AI providers based on the total content being processed.
+
+#### Context Size Calculation Process
+
+**1. Centralized Constants** (`utils/constants.py`):
+```python
+# Token estimation constants
+SYSTEM_PROMPT_ESTIMATED_CHARS = 500
+CHARS_TO_TOKENS_RATIO = 2.5
+
+# Auto big-diffs threshold
+AUTO_BIG_DIFFS_THRESHOLD_CHARS = 60000
+
+# Derived constants
+SYSTEM_PROMPT_ESTIMATED_TOKENS = int(SYSTEM_PROMPT_ESTIMATED_CHARS / CHARS_TO_TOKENS_RATIO)  # 200
+```
+
+**2. Total Content Calculation** (`review_engine.py`):
+```python
+# Calculate total content size including all components
+project_context = self._get_project_context(pr_data)
+project_context_chars = len(project_context) if project_context else 0
+system_prompt_chars = SYSTEM_PROMPT_ESTIMATED_CHARS
+
+total_content_chars = diff_size_chars + project_context_chars + system_prompt_chars
+
+# Use total content for context window calculation
+context_window_size = self.ai_provider.get_adaptive_context_size(
+    diff_size_chars, project_context_chars, system_prompt_chars
+)
+```
+
+**3. Provider-Specific Logic** (all providers):
+```python
+def get_adaptive_context_size(
+    self,
+    diff_size_chars: int,
+    project_context_chars: int = 0,
+    system_prompt_chars: int = SYSTEM_PROMPT_ESTIMATED_CHARS,
+) -> int:
+    # Calculate total content size
+    total_content_chars = diff_size_chars + project_context_chars + system_prompt_chars
+
+    # Provider-specific thresholds based on total content
+    if total_content_chars > large_threshold:
+        return large_context_size
+    # ... provider-specific logic
+```
+
+#### Provider Context Limits
+
+| **Provider** | **Standard** | **Large** | **Max** | **Strategy** |
+|--------------|-------------|-----------|---------|--------------|
+| **Ollama**   | 16K | 24K | 24K | Conservative (local compute) |
+| **Anthropic** | 64K | 150K | 200K | Generous (cloud, high quality) |
+| **Gemini**   | 64K | 256K | 512K | Very generous (massive context) |
+
+#### Key Benefits
+
+- **Precise Calculation**: Considers all content (diff + context + prompts)
+- **No Magic Numbers**: Centralized constants prevent desynchronization
+- **Auto Big-Diffs**: Automatically enables larger contexts when content > 60K chars
+- **Better Resource Usage**: Optimal context allocation per provider
+- **Comprehensive Logging**: Token distribution breakdown for debugging
+
+#### Modifying Context Behavior
+
+**Change estimation constants:**
+```python
+# utils/constants.py
+SYSTEM_PROMPT_ESTIMATED_CHARS = 750        # Increase if prompts grow
+CHARS_TO_TOKENS_RATIO = 3.0                # Adjust based on provider analysis
+AUTO_BIG_DIFFS_THRESHOLD_CHARS = 80000     # Raise threshold for auto big-diffs
+```
+
+**Add new provider thresholds:**
+```python
+# providers/new_provider.py
+def get_adaptive_context_size(self, diff_size_chars: int, ...) -> int:
+    total_content_chars = diff_size_chars + project_context_chars + system_prompt_chars
+
+    if total_content_chars > 100_000:
+        return 128_000  # Custom large threshold
+    else:
+        return 32_000   # Custom standard
+```
+
+**Debug context calculations:**
+```bash
+LOG_LEVEL=DEBUG ai-code-review project/123
+# Shows: diff_chars=50000, project_context_chars=15000, total_estimated_tokens=26000
+# Also shows: auto_big_diffs_activated=true (when total > 60K chars)
+```
+
+### 7. Project Context Integration
 
 **Files:** `src/ai_code_review/core/review_engine.py`, `src/ai_code_review/models/config.py`, `src/ai_code_review/cli.py`
 
 The **Project Context** feature allows AI reviews to understand project-specific patterns, architecture, and "gotchas".
 
-#### How It Works
+#### Project Context Integration Process
 
 1. **Configuration** (`models/config.py`):
    ```python
@@ -755,84 +892,6 @@ The feature has comprehensive test coverage in `tests/unit/test_review_engine.py
 Run specific tests:
 ```bash
 uv run pytest tests/unit/test_review_engine.py -k "project_context" -v
-```
-
-### 6. Modifying File Filtering
-
-**File:** `src/ai_code_review/models/config.py`
-
-Current filtering happens in `get_default_exclude_patterns()`:
-
-```python
-def get_default_exclude_patterns() -> list[str]:
-    return [
-        "*.lock",              # Lockfiles
-        "*.min.js",            # Minified files
-        "node_modules/**",     # Dependencies
-        "__pycache__/**",      # Python cache
-        "dist/**",             # Build output
-        # Add new patterns here
-        "*.generated.ts",      # Generated TypeScript
-        "**/migrations/**",    # Database migrations
-        "coverage/**",         # Coverage reports
-    ]
-```
-
-### 7. Adding Configuration Options
-
-**File:** `src/ai_code_review/models/config.py`
-
-#### Add New Configuration Field
-
-```python
-class Config(BaseSettings):
-    # Existing fields...
-
-    # Add new field with validation
-    custom_timeout: int = Field(
-        default=30,
-        description="Custom operation timeout in seconds",
-        gt=0,
-        le=300,  # Max 5 minutes
-    )
-
-    # Real examples from the project:
-    include_mr_summary: bool = Field(
-        default=True,
-        description="Include MR Summary section in reviews"
-    )
-
-    target_branch: str = Field(
-        default="main",
-        description="Target branch for local reviews"
-    )
-
-    # Add validation if needed
-    @field_validator("custom_timeout")
-    @classmethod
-    def validate_timeout(cls, v: int) -> int:
-        if v < 10:
-            logger.warning("Timeout too low, setting minimum of 10 seconds")
-            return 10
-        return v
-```
-
-#### Update CLI Arguments
-
-```python
-
-
-**Testing File Filtering:**
-
-```bash
-# Test local filtering
-ai-code-review --local --exclude-files "*.test.*,docs/**"
-
-# Test remote filtering
-ai-code-review group/project 123 --exclude-files "*.test.*" --exclude-files "docs/**"
-
-# Test with different file limits
-ai-code-review --local --max-files 5 --max-file-context 1000
 ```
 
 ## 🧪 Development Workflow
