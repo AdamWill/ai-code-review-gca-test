@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from langchain_core.language_models.chat_models import BaseChatModel
 
 from ai_code_review.models.config import Config
+from ai_code_review.utils.constants import SYSTEM_PROMPT_ESTIMATED_CHARS
 
 
 class BaseAIProvider(ABC):
@@ -44,6 +45,25 @@ class BaseAIProvider(ABC):
     @abstractmethod
     def is_available(self) -> bool:
         """Check if provider is available."""
+        pass
+
+    @abstractmethod
+    def get_adaptive_context_size(
+        self,
+        diff_size_chars: int,
+        project_context_chars: int = 0,
+        system_prompt_chars: int = SYSTEM_PROMPT_ESTIMATED_CHARS,
+    ) -> int:
+        """Get context size adaptively based on content size and config.
+
+        Args:
+            diff_size_chars: Size of the diff content in characters
+            project_context_chars: Size of project context content in characters
+            system_prompt_chars: Estimated size of system prompt in characters
+
+        Returns:
+            Optimal context window size for this provider
+        """
         pass
 
     def validate_config(self) -> None:

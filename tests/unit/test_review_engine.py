@@ -734,7 +734,9 @@ AI generated review feedback for test purposes. The code changes appear well-str
         with pytest.raises(
             AIProviderError, match="Failed to generate review with test_provider"
         ):
-            await engine._generate_review_response(mock_pr_data)
+            await engine._generate_review_response(
+                mock_pr_data, "test context", 100, 500
+            )
 
     def test_load_project_context_file_exception_handling(
         self, test_config: Config, chdir_tmp
@@ -780,3 +782,141 @@ AI generated review feedback for test purposes. The code changes appear well-str
 
     # Note: Removed extremely dangerous test that patched len() builtin
     # It was causing real Ollama connections and 14+ second execution times
+
+    def test_calculate_context_parameters_small_diff_large_context_triggers_auto_big_diffs(
+        self, test_config: Config
+    ) -> None:
+        """Test small diff with large project context triggers auto_big_diffs."""
+        engine = ReviewEngine(test_config)
+
+        # Small diff (1000 chars) + large context (60000 chars) + system prompt (500)
+        # Total: 61500 chars > AUTO_BIG_DIFFS_THRESHOLD_CHARS (60000)
+        original_total_chars = 1000
+        project_context_chars = 60000
+        system_prompt_chars = 500
+        manual_big_diffs = False
+
+        total_content_chars, context_window_size, auto_big_diffs = (
+            engine._calculate_context_parameters(
+                original_total_chars,
+                project_context_chars,
+                system_prompt_chars,
+                manual_big_diffs,
+            )
+        )
+
+        assert total_content_chars == 61500
+        assert auto_big_diffs is True
+        assert context_window_size >= 16384  # Should get larger context window
+
+    def test_calculate_context_parameters_large_diff_no_context_triggers_auto_big_diffs(
+        self, test_config: Config
+    ) -> None:
+        """Test large diff with no project context triggers auto_big_diffs."""
+        engine = ReviewEngine(test_config)
+
+        # Large diff (61000 chars) + no context (0 chars) + system prompt (500)
+        # Total: 61500 chars > AUTO_BIG_DIFFS_THRESHOLD_CHARS (60000)
+        original_total_chars = 61000
+        project_context_chars = 0
+        system_prompt_chars = 500
+        manual_big_diffs = False
+
+        total_content_chars, context_window_size, auto_big_diffs = (
+            engine._calculate_context_parameters(
+                original_total_chars,
+                project_context_chars,
+                system_prompt_chars,
+                manual_big_diffs,
+            )
+        )
+
+        assert total_content_chars == 61500
+        assert auto_big_diffs is True
+        assert context_window_size >= 16384
+
+    def test_calculate_context_parameters_below_threshold_does_not_trigger_auto_big_diffs(
+        self, test_config: Config
+    ) -> None:
+        """Test content below threshold does NOT trigger auto_big_diffs."""
+        engine = ReviewEngine(test_config)
+
+        # Total just below threshold: 59500 chars < AUTO_BIG_DIFFS_THRESHOLD_CHARS (60000)
+        original_total_chars = 50000
+        project_context_chars = 9000
+        system_prompt_chars = 500
+        manual_big_diffs = False
+
+        total_content_chars, context_window_size, auto_big_diffs = (
+            engine._calculate_context_parameters(
+                original_total_chars,
+                project_context_chars,
+                system_prompt_chars,
+                manual_big_diffs,
+            )
+        )
+
+        assert total_content_chars == 59500
+        assert auto_big_diffs is False
+        assert context_window_size == 16384  # Default context window
+
+    def test_calculate_context_parameters_manual_big_diffs_prevents_auto_activation(
+        self, test_config: Config
+    ) -> None:
+        """Test manual big_diffs prevents auto activation even above threshold."""
+        engine = ReviewEngine(test_config)
+
+        # Content above threshold but manual_big_diffs=True should prevent auto activation
+        original_total_chars = 50000
+        project_context_chars = 15000
+        system_prompt_chars = 500
+        manual_big_diffs = True  # Manually enabled
+
+        total_content_chars, context_window_size, auto_big_diffs = (
+            engine._calculate_context_parameters(
+                original_total_chars,
+                project_context_chars,
+                system_prompt_chars,
+                manual_big_diffs,
+            )
+        )
+
+        assert total_content_chars == 65500  # Above threshold
+        assert auto_big_diffs is False  # Should not auto-activate when manually set
+        assert context_window_size >= 16384
+
+    def test_calculate_context_parameters_calls_adaptive_context_size(
+        self, test_config: Config
+    ) -> None:
+        """Test that _calculate_context_parameters correctly calls get_adaptive_context_size."""
+        engine = ReviewEngine(test_config)
+
+        # Mock AI provider with get_adaptive_context_size
+        expected_context_size = 32768
+        mock_get_adaptive = Mock(return_value=expected_context_size)
+        engine.ai_provider.get_adaptive_context_size = mock_get_adaptive
+
+        # Test parameters
+        original_total_chars = 25000
+        project_context_chars = 10000
+        system_prompt_chars = 500
+        manual_big_diffs = False
+
+        total_content_chars, context_window_size, auto_big_diffs = (
+            engine._calculate_context_parameters(
+                original_total_chars,
+                project_context_chars,
+                system_prompt_chars,
+                manual_big_diffs,
+            )
+        )
+
+        # Verify get_adaptive_context_size was called with correct parameters
+        mock_get_adaptive.assert_called_once_with(
+            original_total_chars, project_context_chars, system_prompt_chars
+        )
+
+        # Verify returned values
+        assert context_window_size == expected_context_size
+        assert total_content_chars == 35500  # 25000 + 10000 + 500
+        assert auto_big_diffs is False  # Below threshold (60000)

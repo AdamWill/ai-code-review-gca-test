@@ -9,6 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 
 from ai_code_review.models.config import Config
 from ai_code_review.providers.base import BaseAIProvider
+from ai_code_review.utils.constants import SYSTEM_PROMPT_ESTIMATED_CHARS
 from ai_code_review.utils.exceptions import AIProviderError
 
 
@@ -54,26 +55,44 @@ class GeminiProvider(BaseAIProvider):
         # Real availability check would require an actual API call
         return bool(self.config.ai_api_key)
 
-    def get_adaptive_context_size(self, diff_size_chars: int) -> int:
-        """Get context size adaptively based on diff size and config.
+    def get_adaptive_context_size(
+        self,
+        diff_size_chars: int,
+        project_context_chars: int = 0,
+        system_prompt_chars: int = SYSTEM_PROMPT_ESTIMATED_CHARS,
+    ) -> int:
+        """Get context size adaptively based on content size and config.
 
         Gemini 2.5 Pro has much higher limits than local models:
         - Input: ~2 million tokens
         - Output: ~8K tokens
 
         We can be much more generous than Ollama's 16K/24K limits.
+
+        Args:
+            diff_size_chars: Size of the diff content in characters
+            project_context_chars: Size of project context content in characters
+            system_prompt_chars: Estimated size of system prompt in characters
+
+        Returns:
+            Optimal context window size considering all content
         """
+        # Calculate total content size
+        total_content_chars = (
+            diff_size_chars + project_context_chars + system_prompt_chars
+        )
+
         # Manual override always takes precedence
         if self.config.big_diffs:
             return 512_000  # 512K - manual big-diffs flag (massive context)
 
-        # Auto-detect based on diff size (more generous than Ollama)
-        elif diff_size_chars > 200_000:  # > 200K chars (~80K tokens)
-            return 512_000  # 512K - very large diff
-        elif diff_size_chars > 100_000:  # > 100K chars (~40K tokens)
-            return 256_000  # 256K - large diff
-        elif diff_size_chars > 30_000:  # > 30K chars (~12K tokens)
-            return 128_000  # 128K - medium diff
+        # Auto-detect based on total content size (more generous than other providers)
+        elif total_content_chars > 200_000:  # > 200K chars (~80K tokens)
+            return 512_000  # 512K - very large content
+        elif total_content_chars > 100_000:  # > 100K chars (~40K tokens)
+            return 256_000  # 256K - large content
+        elif total_content_chars > 30_000:  # > 30K chars (~12K tokens)
+            return 128_000  # 128K - medium content
         else:
             return 64_000  # 64K - standard (still 4x larger than Ollama)
 

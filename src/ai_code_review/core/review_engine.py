@@ -16,6 +16,12 @@ from ai_code_review.models.platform import (
 from ai_code_review.models.review import CodeReview, ReviewResult, ReviewSummary
 from ai_code_review.providers.base import BaseAIProvider
 from ai_code_review.providers.ollama import OllamaProvider
+from ai_code_review.utils.constants import (
+    AUTO_BIG_DIFFS_THRESHOLD_CHARS,
+    CHARS_TO_TOKENS_RATIO,
+    SYSTEM_PROMPT_ESTIMATED_CHARS,
+    SYSTEM_PROMPT_ESTIMATED_TOKENS,
+)
 from ai_code_review.utils.exceptions import AIProviderError
 from ai_code_review.utils.prompts import create_review_chain
 
@@ -108,6 +114,11 @@ class ReviewEngine:
                 platform=self.platform_client.get_platform_name(),
             )
 
+            # Calculate project context once for both dry-run and normal execution
+            project_context = self._get_project_context(pr_data)
+            project_context_chars = len(project_context) if project_context else 0
+            system_prompt_chars = SYSTEM_PROMPT_ESTIMATED_CHARS
+
             # Step 2: Generate review using AI (single call)
             if self.config.dry_run:
                 logger.info("DRY RUN: Generating mock review")
@@ -116,17 +127,19 @@ class ReviewEngine:
                 diff_content = self._format_diffs_for_ai(pr_data)
                 original_total_chars = sum(len(diff.diff) for diff in pr_data.diffs)
 
-                # Use adaptive context size based on diff size
-                context_window_size = getattr(
-                    self.ai_provider, "get_adaptive_context_size", lambda x: 16384
-                )(original_total_chars)
-
-                # Detect if big-diffs was auto-activated
+                # Calculate context parameters using helper method
                 manual_big_diffs = self.config.big_diffs
-                auto_big_diffs = original_total_chars > 60000 and not manual_big_diffs
+                total_content_chars, context_window_size, auto_big_diffs = (
+                    self._calculate_context_parameters(
+                        original_total_chars,
+                        project_context_chars,
+                        system_prompt_chars,
+                        manual_big_diffs,
+                    )
+                )
 
                 estimated_input_tokens = int(
-                    len(diff_content) / 2.5
+                    len(diff_content) / CHARS_TO_TOKENS_RATIO
                 )  # Real ratio from codebase analysis
                 estimated_prompt_tokens = 500  # Rough estimate for prompt template
                 total_estimated_tokens = (
@@ -152,7 +165,9 @@ class ReviewEngine:
                 review = self._create_mock_review()
                 summary = self._create_mock_summary(pr_data)
             else:
-                review, summary = await self._generate_review_response(pr_data)
+                review, summary = await self._generate_review_response(
+                    pr_data, project_context, project_context_chars, system_prompt_chars
+                )
 
             result = ReviewResult(review=review, summary=summary)
 
@@ -171,8 +186,50 @@ class ReviewEngine:
                 f"Failed to generate review: {e}", "review_engine"
             ) from e
 
+    def _calculate_context_parameters(
+        self,
+        original_total_chars: int,
+        project_context_chars: int,
+        system_prompt_chars: int,
+        manual_big_diffs: bool = False,
+    ) -> tuple[int, int, bool]:
+        """Calculate context parameters for diff processing.
+
+        Args:
+            original_total_chars: Total characters in original diff content
+            project_context_chars: Characters in project context
+            system_prompt_chars: Characters in system prompt
+            manual_big_diffs: Whether big_diffs was manually enabled
+
+        Returns:
+            Tuple of (total_content_chars, context_window_size, auto_big_diffs)
+        """
+        # Calculate total content size
+        total_content_chars = (
+            original_total_chars + project_context_chars + system_prompt_chars
+        )
+
+        # Use adaptive context size based on total content size
+        context_window_size = getattr(
+            self.ai_provider,
+            "get_adaptive_context_size",
+            lambda x, y=0, z=SYSTEM_PROMPT_ESTIMATED_CHARS: 16384,
+        )(original_total_chars, project_context_chars, system_prompt_chars)
+
+        # Detect if big-diffs was auto-activated
+        auto_big_diffs = (
+            total_content_chars > AUTO_BIG_DIFFS_THRESHOLD_CHARS
+            and not manual_big_diffs
+        )
+
+        return total_content_chars, context_window_size, auto_big_diffs
+
     async def _generate_review_response(
-        self, pr_data: PullRequestData
+        self,
+        pr_data: PullRequestData,
+        project_context: str,
+        project_context_chars: int,
+        system_prompt_chars: int,
     ) -> tuple[CodeReview, ReviewSummary]:
         """Generate review response using single LLM call."""
         # Check AI provider availability
@@ -191,38 +248,52 @@ class ReviewEngine:
 
             # Log diff processing info with adaptive context window
             original_total_chars = sum(len(diff.diff) for diff in pr_data.diffs)
-            context_window_size = getattr(
-                self.ai_provider, "get_adaptive_context_size", lambda x: 16384
-            )(original_total_chars)
 
-            # Detect if big-diffs was auto-activated
+            # Calculate context parameters using helper method
             manual_big_diffs = getattr(self.config, "big_diffs", False)
-            auto_big_diffs = original_total_chars > 60000 and not manual_big_diffs
+            total_content_chars, context_window_size, auto_big_diffs = (
+                self._calculate_context_parameters(
+                    original_total_chars,
+                    project_context_chars,
+                    system_prompt_chars,
+                    manual_big_diffs,
+                )
+            )
 
-            # Estimate tokens using real codebase analysis (2.5 chars/token average)
+            # Estimate tokens using real codebase analysis
             try:
-                estimated_input_tokens = int(
-                    len(diff_content) / 2.5
-                )  # Real ratio from codebase analysis
-                estimated_prompt_tokens = 500  # Rough estimate for prompt template
+                estimated_diff_tokens = int(len(diff_content) / CHARS_TO_TOKENS_RATIO)
+                estimated_project_context_tokens = int(
+                    project_context_chars / CHARS_TO_TOKENS_RATIO
+                )
+                estimated_system_prompt_tokens = int(
+                    system_prompt_chars / CHARS_TO_TOKENS_RATIO
+                )
                 total_estimated_tokens = (
-                    estimated_input_tokens + estimated_prompt_tokens
+                    estimated_diff_tokens
+                    + estimated_project_context_tokens
+                    + estimated_system_prompt_tokens
                 )
             except (ZeroDivisionError, ValueError) as e:
                 logger.warning("Failed to calculate token estimates", error=str(e))
-                estimated_input_tokens = 0
-                estimated_prompt_tokens = 500
-                total_estimated_tokens = 500
+                estimated_diff_tokens = 0
+                estimated_project_context_tokens = 0
+                estimated_system_prompt_tokens = SYSTEM_PROMPT_ESTIMATED_TOKENS
+                total_estimated_tokens = SYSTEM_PROMPT_ESTIMATED_TOKENS
 
             logger.debug(
                 "Invoking AI for review",
                 original_diff_length=original_total_chars,
+                project_context_length=project_context_chars,
+                system_prompt_length=system_prompt_chars,
+                total_content_length=total_content_chars,
                 processed_diff_length=len(diff_content),
                 context_window_size=context_window_size,
                 manual_big_diffs=manual_big_diffs,
                 auto_big_diffs_activated=auto_big_diffs,
-                estimated_input_tokens=estimated_input_tokens,
-                estimated_prompt_tokens=estimated_prompt_tokens,
+                estimated_diff_tokens=estimated_diff_tokens,
+                estimated_project_context_tokens=estimated_project_context_tokens,
+                estimated_system_prompt_tokens=estimated_system_prompt_tokens,
                 total_estimated_tokens=total_estimated_tokens,
                 tokens_usage_percent=round(
                     (total_estimated_tokens / context_window_size) * 100, 1
@@ -240,7 +311,7 @@ class ReviewEngine:
                     {
                         "diff": diff_content,
                         "language": self.config.language_hint,
-                        "context": self._get_project_context(pr_data),
+                        "context": project_context,
                     }
                 )
             finally:

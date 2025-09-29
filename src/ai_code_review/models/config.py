@@ -229,7 +229,7 @@ class Config(BaseSettings):
     dry_run: bool = Field(default=False, description="Dry run mode (no API calls)")
     big_diffs: bool = Field(
         default=False,
-        description="Force larger context window (24K) - auto-activated for diffs >60K chars",
+        description="Force larger context window - auto-activated for large diffs/content",
     )
     health_check: bool = Field(
         default=False, description="Perform health check on all components and exit"

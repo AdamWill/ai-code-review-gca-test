@@ -288,7 +288,7 @@ def _setup_logging(config: Config) -> None:
 @click.option(
     "--big-diffs",
     is_flag=True,
-    help="Force larger context window (24K) - auto-activated for diffs >60K chars",
+    help="Force larger context window - auto-activated for large diffs/content",
 )
 @click.option(
     "--log-level",

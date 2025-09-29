@@ -10,6 +10,7 @@ from pydantic import SecretStr
 
 from ai_code_review.models.config import Config
 from ai_code_review.providers.base import BaseAIProvider
+from ai_code_review.utils.constants import SYSTEM_PROMPT_ESTIMATED_CHARS
 from ai_code_review.utils.exceptions import AIProviderError
 
 
@@ -75,26 +76,44 @@ class AnthropicProvider(BaseAIProvider):
         # Real availability check would require an actual API call
         return bool(self.config.ai_api_key)
 
-    def get_adaptive_context_size(self, diff_size_chars: int) -> int:
-        """Get context size adaptively based on diff size and config.
+    def get_adaptive_context_size(
+        self,
+        diff_size_chars: int,
+        project_context_chars: int = 0,
+        system_prompt_chars: int = SYSTEM_PROMPT_ESTIMATED_CHARS,
+    ) -> int:
+        """Get context size adaptively based on content size and config.
 
         Claude 3.5 Sonnet has excellent context handling:
         - Input: ~200K tokens (Claude 3.5 Sonnet)
         - Output: ~4K tokens
 
         We can be generous with context but not as much as Gemini.
+
+        Args:
+            diff_size_chars: Size of the diff content in characters
+            project_context_chars: Size of project context content in characters
+            system_prompt_chars: Estimated size of system prompt in characters
+
+        Returns:
+            Optimal context window size considering all content
         """
+        # Calculate total content size
+        total_content_chars = (
+            diff_size_chars + project_context_chars + system_prompt_chars
+        )
+
         # Manual override always takes precedence
         if self.config.big_diffs:
             return 200_000  # 200K - manual big-diffs flag (max context)
 
-        # Auto-detect based on diff size (generous but not as much as Gemini)
-        elif diff_size_chars > 150_000:  # > 150K chars (~60K tokens)
-            return 200_000  # 200K - very large diff (max context)
-        elif diff_size_chars > 75_000:  # > 75K chars (~30K tokens)
-            return 150_000  # 150K - large diff
-        elif diff_size_chars > 30_000:  # > 30K chars (~12K tokens)
-            return 100_000  # 100K - medium diff
+        # Auto-detect based on total content size (generous but not as much as Gemini)
+        elif total_content_chars > 150_000:  # > 150K chars (~60K tokens)
+            return 200_000  # 200K - very large content (max context)
+        elif total_content_chars > 75_000:  # > 75K chars (~30K tokens)
+            return 150_000  # 150K - large content
+        elif total_content_chars > 30_000:  # > 30K chars (~12K tokens)
+            return 100_000  # 100K - medium content
         else:
             return 64_000  # 64K - standard (still generous)
 

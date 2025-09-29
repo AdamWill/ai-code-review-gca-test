@@ -10,6 +10,10 @@ from langchain_ollama import ChatOllama
 
 from ai_code_review.models.config import Config
 from ai_code_review.providers.base import BaseAIProvider
+from ai_code_review.utils.constants import (
+    AUTO_BIG_DIFFS_THRESHOLD_CHARS,
+    SYSTEM_PROMPT_ESTIMATED_CHARS,
+)
 from ai_code_review.utils.exceptions import AIProviderError
 
 
@@ -64,17 +68,36 @@ class OllamaProvider(BaseAIProvider):
         else:
             return 16384  # 16K standard - optimal balance
 
-    def get_adaptive_context_size(self, diff_size_chars: int) -> int:
-        """Get context size adaptively based on diff size and config."""
+    def get_adaptive_context_size(
+        self,
+        diff_size_chars: int,
+        project_context_chars: int = 0,
+        system_prompt_chars: int = SYSTEM_PROMPT_ESTIMATED_CHARS,
+    ) -> int:
+        """Get context size adaptively based on content size and config.
+
+        Args:
+            diff_size_chars: Size of the diff content in characters
+            project_context_chars: Size of project context content in characters
+            system_prompt_chars: Estimated size of system prompt in characters
+
+        Returns:
+            Optimal context window size considering all content
+        """
+        # Calculate total content size
+        total_content_chars = (
+            diff_size_chars + project_context_chars + system_prompt_chars
+        )
+
         # Manual override always takes precedence
         if self.config.big_diffs:
             return 24576  # 24K - manual big-diffs flag
 
-        # Auto-detect large diffs for CI/CD scenarios (adjusted for real token ratios)
+        # Auto-detect large content for CI/CD scenarios (adjusted for real token ratios)
         elif (
-            diff_size_chars > 60000
+            total_content_chars > AUTO_BIG_DIFFS_THRESHOLD_CHARS
         ):  # > 60K characters (~24K tokens with 2.5 chars/token)
-            return 24576  # 24K - auto-detected large diff
+            return 24576  # 24K - auto-detected large content
 
         else:
             return 16384  # 16K - standard size
