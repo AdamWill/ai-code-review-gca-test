@@ -37,8 +37,9 @@ uv run mypy src/                 # Type checking (strict mode)
 
 # Testing
 uv run pytest                    # Run all tests
-uv run pytest --cov=src --cov-report=html    # With coverage report
+uv run pytest --cov=src --cov-report=html    # With coverage report (75% required)
 uv run pytest tests/unit/test_cli.py -v      # Single test file with verbose
+uv run pytest --cov=src --cov-fail-under=75  # Enforce coverage threshold
 ```
 
 ### Application Usage
@@ -48,7 +49,7 @@ uv run pytest tests/unit/test_cli.py -v      # Single test file with verbose
 ai-code-review --health-check
 
 # LOCAL WORKFLOW - Review uncommitted/unpushed changes
-ai-code-review --local                                    # Compare against main
+ai-code-review --local                                   # Compare against main
 ai-code-review --local --target-branch develop           # Compare against develop
 ai-code-review --local --provider ollama --output-file review.md
 
@@ -57,19 +58,24 @@ ai-code-review group/project 123 --provider ollama --dry-run           # GitLab 
 ai-code-review --owner user --repo project --pr-number 456 --dry-run   # GitHub PR
 
 # CI/CD WORKFLOW - Automated reviews (auto-detects platform)
-ai-code-review --post                                     # GitLab or GitHub CI
+ai-code-review --post                                    # GitLab or GitHub CI
 AI_API_KEY=your_key ai-code-review --post                # With cloud provider
 
 # FORMAT OPTIONS
 ai-code-review group/project 123 --no-mr-summary         # Compact format
 ai-code-review --local --provider gemini                 # Local with cloud AI
+
+# Context Generation (separate tool for creating project context)
+ai-generate-context                                    # Generate .ai_review/context.md
+ai-generate-context --output custom-context.md         # Custom output file
+ai-generate-context --provider ollama                  # Use local AI for generation
 ```
 
 ## High-Level Architecture
 
 ### System Overview
 
-This is an **AI-powered CLI tool** that generates automated code reviews for **GitLab Merge Requests**, **GitHub Pull Requests**, and **Local Git changes**. It's designed to support **three primary workflows**:
+This is an **AI-powered CLI tool** that generates automated code reviews for **GitLab Merge Requests**, **GitHub Pull Requests**, and **Local Git changes**. It includes a companion **AI context generator** for intelligent project documentation. The system supports **three primary workflows**:
 
 1. **Local Code Review**: Analyze uncommitted/unpushed changes in your Git repository (`--local`)
 2. **Remote Code Review**: Analyze existing MRs/PRs from terminal with optional posting
@@ -244,10 +250,12 @@ GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # Or GITHUB_TOKEN for GitHub
   - `ssl_utils.py`: SSL certificate management for internal GitLab
 
 **Development Workflow:**
-- **Pre-commit Hooks**: Automatic code quality checks on commit
+- **Pre-commit Hooks**: Automatic code quality checks on commit (ruff, mypy, pytest, pymarkdown)
+- **Coverage Requirements**: 75% minimum test coverage enforced in CI and pre-commit
 - **Type Safety**: Strict mypy configuration with full annotation coverage
 - **Modern Tooling**: uv for package management, ruff for linting/formatting
 - **Structured Logging**: contextual logging for debugging and monitoring
+- **YAML Configuration**: Team-shareable configuration via `.ai_review/config.yml`
 
 ### Local Git Workflow Details
 
@@ -271,3 +279,18 @@ GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # Or GITHUB_TOKEN for GitHub
 - File-based URLs for project context
 - Smart handling of Git edge cases (detached HEAD, missing remotes)
 - Integration with existing file filtering and AI provider selection
+
+### Context Generator Tool Details
+
+**AI Context Generator (`ai-generate-context`)**:
+- **Intelligent Analysis**: Uses AI to understand codebase structure and purpose
+- **Automatic Documentation**: Generates comprehensive project context files
+- **Multi-Provider Support**: Works with Ollama, Gemini, Anthropic providers
+- **Customizable Output**: Configurable output paths and formats
+- **Integration Ready**: Outputs `.ai_review/context.md` for automatic inclusion in reviews
+
+**Context Generation Process:**
+1. **Repository Scanning**: Analyzes project structure, dependencies, and configuration
+2. **AI Understanding**: Uses LLM to understand project purpose and architecture
+3. **Context Synthesis**: Generates comprehensive documentation in markdown format
+4. **Integration**: Context automatically included in subsequent code reviews

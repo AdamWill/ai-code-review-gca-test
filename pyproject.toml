@@ -36,10 +36,13 @@ dependencies = [
     "pydantic-settings>=2.10.1",
     "httpx>=0.28.1",
     "GitPython>=3.1.40",
+    "aiofiles>=23.2.0",
+    "defusedxml>=0.7.1",
 ]
 
 [project.scripts]
 ai-code-review = "ai_code_review.cli:main"
+ai-generate-context = "context_generator.cli:main"
 
 [project.optional-dependencies]
 dev = [
@@ -109,8 +112,14 @@ addopts = [
     "--cov-report=html",
     "--cov-fail-under=75",
 ]
+
 markers = [
     "allow_env_file: Allow test to use .env file loading (bypasses environment isolation)",
+]
+
+filterwarnings = [
+    "ignore::RuntimeWarning",
+    "ignore:coroutine.*was never awaited:RuntimeWarning",
 ]
 
 [tool.coverage.run]
@@ -141,6 +150,8 @@ dev = [
     "pytest-cov>=6.2.1",
     "pytest-mock>=3.14.1",
     "ruff>=0.12.11",
+    "types-aiofiles>=24.1.0.20250822",
+    "types-defusedxml>=0.7.0.20250822",
     "types-pyyaml>=6.0.12.20250822",
     "types-requests>=2.32.4.20250809",
 ]

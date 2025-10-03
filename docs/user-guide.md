@@ -413,7 +413,7 @@ log_level: INFO
 platform_provider: github
 github_url: https://api.github.com
 ai_provider: anthropic
-ai_model: claude-3-5-sonnet-20241022
+ai_model: claude-sonnet-4-20250514
 temperature: 0.1
 max_tokens: 4000
 ```
@@ -853,18 +853,30 @@ ai-code-review:
 
 Enhance AI review quality by providing project-specific context. The AI can give more targeted and relevant feedback when it understands your project's architecture, conventions, and goals.
 
+> **📖 For complete context generator documentation** → see [Context Generator Guide](context-generator.md)
+
 #### Setup Project Context
 
-1. **Create the context file** in your repository root:
+#### Recommended: Use the automatic context generator
 
-    ```bash
-    mkdir -p .ai_review
-    cp .ai_review/project.md.example .ai_review/project.md
-    ```
+```bash
+# Generate comprehensive context automatically (requires Git repository)
+ai-generate-context . --output .ai_review/project.md
+```
 
-1. **Customize** `.ai_review/project.md` with your project information:
+> **Note**: The context generator analyzes only Git-tracked files. Make sure your project files are committed to Git.
 
-    ```markdown
+**Manual alternative:** Create a context file manually:
+
+```bash
+mkdir -p .ai_review
+# Create .ai_review/project.md with your project context
+# See the ai-code-review project's .ai_review/project.md as a real example
+```
+
+**Customize** `.ai_review/project.md` with your project information:
+
+```markdown
     # Project Context for AI Code Review
 
     ## Project Overview

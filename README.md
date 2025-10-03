@@ -142,7 +142,7 @@ jobs:
 
 The tool supports **4 configuration methods** with the following priority:
 
-1. **🔴 CLI Arguments** (highest priority) - `--provider anthropic --model claude-3-5-sonnet`
+1. **🔴 CLI Arguments** (highest priority) - `--provider anthropic --model claude-sonnet-4-20250514`
 2. **🟡 Environment Variables** - `export AI_PROVIDER=anthropic`
 3. **🟢 Configuration File** - `.ai_review/config.yml`
 4. **⚪ Field Defaults** (lowest priority) - Built-in defaults
@@ -199,9 +199,32 @@ ai-code-review project/123 2>logs.txt            # Logs to stderr
 
 **For all configuration options, troubleshooting, and advanced usage → see [User Guide](docs/user-guide.md)**
 
+## 🔧 Common Issues
+
+### gRPC Warnings with Google Gemini
+
+When using Google Gemini provider, you may see harmless gRPC connection warnings:
+
+```
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1759934851.372144 Other threads are currently calling into gRPC, skipping fork() handlers
+```
+
+**These warnings are harmless and don't affect functionality.** To suppress them:
+
+```bash
+# Suppress warnings by redirecting stderr
+ai-code-review --local 2>/dev/null
+ai-generate-context . 2>/dev/null
+
+# Or use alternative provider (no warnings)
+ai-code-review --local --provider ollama
+```
+
 ## 📖 Documentation
 
 - **[User Guide](docs/user-guide.md)** - Complete usage, configuration, and troubleshooting
+- **[Context Generator Guide](docs/context-generator.md)** - AI context generation for better reviews (requires Git repository)
 - **[Developer Guide](docs/developer-guide.md)** - Development setup, architecture, and contributing
 
 ## 🤖 AI Tools Disclaimer
@@ -211,11 +234,11 @@ ai-code-review project/123 2>logs.txt            # Logs to stderr
 
 **Tools used:**
 - **Cursor**: Code editor with AI capabilities
-- **Claude-4-Sonnet**: Anthropic's language model
+- **Claude-Sonnet-4**: Anthropic's language model (claude-sonnet-4-20250514)
 
 **Division of responsibilities:**
 
-**AI (Cursor + Claude-4-Sonnet)**:
+**AI (Cursor + Claude-Sonnet-4)**:
 - 🔧 Initial code prototyping
 - 📝 Generation of examples and test cases
 - 🐛 Assistance in debugging and error resolution
