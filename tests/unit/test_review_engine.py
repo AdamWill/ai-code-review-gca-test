@@ -250,7 +250,11 @@ AI generated review feedback for test purposes. The code changes appear well-str
             mock_review_chain.return_value = mock_chain
 
             # Create config with MR Summary disabled, but NOT dry_run (use ollama to avoid API key requirements)
-            config = Config(ai_provider="ollama", include_mr_summary=False)
+            config = Config(
+                gitlab_token="test-token",
+                ai_provider="ollama",
+                include_mr_summary=False,
+            )
             engine = ReviewEngine(config)
 
             with patch.object(
@@ -283,7 +287,12 @@ AI generated review feedback for test purposes. The code changes appear well-str
     ) -> None:
         """Test dry run mode without MR Summary section."""
         # Create config with MR Summary disabled AND dry_run=True (use ollama to avoid API key requirements)
-        config = Config(ai_provider="ollama", include_mr_summary=False, dry_run=True)
+        config = Config(
+            gitlab_token="test-token",
+            ai_provider="ollama",
+            include_mr_summary=False,
+            dry_run=True,
+        )
         engine = ReviewEngine(config)
 
         with patch.object(
@@ -780,6 +789,7 @@ AI generated review feedback for test purposes. The code changes appear well-str
     def test_anthropic_provider_creation(self) -> None:
         """Test Anthropic provider creation - hits lines 70-73."""
         config = Config(
+            gitlab_token="test-token",
             ai_api_key="test_key",  # Use generic ai_api_key field
             ai_provider=AIProvider.ANTHROPIC,
         )
@@ -791,6 +801,7 @@ AI generated review feedback for test purposes. The code changes appear well-str
     def test_gemini_provider_creation(self) -> None:
         """Test Gemini provider creation - hits lines 67-69."""
         config = Config(
+            gitlab_token="test-token",
             ai_api_key="test_key",  # Use generic ai_api_key field
             ai_provider=AIProvider.GEMINI,
         )

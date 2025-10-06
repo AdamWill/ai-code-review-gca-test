@@ -9,6 +9,7 @@ from typing import Any
 
 from pydantic import (
     AliasChoices,
+    BaseModel,
     Field,
     ValidationInfo,
     field_validator,
@@ -64,6 +65,96 @@ CLOUD_PROVIDERS = {
     AIProvider.OPENAI,
     AIProvider.ANTHROPIC,
 }
+
+
+class SkipReviewConfig(BaseModel):
+    """Configuration for automatic review skipping."""
+
+    enabled: bool = Field(
+        default=True, description="Enable/disable automatic review skipping"
+    )
+
+    # Explicit keywords (case-insensitive, checked in title + description)
+    keywords: list[str] = Field(
+        default=[
+            "[skip ai-review]",
+            "[no-review]",
+            "[bot]",
+            "[skip-review]",
+            "[automated]",
+        ],
+        description="Keywords to trigger review skipping (case-insensitive)",
+    )
+
+    # Regex patterns for automated tools (checked against title only)
+    patterns: list[str] = Field(
+        default=[
+            # Dependency updates (comprehensive patterns)
+            r"^(chore|build|ci|feat|fix)\(deps?\):",
+            r"^bump\s+.*\s+from\s+[\d.]+\s+to\s+[\d.]+",
+            # Version releases and bumps
+            r"^(chore|release):\s*(release|version|bump)\s+v?\d+\.\d+",
+            r"^bump:\s*version",
+            # Auto-generated changes
+            r"^\[automated\]",
+            r"^auto.*update",
+        ],
+        description="Regex patterns for automated changes (case-insensitive matching)",
+    )
+
+    # Author patterns (for known bots)
+    bot_authors: list[str] = Field(
+        default=[
+            "renovate[bot]",
+            "dependabot[bot]",
+            "github-actions[bot]",
+            "gitlab-ci-token",
+            "allcontributors[bot]",
+            "greenkeeper[bot]",
+            "snyk-bot",
+            "auto-gitlab-bot",
+        ],
+        description="Known bot author patterns for automatic skipping",
+    )
+
+    # Documentation-only patterns (only used if skip_documentation_only is True)
+    documentation_patterns: list[str] = Field(
+        default=[
+            r"^docs?(\(.+\))?:\s+.*",  # docs: or docs(scope):
+        ],
+        description="Regex patterns for documentation-only changes",
+    )
+
+    # Feature flags for intelligent detection
+    skip_dependency_updates: bool = Field(
+        default=True, description="Skip reviews for dependency update PRs/MRs"
+    )
+
+    skip_documentation_only: bool = Field(
+        default=False,  # Conservative default - can be enabled per project
+        description="Skip reviews for documentation-only changes",
+    )
+
+    skip_bot_authors: bool = Field(
+        default=True, description="Skip reviews from known bot authors"
+    )
+
+    @field_validator("patterns", "documentation_patterns")
+    @classmethod
+    def validate_patterns(cls, v: list[str]) -> list[str]:
+        """Validate regex patterns to prevent ReDoS and ensure they compile."""
+        import re
+
+        validated_patterns = []
+        for pattern in v:
+            try:
+                # Test that pattern compiles
+                re.compile(pattern)
+                validated_patterns.append(pattern)
+            except re.error as e:
+                raise ValueError(f"Invalid regex pattern '{pattern}': {e}") from e
+
+        return validated_patterns
 
 
 # Default models for each AI provider
@@ -268,6 +359,12 @@ class Config(BaseSettings):
         default=None,
         validation_alias=AliasChoices("config_file", "CONFIG_FILE"),
         description="Custom config file path",
+    )
+
+    # Skip review configuration
+    skip_review: SkipReviewConfig = Field(
+        default_factory=SkipReviewConfig,
+        description="Configuration for automatic review skipping",
     )
 
     @field_validator("gitlab_url", "github_url", "ollama_base_url")
@@ -866,6 +963,9 @@ class Config(BaseSettings):
             # Configuration file options
             "no_config_file": "no_config_file",
             "config_file": "config_file",
+            # Skip review options
+            "no_skip_detection": "_no_skip_detection_flag",  # Special handling below
+            "test_skip_only": "_test_skip_only_flag",  # Special handling below
         }
 
         # Step 2: Apply automatic mappings (skip internal flags)
@@ -876,7 +976,16 @@ class Config(BaseSettings):
                     mapped_args[config_field] = cli_args[cli_name]
 
         # Step 3: Handle direct mappings (CLI name == config field name)
-        DIRECT_MAPPINGS = ["post", "output_file", "health_check"]
+        DIRECT_MAPPINGS = [
+            "post",
+            "output_file",
+            "health_check",
+            "gitlab_token",
+            "github_token",
+            "dry_run",
+            "ai_provider",
+            "ai_model",
+        ]
         for field_name in DIRECT_MAPPINGS:
             if field_name in cli_args and cli_args[field_name] is not None:
                 mapped_args[field_name] = cli_args[field_name]
@@ -905,6 +1014,16 @@ class Config(BaseSettings):
         # no_mr_summary flag -> include_mr_summary = False
         if cli_args.get("no_mr_summary"):
             mapped_args["include_mr_summary"] = False
+
+        # no_skip_detection flag -> skip_review.enabled = False
+        if cli_args.get("no_skip_detection"):
+            # Initialize skip_review dict if not exists
+            if "skip_review" not in mapped_args:
+                mapped_args["skip_review"] = {}
+            mapped_args["skip_review"]["enabled"] = False
+
+        # test_skip_only is handled at CLI level, not in config
+        # We'll check for it in the CLI main function
 
         # Handle file filtering options
         if cli_args.get("no_file_filtering"):

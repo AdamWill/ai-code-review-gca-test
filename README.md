@@ -122,6 +122,19 @@ jobs:
         run: ai-code-review --pr-number ${{ github.event.pull_request.number }} --post
 ```
 
+## ⚡ Smart Skip Review
+
+**AI Code Review automatically skips unnecessary reviews** to reduce noise and costs:
+
+- 🔄 **Dependency updates** (`chore(deps): bump lodash 4.1.0 to 4.2.0`)
+- 🤖 **Bot changes** (from `dependabot[bot]`, `renovate[bot]`)
+- 📝 **Documentation-only** changes (if enabled)
+- 🏷️ **Tagged PRs/MRs** (`[skip review]`, `[automated]`)
+
+**Result:** Focus on meaningful changes, save API costs, faster CI/CD pipelines.
+
+> **📖 Learn more:** Configuration, customization, and CI integration → [User Guide - Skip Review](docs/user-guide.md#smart-skip-review)
+
 ## 🔧 Configuration
 
 ### Configuration Methods (Priority Order)

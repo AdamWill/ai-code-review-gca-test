@@ -189,3 +189,26 @@ class TestGeminiProvider:
 
         # Verify that the API was actually called
         mock_client.ainvoke.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_health_check_missing_api_key(self) -> None:
+        """Test health check when API key is missing (covers lines 112-116)."""
+        config = Config(
+            gitlab_token="test-token",
+            ai_provider=AIProvider.GEMINI,
+            ai_model="gemini-2.5-pro",
+            ai_api_key="fake-key",  # Will be set to None below
+            dry_run=False,  # Need dry_run=False to test API key validation
+        )
+        # Explicitly set ai_api_key to None to trigger the error path
+        config.ai_api_key = None
+
+        provider = GeminiProvider(config)
+        result = await provider.health_check()
+
+        expected = {
+            "status": "unhealthy",
+            "error": "Missing Google API key",
+            "provider": "gemini",
+        }
+        assert result == expected

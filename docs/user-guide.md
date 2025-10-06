@@ -25,6 +25,7 @@ Simple guide to get AI-powered code reviews with **3 powerful workflows**:
 - [⚙️ Advanced Configuration](#️-advanced-configuration)
   - [📄 YAML Configuration Files](#-yaml-configuration-files)
   - [CI/CD Variables Configuration](#cicd-variables-configuration)
+  - [🚀 Smart Skip Review](#-smart-skip-review)
   - [SSL Configuration for Internal GitLab Instances](#ssl-configuration-for-internal-gitlab-instances)
   - [🎯 Project Context Configuration](#-project-context-configuration)
   - [📝 Review Format Configuration](#-review-format-configuration)
@@ -540,6 +541,185 @@ EXCLUDE_PATTERNS="*.lock,*.min.js,node_modules/**,dist/**"
 # Logging
 LOG_LEVEL=INFO                # DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
+
+### 🚀 Smart Skip Review
+
+The **Skip Review mechanism** automatically detects and skips unnecessary AI reviews to reduce noise, save API costs, and speed up CI/CD pipelines.
+
+#### How It Works
+
+The tool uses **multiple detection criteria** in priority order:
+
+1. **🏷️ Keywords** - Explicit tags in PR/MR titles or descriptions
+2. **🎭 Regex Patterns** - Automated commit message patterns
+3. **📝 Documentation Patterns** - Documentation-only change patterns (if enabled)
+4. **🤖 Bot Authors** - Known automation accounts
+5. **📚 File Analysis** - Documentation-only file changes
+
+#### Default Configuration
+
+Skip Review is **enabled by default** with these settings:
+
+```yaml
+# .ai_review/config.yml
+skip_review:
+  enabled: true                    # Enable skip detection
+  skip_dependency_updates: true    # Skip dependency updates
+  skip_documentation_only: false  # Skip doc-only changes (disabled by default)
+  skip_bot_authors: true          # Skip known bots
+
+  # Built-in keywords (in PR/MR titles or descriptions)
+  keywords:
+    - "[skip review]"
+    - "[no review]"
+    - "[automated]"
+    - "[bot]"
+
+  # Built-in patterns (regex matching PR/MR titles)
+  patterns:
+    - "^(chore|build|ci|feat|fix)\\(deps?\\):"  # Dependency updates
+    - "^(release|bump):"                         # Version bumps
+    - "^(merge|revert):"                        # Merges and reverts
+    - "^\\[automated\\]"                        # Automated changes
+
+  # Documentation patterns (only used if skip_documentation_only: true)
+  documentation_patterns:
+    - "^docs?:"
+    - "^doc\\(.*\\):"
+
+  # Known bot accounts
+  bot_authors:
+    - "dependabot[bot]"
+    - "renovate[bot]"
+    - "github-actions[bot]"
+    - "snyk-bot"
+```
+
+#### Customization Examples
+
+**Disable Skip Review:**
+```yaml
+skip_review:
+  enabled: false  # Disable all skip detection
+```
+
+**Custom Organization Patterns:**
+```yaml
+skip_review:
+  enabled: true
+  patterns:
+    - "^\\[JIRA-\\d+\\] automated"     # JIRA automated tickets
+    - "^hotfix/automated-"              # Automated hotfixes
+    - "^chore\\(i18n\\):"              # Translation updates
+
+  bot_authors:
+    - "company-deploy-bot"
+    - "security-scanner[bot]"
+
+  keywords:
+    - "[saltar revisión]"              # Spanish keywords
+    - "[no revisar]"
+```
+
+**Enable Documentation-Only Skipping:**
+```yaml
+skip_review:
+  enabled: true
+  skip_documentation_only: true  # Enable doc-only detection
+```
+
+#### CLI Options
+
+**Force review (ignore skip detection):**
+```bash
+# Force review even if it would normally be skipped
+ai-code-review --no-skip-detection project/123
+```
+
+**Test skip detection without full review:**
+```bash
+# Test what the skip detection would do
+ai-code-review --test-skip-only project/123
+
+# Example output:
+# 🧪 Testing skip detection logic...
+# ✅ Review would be SKIPPED
+#    Reason: pattern
+#    Trigger: chore(deps):
+#    Exit code would be: 6
+```
+
+#### CI/CD Integration
+
+**Exit Codes:**
+- `0` = Review completed successfully
+- `6` = Review skipped (new exit code)
+- Other codes = Errors
+
+**GitLab CI - Handle Skip Review:**
+```yaml
+ai-review:
+  stage: code-review
+  image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
+  variables:
+    AI_API_KEY: $GEMINI_API_KEY
+  script:
+    - ai-code-review --post
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+  # Allow exit code 6 (skipped) as success
+  allow_failure:
+    exit_codes: [6]
+```
+
+**GitHub Actions - Handle Skip Review:**
+```yaml
+- name: AI Code Review
+  env:
+    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    AI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+  run: ai-code-review --pr-number ${{ github.event.pull_request.number }} --post
+
+  # Exit code 6 is handled as success automatically
+```
+
+**Environment Variables:**
+```bash
+# Disable via environment variable (overrides YAML config)
+SKIP_REVIEW_ENABLED=false
+
+# Force enable documentation-only skipping
+SKIP_DOCUMENTATION_ONLY=true
+
+# Disable specific features
+SKIP_DEPENDENCY_UPDATES=false
+SKIP_BOT_AUTHORS=false
+```
+
+#### Examples
+
+**✅ These PRs/MRs get SKIPPED automatically:**
+
+- `chore(deps): bump lodash from 4.1.0 to 4.2.0`
+- `[automated] update translation files`
+- `release: v2.1.0`
+- `feat: new feature [skip review]`
+- Author: `dependabot[bot]` with any title
+- Documentation-only changes (if enabled)
+
+**❌ These PRs/MRs get REVIEWED normally:**
+
+- `feat: implement new authentication system`
+- `fix: resolve critical security vulnerability`
+- Mixed changes (code + docs)
+- Normal commits by human developers
+
+**Benefits:**
+- 🔇 **Less noise** - Focus on meaningful changes
+- 💰 **Cost savings** - Fewer API calls to AI providers
+- ⚡ **Faster CI/CD** - Skip unnecessary review steps
+- 🎯 **Better focus** - Developers see only important reviews
 
 #### SSL Configuration for Internal GitLab Instances
 

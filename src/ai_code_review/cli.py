@@ -12,8 +12,10 @@ import structlog
 from ai_code_review.core.review_engine import ReviewEngine
 from ai_code_review.models.config import AIProvider, Config, PlatformProvider
 from ai_code_review.utils.exceptions import (
+    EXIT_CODE_SKIPPED,
     AICodeReviewError,
     AIProviderError,
+    ReviewSkippedError,
 )
 from ai_code_review.utils.platform_exceptions import (
     PlatformAPIError,
@@ -362,6 +364,16 @@ def _setup_logging(config: Config) -> None:
     default=None,
     help="Custom config file path (default: auto-detect .ai_review/config.yml)",
 )
+@click.option(
+    "--no-skip-detection",
+    is_flag=True,
+    help="Disable automatic review skipping (force review even for bots/dependencies)",
+)
+@click.option(
+    "--test-skip-only",
+    is_flag=True,
+    help="Test skip detection without running review (dry-run for skip logic only)",
+)
 @click.version_option(version="0.1.0", prog_name="ai-code-review")
 def main(**kwargs: Any) -> None:
     """
@@ -414,6 +426,11 @@ def main(**kwargs: Any) -> None:
             asyncio.run(_run_health_check(config))
             return
 
+        # Handle test-skip-only mode
+        if kwargs.get("test_skip_only"):
+            asyncio.run(_run_test_skip_only(config, kwargs))
+            return
+
         # Resolve project parameters (ID and PR number) - Config knows how to do this
         effective_project_id, effective_pr_number = _resolve_project_params(
             kwargs, config
@@ -432,6 +449,12 @@ def main(**kwargs: Any) -> None:
                 else None,
             )
         )
+
+    except ReviewSkippedError as e:
+        # Handle review skipped - this is expected behavior, not an error
+        logger.info("Review skipped", reason=e.reason, trigger=e.trigger)
+        click.echo(f"ℹ️ {e}", err=False)  # Not an error, just info
+        sys.exit(EXIT_CODE_SKIPPED)
 
     except AICodeReviewError as e:
         logger.error("AI Code Review error", error=str(e))
@@ -494,6 +517,51 @@ async def _run_health_check(config: Config) -> None:
 
     except Exception as e:
         click.echo(f"❌ Health check failed: {e}", err=True)
+        sys.exit(1)
+
+
+async def _run_test_skip_only(config: Config, cli_kwargs: dict[str, Any]) -> None:
+    """Test skip detection without running full review."""
+    click.echo("🧪 Testing skip detection logic...")
+
+    try:
+        # Resolve project parameters
+        effective_project_id, effective_pr_number = _resolve_project_params(
+            cli_kwargs, config
+        )
+
+        # Initialize review engine
+        engine = ReviewEngine(config)
+
+        # Fetch PR/MR data (but don't run full review)
+        platform_name = _get_enum_value(config.platform_provider).title()
+        click.echo(f"📥 Fetching PR/MR data from {platform_name}...")
+
+        pr_data = await engine.platform_client.get_pull_request_data(
+            str(effective_project_id), effective_pr_number
+        )
+
+        click.echo("📊 PR/MR Info:")
+        click.echo(f"   Title: {pr_data.info.title}")
+        click.echo(f"   Author: {pr_data.info.author}")
+        click.echo(f"   Files: {pr_data.file_count}")
+
+        # Test skip detection
+        should_skip, skip_reason, skip_trigger = engine.should_skip_review(pr_data)
+
+        if should_skip:
+            click.echo("✅ Review would be SKIPPED")
+            click.echo(f"   Reason: {skip_reason}")
+            click.echo(f"   Trigger: {skip_trigger}")
+            click.echo(f"   Exit code would be: {EXIT_CODE_SKIPPED}")
+            sys.exit(EXIT_CODE_SKIPPED)
+        else:
+            click.echo("❌ Review would NOT be skipped")
+            click.echo("   Review would proceed normally")
+            sys.exit(0)
+
+    except Exception as e:
+        click.echo(f"❌ Error testing skip detection: {e}", err=True)
         sys.exit(1)
 
 

@@ -161,6 +161,7 @@ class TestConfig:
         assert config.temperature == 0.1
         assert config.max_tokens == 8000
 
+    @pytest.mark.allow_env_file
     def test_config_env_file_loading(self, chdir_tmp, monkeypatch: MonkeyPatch) -> None:
         """Test that config can load from .env file."""
 

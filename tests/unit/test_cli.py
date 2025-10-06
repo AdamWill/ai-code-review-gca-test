@@ -618,20 +618,27 @@ class TestCLI:
             mock_config_class.return_value = mock_config
             mock_config_class.from_cli_args.return_value = mock_config
 
-            result = runner.invoke(
-                main,
-                [
-                    "--local",
-                    "--dry-run",
-                    "--provider",
-                    "ollama",
-                ],
-                env={"GITLAB_TOKEN": "test_token"},
-            )
+            with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
+                mock_engine = AsyncMock()
+                mock_engine.generate_review.return_value = Mock(
+                    to_markdown=lambda: "# Test Review"
+                )
+                mock_engine_class.return_value = mock_engine
 
-        assert result.exit_code == 0
-        # Verify from_cli_args was called (local flag mapping works)
-        mock_config_class.from_cli_args.assert_called_once()
+                result = runner.invoke(
+                    main,
+                    [
+                        "--local",
+                        "--dry-run",
+                        "--provider",
+                        "ollama",
+                    ],
+                    env={"GITLAB_TOKEN": "test_token"},
+                )
+
+            assert result.exit_code == 0
+            # Verify from_cli_args was called (local flag mapping works)
+            mock_config_class.from_cli_args.assert_called_once()
 
         # Test no_mr_summary flag mapping (using local mode to avoid complex validation)
         with (
@@ -646,21 +653,28 @@ class TestCLI:
             mock_config_class.return_value = mock_config
             mock_config_class.from_cli_args.return_value = mock_config
 
-            result = runner.invoke(
-                main,
-                [
-                    "--local",
-                    "--no-mr-summary",
-                    "--dry-run",
-                    "--provider",
-                    "ollama",
-                ],
-                env={"GITLAB_TOKEN": "test_token"},
-            )
+            with patch("ai_code_review.cli.ReviewEngine") as mock_engine_class:
+                mock_engine = AsyncMock()
+                mock_engine.generate_review.return_value = Mock(
+                    to_markdown=lambda: "# Test Review"
+                )
+                mock_engine_class.return_value = mock_engine
 
-            assert result.exit_code == 0
-            # Verify from_cli_args was called (no_mr_summary flag mapping works)
-            mock_config_class.from_cli_args.assert_called_once()
+                result = runner.invoke(
+                    main,
+                    [
+                        "--local",
+                        "--no-mr-summary",
+                        "--dry-run",
+                        "--provider",
+                        "ollama",
+                    ],
+                    env={"GITLAB_TOKEN": "test_token"},
+                )
+
+                assert result.exit_code == 0
+                # Verify from_cli_args was called (no_mr_summary flag mapping works)
+                mock_config_class.from_cli_args.assert_called_once()
 
     def test_cli_gitlab_url_option(self, runner: CliRunner) -> None:
         """Test --gitlab-url option is processed correctly."""
@@ -960,3 +974,190 @@ class TestCLI:
                 assert result.exit_code == 0
                 # Verify from_cli_args was called with big_diffs option
                 mock_config_class.from_cli_args.assert_called_once()
+
+    # Additional tests to improve CLI coverage
+
+    def test_get_enum_value_with_string(self, runner: CliRunner) -> None:
+        """Test _get_enum_value with string input (line 32)."""
+        from ai_code_review.cli import _get_enum_value
+        from ai_code_review.models.config import PlatformProvider
+
+        # Test with enum value
+        result = _get_enum_value(PlatformProvider.GITLAB)
+        assert result == "gitlab"
+
+        # Test with string (hits line 32)
+        result = _get_enum_value("test_string")
+        assert result == "test_string"
+
+    def test_test_skip_only_with_skip(self, runner: CliRunner) -> None:
+        """Test --test-skip-only when review should be skipped (lines 525-565)."""
+        with (
+            patch("ai_code_review.cli.Config") as mock_config_class,
+            patch("ai_code_review.cli.ReviewEngine") as mock_engine_class,
+            patch("ai_code_review.cli._resolve_project_params") as mock_resolve_params,
+        ):
+            # Mock config
+            mock_config = create_mock_config(platform_provider=PlatformProvider.GITLAB)
+            mock_config_class.return_value = mock_config
+            mock_config_class.from_cli_args.return_value = mock_config
+
+            # Mock resolve params
+            mock_resolve_params.return_value = ("test/project", 123)
+
+            # Mock engine with skip=True
+            mock_engine = Mock()
+            mock_engine.should_skip_review.return_value = (
+                True,
+                "pattern",
+                "chore(deps):",
+            )
+
+            # Mock PR data
+            from ai_code_review.models.platform import (
+                PullRequestData,
+                PullRequestDiff,
+                PullRequestInfo,
+            )
+
+            mock_pr_data = PullRequestData(
+                info=PullRequestInfo(
+                    id=123,
+                    number=123,
+                    title="chore(deps): update package",
+                    description="",
+                    author="renovate[bot]",
+                    source_branch="deps",
+                    target_branch="main",
+                    state="open",
+                    web_url="https://example.com",
+                ),
+                diffs=[
+                    PullRequestDiff(
+                        file_path="package.json", diff="mock patch content"
+                    ),
+                    PullRequestDiff(
+                        file_path="package-lock.json", diff="mock patch content"
+                    ),
+                    PullRequestDiff(file_path="README.md", diff="mock patch content"),
+                ],
+                commits=[],
+            )
+
+            mock_engine.platform_client.get_pull_request_data = AsyncMock(
+                return_value=mock_pr_data
+            )
+            mock_engine_class.return_value = mock_engine
+
+            result = runner.invoke(
+                main,
+                ["test/project", "123", "--test-skip-only", "--dry-run"],
+                catch_exceptions=False,
+            )
+
+            # Should exit with EXIT_CODE_SKIPPED (6) - covers lines 552-557
+            assert result.exit_code == 6
+            assert "Review would be SKIPPED" in result.output
+            assert "Reason: pattern" in result.output
+            assert "Trigger: chore(deps):" in result.output
+
+    def test_test_skip_only_no_skip(self, runner: CliRunner) -> None:
+        """Test --test-skip-only when review should NOT be skipped (lines 558-561)."""
+        with (
+            patch("ai_code_review.cli.Config") as mock_config_class,
+            patch("ai_code_review.cli.ReviewEngine") as mock_engine_class,
+            patch("ai_code_review.cli._resolve_project_params") as mock_resolve_params,
+        ):
+            # Mock config
+            mock_config = create_mock_config(platform_provider=PlatformProvider.GITLAB)
+            mock_config_class.return_value = mock_config
+            mock_config_class.from_cli_args.return_value = mock_config
+
+            # Mock resolve params
+            mock_resolve_params.return_value = ("test/project", 123)
+
+            # Mock engine with skip=False
+            mock_engine = Mock()
+            mock_engine.should_skip_review.return_value = (False, None, None)
+
+            # Mock PR data
+            from ai_code_review.models.platform import (
+                PullRequestData,
+                PullRequestDiff,
+                PullRequestInfo,
+            )
+
+            mock_pr_data = PullRequestData(
+                info=PullRequestInfo(
+                    id=123,
+                    number=123,
+                    title="feat: add new feature",
+                    description="",
+                    author="developer",
+                    source_branch="feature",
+                    target_branch="main",
+                    state="open",
+                    web_url="https://example.com",
+                ),
+                diffs=[
+                    PullRequestDiff(
+                        file_path="src/feature.py", diff="mock patch content"
+                    ),
+                    PullRequestDiff(
+                        file_path="src/utils.py", diff="mock patch content"
+                    ),
+                    PullRequestDiff(
+                        file_path="tests/test_feature.py", diff="mock patch content"
+                    ),
+                    PullRequestDiff(file_path="docs/api.md", diff="mock patch content"),
+                    PullRequestDiff(
+                        file_path="requirements.txt", diff="mock patch content"
+                    ),
+                ],
+                commits=[],
+            )
+
+            mock_engine.platform_client.get_pull_request_data = AsyncMock(
+                return_value=mock_pr_data
+            )
+            mock_engine_class.return_value = mock_engine
+
+            result = runner.invoke(
+                main,
+                ["test/project", "123", "--test-skip-only", "--dry-run"],
+                catch_exceptions=False,
+            )
+
+            # Should exit with 0 - covers lines 558-561
+            assert result.exit_code == 0
+            assert "Review would NOT be skipped" in result.output
+            assert "Review would proceed normally" in result.output
+
+    def test_test_skip_only_with_exception(self, runner: CliRunner) -> None:
+        """Test --test-skip-only with exception handling (lines 563-564)."""
+        with (
+            patch("ai_code_review.cli.Config") as mock_config_class,
+            patch("ai_code_review.cli.ReviewEngine") as mock_engine_class,
+            patch("ai_code_review.cli._resolve_project_params") as mock_resolve_params,
+        ):
+            # Mock config
+            mock_config = create_mock_config(platform_provider=PlatformProvider.GITLAB)
+            mock_config_class.return_value = mock_config
+            mock_config_class.from_cli_args.return_value = mock_config
+
+            # Mock resolve params to raise exception
+            mock_resolve_params.side_effect = ValueError("Invalid project parameters")
+
+            # Mock engine (won't be used due to exception)
+            mock_engine_class.return_value = Mock()
+
+            result = runner.invoke(
+                main,
+                ["test/project", "123", "--test-skip-only", "--dry-run"],
+                catch_exceptions=False,
+            )
+
+            # Should exit with 1 due to exception - covers lines 563-564
+            assert result.exit_code == 1
+            assert "Error testing skip detection" in result.output
+            assert "Invalid project parameters" in result.output

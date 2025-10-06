@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import structlog
@@ -22,7 +23,7 @@ from ai_code_review.utils.constants import (
     SYSTEM_PROMPT_ESTIMATED_CHARS,
     SYSTEM_PROMPT_ESTIMATED_TOKENS,
 )
-from ai_code_review.utils.exceptions import AIProviderError
+from ai_code_review.utils.exceptions import AIProviderError, ReviewSkippedError
 from ai_code_review.utils.prompts import create_review_chain
 
 logger = structlog.get_logger(__name__)
@@ -84,6 +85,103 @@ class ReviewEngine:
             self.config.ai_provider.value,
         )
 
+    def should_skip_review(
+        self, pr_data: PullRequestData
+    ) -> tuple[bool, str | None, str | None]:
+        """Check if review should be skipped based on multiple criteria.
+
+        Args:
+            pr_data: Pull/merge request data containing info and diffs
+
+        Returns:
+            Tuple of (should_skip, reason_category, trigger_details)
+            - should_skip: True if review should be skipped
+            - reason_category: Category of skip reason (keyword, pattern, bot_author, documentation_only)
+            - trigger_details: Specific trigger that caused the skip
+        """
+        if not self.config.skip_review.enabled:
+            return False, None, None
+
+        pr_info = pr_data.info
+
+        # 1. Check explicit keywords in title + description
+        text_to_check = f"{pr_info.title} {pr_info.description or ''}".lower()
+        for keyword in self.config.skip_review.keywords:
+            if keyword.lower() in text_to_check:
+                return True, "keyword", keyword
+
+        # 2. Check dependency/automation patterns in title (if enabled)
+        if self.config.skip_review.skip_dependency_updates:
+            title = pr_info.title
+            for pattern in self.config.skip_review.patterns:
+                try:
+                    if re.match(pattern, title, re.IGNORECASE):
+                        return True, "pattern", pattern
+                except re.error:
+                    # Skip invalid patterns (should be caught in validation)
+                    logger.warning("Invalid regex pattern skipped", pattern=pattern)
+                    continue
+
+        # 2.5. Check documentation patterns in title (if documentation skipping enabled)
+        if self.config.skip_review.skip_documentation_only:
+            title = pr_info.title
+            for pattern in self.config.skip_review.documentation_patterns:
+                try:
+                    if re.match(pattern, title, re.IGNORECASE):
+                        return True, "documentation_pattern", pattern
+                except re.error:
+                    logger.warning(
+                        "Invalid documentation pattern skipped", pattern=pattern
+                    )
+                    continue
+
+        # 3. Check bot authors (if bot author detection enabled)
+        if self.config.skip_review.skip_bot_authors:
+            author = pr_info.author.lower()
+            for bot_author in self.config.skip_review.bot_authors:
+                if bot_author.lower() in author:
+                    return True, "bot_author", bot_author
+
+        # 4. Check if documentation-only changes (if enabled)
+        if self.config.skip_review.skip_documentation_only:
+            if self._is_documentation_only_change(pr_data):
+                return True, "documentation_only", "all files are documentation"
+
+        return False, None, None
+
+    def _is_documentation_only_change(self, pr_data: PullRequestData) -> bool:
+        """Detect if changes are documentation-only.
+
+        Args:
+            pr_data: Pull/merge request data containing file diffs
+
+        Returns:
+            True if all changed files are documentation files
+        """
+        if not pr_data.diffs:
+            return False
+
+        import os
+
+        doc_extensions = {".md", ".txt", ".rst", ".adoc", ".wiki"}
+        doc_dirs = {"docs/", "doc/", ".github/"}
+        # Check against filename stems to be more specific
+        doc_filenames = {"readme", "changelog", "contributing", "license"}
+
+        for diff in pr_data.diffs:
+            path_lower = diff.file_path.lower()
+            filename_stem = os.path.splitext(os.path.basename(path_lower))[0]
+
+            has_doc_extension = any(path_lower.endswith(ext) for ext in doc_extensions)
+            is_in_doc_dir = any(path_lower.startswith(d) for d in doc_dirs)
+            # Use exact match for standalone doc files to avoid false positives
+            is_doc_file = filename_stem in doc_filenames
+
+            if not (has_doc_extension or is_in_doc_dir or is_doc_file):
+                return False  # Found non-documentation file
+
+        return True  # All files are documentation
+
     async def generate_review(self, project_id: str | int, mr_iid: int) -> ReviewResult:
         """Generate comprehensive code review with summary in a single LLM call.
 
@@ -113,6 +211,33 @@ class ReviewEngine:
                 pr_title=pr_data.info.title,
                 platform=self.platform_client.get_platform_name(),
             )
+
+            # Step 1.5: Check if review should be skipped
+            should_skip, skip_reason, skip_trigger = self.should_skip_review(pr_data)
+            if should_skip:
+                # Type safety: if should_skip is True, reason and trigger must not be None
+                if skip_reason is None:
+                    raise ValueError(
+                        "Skip reason cannot be None when should_skip is True"
+                    )
+                if skip_trigger is None:
+                    raise ValueError(
+                        "Skip trigger cannot be None when should_skip is True"
+                    )
+
+                logger.info(
+                    "Review skipped automatically",
+                    reason=skip_reason,
+                    trigger=skip_trigger,
+                    pr_title=pr_data.info.title,
+                    author=pr_data.info.author,
+                    project_id=project_id,
+                    mr_iid=mr_iid,
+                )
+
+                # Raise exception to be handled at CLI level for proper exit code
+                skip_message = f"Review skipped due to {skip_reason}: {skip_trigger}"
+                raise ReviewSkippedError(skip_message, skip_reason, skip_trigger)
 
             # Calculate project context once for both dry-run and normal execution
             project_context = self._get_project_context(pr_data)
@@ -175,6 +300,9 @@ class ReviewEngine:
 
             return result
 
+        except ReviewSkippedError:
+            # Re-raise skip errors without modification - they should be handled at CLI level
+            raise
         except Exception as e:
             logger.error(
                 "Review generation failed",

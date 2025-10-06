@@ -20,6 +20,7 @@ Guide for developers who want to understand, modify, or extend the AI Code Revie
   - [5. Modifying File Filtering](#5-modifying-file-filtering)
   - [6. Adaptive Context Size Management](#6-adaptive-context-size-management)
   - [7. Project Context Integration](#7-project-context-integration)
+  - [8. Extending Skip Review Mechanism](#8-extending-skip-review-mechanism)
 - [🧪 Development Workflow](#-development-workflow)
   - [Setup Development Environment](#setup-development-environment)
   - [Testing Strategy](#testing-strategy)
@@ -893,6 +894,252 @@ Run specific tests:
 ```bash
 uv run pytest tests/unit/test_review_engine.py -k "project_context" -v
 ```
+
+### 8. Extending Skip Review Mechanism
+
+The **Skip Review mechanism** is designed to be extensible for organization-specific automation patterns.
+
+#### Architecture Overview
+
+```python
+# Core implementation in review_engine.py
+def should_skip_review(self, pr_data: PullRequestData) -> tuple[bool, str | None, str | None]:
+    """
+    Returns: (should_skip, reason, trigger)
+    - should_skip: Boolean indicating if review should be skipped
+    - reason: Category of skip (keyword, pattern, bot_author, etc.)
+    - trigger: Specific trigger that caused the skip
+    """
+```
+
+#### Skip Detection Logic Flow
+
+```python
+# Priority order (first match wins):
+1. Keywords in title/description → "keyword"
+2. Regex patterns in title → "pattern"
+3. Documentation patterns (if enabled) → "documentation_pattern"
+4. Bot authors → "bot_author"
+5. Documentation-only files → "documentation_only"
+```
+
+#### Adding Custom Skip Criteria
+
+**1. Custom Keywords** (`models/config.py`):
+
+```python
+# Extend SkipReviewConfig with organization-specific keywords
+class SkipReviewConfig(BaseModel):
+    keywords: list[str] = [
+        "[skip review]", "[no review]", "[automated]", "[bot]",
+        # Add organization-specific keywords
+        "[hotfix]", "[emergency]", "[security-patch]",
+        "[saltar revisión]",  # International support
+    ]
+```
+
+**2. Custom Regex Patterns** (`models/config.py`):
+
+```python
+class SkipReviewConfig(BaseModel):
+    patterns: list[str] = [
+        # Built-in patterns...
+        "^(chore|build|ci|feat|fix)\\(deps?\\):",
+
+        # Add organization patterns
+        "^\\[JIRA-\\d+\\] automated",     # JIRA tickets
+        "^hotfix/automated-",              # Automated hotfixes
+        "^security-patch:",                # Security patches
+        "^i18n\\(.*\\):",                 # Internationalization
+    ]
+```
+
+**3. Custom Bot Detection** (`models/config.py`):
+
+```python
+class SkipReviewConfig(BaseModel):
+    bot_authors: list[str] = [
+        # Built-in bots...
+        "dependabot[bot]", "renovate[bot]",
+
+        # Add organization bots
+        "company-deploy-bot",
+        "security-scanner[bot]",
+        "translation-bot",
+        "ci-automation@company.com",
+    ]
+```
+
+**4. Advanced Custom Detection** (`core/review_engine.py`):
+
+Add custom detection logic in the `should_skip_review` method:
+
+```python
+def should_skip_review(self, pr_data: PullRequestData) -> tuple[bool, str | None, str | None]:
+    """Enhanced skip detection with custom logic."""
+
+    # ... existing detection logic ...
+
+    # CUSTOM: Skip if MR has specific labels (GitLab only)
+    if hasattr(pr_data.info, 'labels') and pr_data.info.labels:
+        skip_labels = {'automated', 'bot', 'dependencies', 'security-patch'}
+        if any(label in skip_labels for label in pr_data.info.labels):
+            return True, "label", f"label:{','.join(pr_data.info.labels)}"
+
+    # CUSTOM: Skip if commit count is very high (likely generated)
+    if pr_data.commit_count > 50:
+        return True, "high_commit_count", f"commits:{pr_data.commit_count}"
+
+    # CUSTOM: Skip if all files are in specific directories
+    generated_dirs = {'generated/', 'dist/', 'build/', '.next/'}
+    if pr_data.diffs and all(
+        any(diff.file_path.startswith(gen_dir) for gen_dir in generated_dirs)
+        for diff in pr_data.diffs
+    ):
+        return True, "generated_files", "generated_directories"
+
+    # CUSTOM: Skip based on file size (very large auto-generated files)
+    large_files = [
+        diff for diff in pr_data.diffs
+        if len(diff.diff) > 10000  # Very large diffs
+    ]
+    if len(large_files) > 5:  # Many large files
+        return True, "large_files", f"large_files:{len(large_files)}"
+
+    return False, None, None
+```
+
+#### Configuration Integration
+
+**1. Add to Default Configuration** (`models/config.py`):
+
+```python
+@field_validator("patterns", "documentation_patterns")
+@classmethod
+def validate_patterns(cls, patterns: list[str]) -> list[str]:
+    """Validate that all patterns compile as valid regex."""
+    validated_patterns = []
+    for pattern in patterns:
+        try:
+            re.compile(pattern)
+            validated_patterns.append(pattern)
+        except re.error as e:
+            # Organization-specific: log warnings but continue
+            logger.warning(f"Invalid skip pattern: {pattern} - {e}")
+    return validated_patterns
+```
+
+**2. Environment Variable Support** (`models/config.py`):
+
+```python
+# Add new environment variables
+class Config(BaseSettings):
+    # ... existing fields ...
+
+    # Custom skip configuration
+    skip_on_high_commit_count: bool = False
+    skip_commit_threshold: int = 50
+    skip_generated_directories: bool = True
+
+    model_config = SettingsConfigDict(
+        env_prefix="",
+        case_sensitive=False,
+        # Map custom environment variables
+        extra="ignore",
+    )
+```
+
+#### Testing Custom Skip Logic
+
+**1. Unit Tests** (`tests/unit/test_skip_review.py`):
+
+```python
+class TestCustomSkipLogic:
+    """Test custom skip detection logic."""
+
+    def test_skip_high_commit_count(self) -> None:
+        """Test skipping PRs with very high commit count."""
+        # Create PR data with many commits
+        pr_data = create_pr_data_with_commits(commit_count=75)
+
+        config = Config(skip_review=SkipReviewConfig(enabled=True))
+        engine = ReviewEngine(config)
+
+        should_skip, reason, trigger = engine.should_skip_review(pr_data)
+
+        assert should_skip is True
+        assert reason == "high_commit_count"
+        assert trigger == "commits:75"
+
+    def test_skip_generated_directories(self) -> None:
+        """Test skipping PRs with only generated files."""
+        pr_data = create_pr_data_with_files([
+            "generated/api.ts",
+            "dist/bundle.js",
+            "build/output.css"
+        ])
+
+        # ... test implementation
+```
+
+**2. Integration Tests**:
+
+```bash
+# Test custom skip logic with real data
+ai-code-review --test-skip-only project/123 --dry-run
+
+# Test with custom config
+ai-code-review --config-file custom-skip-config.yml --test-skip-only project/123
+```
+
+#### Adding New Skip Reasons
+
+**1. Extend Exit Handling** (`cli.py`):
+
+```python
+# Handle new skip reasons with specific messaging
+except ReviewSkippedError as e:
+    if "high_commit_count" in str(e):
+        click.echo("⚡ Skipped: Too many commits (likely auto-generated)", err=True)
+    elif "generated_files" in str(e):
+        click.echo("⚡ Skipped: Only generated/build files changed", err=True)
+    else:
+        click.echo(f"⚡ Skipped: {e}", err=True)
+
+    sys.exit(EXIT_CODE_SKIPPED)
+```
+
+**2. Enhanced Logging** (`core/review_engine.py`):
+
+```python
+# Add structured logging for skip reasons
+logger.info(
+    "Review skipped",
+    reason=skip_reason,
+    trigger=skip_trigger,
+    pr_id=pr_data.info.id,
+    author=pr_data.info.author,
+    file_count=pr_data.file_count,
+    commit_count=pr_data.commit_count,
+)
+```
+
+#### Key Extension Points
+
+- **Detection Logic**: `should_skip_review()` method
+- **Configuration**: `SkipReviewConfig` model
+- **Patterns**: YAML configuration files
+- **Testing**: Comprehensive test coverage in `test_skip_review.py`
+- **CLI Integration**: `--test-skip-only` for debugging
+- **Logging**: Structured logs for monitoring and analytics
+
+#### Best Practices
+
+1. **Gradual Rollout**: Test new skip logic with `--test-skip-only` first
+2. **Monitoring**: Log skip decisions for analysis and tuning
+3. **Fallback**: Always allow manual override with `--no-skip-detection`
+4. **Documentation**: Update team docs when adding custom patterns
+5. **Testing**: Write unit tests for all custom skip logic
 
 ## 🧪 Development Workflow
 

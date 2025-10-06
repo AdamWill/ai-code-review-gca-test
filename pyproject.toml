@@ -109,6 +109,9 @@ addopts = [
     "--cov-report=html",
     "--cov-fail-under=75",
 ]
+markers = [
+    "allow_env_file: Allow test to use .env file loading (bypasses environment isolation)",
+]
 
 [tool.coverage.run]
 source = ["src"]
