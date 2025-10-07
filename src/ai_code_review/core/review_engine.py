@@ -142,7 +142,12 @@ class ReviewEngine:
                 if bot_author.lower() in author:
                     return True, "bot_author", bot_author
 
-        # 4. Check if documentation-only changes (if enabled)
+        # 4. Check if draft PR/MR (if enabled)
+        if self.config.skip_review.skip_draft_prs:
+            if pr_data.info.draft:
+                return True, "draft", "pull/merge request is in draft mode"
+
+        # 5. Check if documentation-only changes (if enabled)
         if self.config.skip_review.skip_documentation_only:
             if self._is_documentation_only_change(pr_data):
                 return True, "documentation_only", "all files are documentation"

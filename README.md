@@ -130,6 +130,7 @@ jobs:
 - 🤖 **Bot changes** (from `dependabot[bot]`, `renovate[bot]`)
 - 📝 **Documentation-only** changes (if enabled)
 - 🏷️ **Tagged PRs/MRs** (`[skip review]`, `[automated]`)
+- 📝 **Draft/WIP PRs/MRs** (work in progress)
 
 **Result:** Focus on meaningful changes, save API costs, faster CI/CD pipelines.
 

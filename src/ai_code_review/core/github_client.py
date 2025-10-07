@@ -82,6 +82,7 @@ class GitHubClient(BasePlatformClient):
                 author=pull_request.user.login,
                 state=pull_request.state,
                 web_url=pull_request.html_url,
+                draft=getattr(pull_request, "draft", False),  # GitHub draft status
             )
 
             # Get diffs and commits

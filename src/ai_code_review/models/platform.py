@@ -41,6 +41,7 @@ class PullRequestInfo(BaseModel):
     author: str
     state: str
     web_url: str
+    draft: bool = False  # True if PR/MR is in draft/WIP mode
 
 
 class PullRequestData(BaseModel):

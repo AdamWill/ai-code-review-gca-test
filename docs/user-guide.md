@@ -563,10 +563,11 @@ Skip Review is **enabled by default** with these settings:
 ```yaml
 # .ai_review/config.yml
 skip_review:
-  enabled: true                    # Enable skip detection
-  skip_dependency_updates: true    # Skip dependency updates
+  enabled: true                   # Enable skip detection
+  skip_dependency_updates: true   # Skip dependency updates
   skip_documentation_only: false  # Skip doc-only changes (disabled by default)
   skip_bot_authors: true          # Skip known bots
+  skip_draft_prs: true            # Skip draft/WIP PRs and MRs (enabled by default)
 
   # Built-in keywords (in PR/MR titles or descriptions)
   keywords:
@@ -578,7 +579,7 @@ skip_review:
   # Built-in patterns (regex matching PR/MR titles)
   patterns:
     - "^(chore|build|ci|feat|fix)\\(deps?\\):"  # Dependency updates
-    - "^(release|bump):"                         # Version bumps
+    - "^(release|bump):"                        # Version bumps
     - "^(merge|revert):"                        # Merges and reverts
     - "^\\[automated\\]"                        # Automated changes
 
@@ -609,7 +610,7 @@ skip_review:
   enabled: true
   patterns:
     - "^\\[JIRA-\\d+\\] automated"     # JIRA automated tickets
-    - "^hotfix/automated-"              # Automated hotfixes
+    - "^hotfix/automated-"             # Automated hotfixes
     - "^chore\\(i18n\\):"              # Translation updates
 
   bot_authors:
@@ -695,6 +696,7 @@ SKIP_DOCUMENTATION_ONLY=true
 # Disable specific features
 SKIP_DEPENDENCY_UPDATES=false
 SKIP_BOT_AUTHORS=false
+SKIP_DRAFT_PRS=false  # Disable draft PR/MR skipping
 ```
 
 #### Examples
@@ -706,6 +708,7 @@ SKIP_BOT_AUTHORS=false
 - `release: v2.1.0`
 - `feat: new feature [skip review]`
 - Author: `dependabot[bot]` with any title
+- **Draft/WIP PRs and MRs** (enabled by default)
 - Documentation-only changes (if enabled)
 
 **❌ These PRs/MRs get REVIEWED normally:**

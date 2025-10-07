@@ -139,6 +139,10 @@ class SkipReviewConfig(BaseModel):
         default=True, description="Skip reviews from known bot authors"
     )
 
+    skip_draft_prs: bool = Field(
+        default=True, description="Skip reviews for draft/WIP pull/merge requests"
+    )
+
     @field_validator("patterns", "documentation_patterns")
     @classmethod
     def validate_patterns(cls, v: list[str]) -> list[str]:

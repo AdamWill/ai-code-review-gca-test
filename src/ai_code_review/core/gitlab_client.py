@@ -132,6 +132,7 @@ class GitLabClient(BasePlatformClient):
                 author=merge_request.author["name"],
                 state=merge_request.state,
                 web_url=merge_request.web_url,
+                draft=getattr(merge_request, "draft", False),  # GitLab draft status
             )
 
             # Get diffs and commits

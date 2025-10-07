@@ -468,3 +468,117 @@ class TestSkipReviewCLIFlags:
         config = Config.from_cli_args(cli_args)
 
         assert config.skip_review.enabled is True
+
+
+class TestDraftPRSkipping:
+    """Test draft PR/MR skipping functionality."""
+
+    def test_draft_pr_skipped_when_enabled(self) -> None:
+        """Test that draft PRs are skipped when skip_draft_prs is enabled."""
+        pr_data = PullRequestData(
+            info=PullRequestInfo(
+                id=123,
+                number=123,
+                title="feat: work in progress feature",
+                description="",
+                author="developer",
+                source_branch="feature",
+                target_branch="main",
+                state="open",
+                web_url="https://example.com/pr/123",
+                draft=True,  # Draft PR
+            ),
+            diffs=[PullRequestDiff(file_path="src/feature.py", diff="mock diff")],
+            commits=[],
+        )
+
+        config = Config(
+            gitlab_token="test-token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            dry_run=True,
+            skip_review=SkipReviewConfig(enabled=True, skip_draft_prs=True),
+        )
+        engine = ReviewEngine(config)
+
+        should_skip, reason, trigger = engine.should_skip_review(pr_data)
+
+        assert should_skip is True
+        assert reason == "draft"
+        assert trigger == "pull/merge request is in draft mode"
+
+    def test_draft_pr_not_skipped_when_disabled(self) -> None:
+        """Test that draft PRs are NOT skipped when skip_draft_prs is disabled."""
+        pr_data = PullRequestData(
+            info=PullRequestInfo(
+                id=123,
+                number=123,
+                title="feat: work in progress feature",
+                description="",
+                author="developer",
+                source_branch="feature",
+                target_branch="main",
+                state="open",
+                web_url="https://example.com/pr/123",
+                draft=True,  # Draft PR
+            ),
+            diffs=[PullRequestDiff(file_path="src/feature.py", diff="mock diff")],
+            commits=[],
+        )
+
+        config = Config(
+            gitlab_token="test-token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            dry_run=True,
+            skip_review=SkipReviewConfig(
+                enabled=True, skip_draft_prs=False
+            ),  # Disabled
+        )
+        engine = ReviewEngine(config)
+
+        should_skip, reason, trigger = engine.should_skip_review(pr_data)
+
+        assert should_skip is False
+        assert reason is None
+        assert trigger is None
+
+    def test_normal_pr_not_affected_by_draft_logic(self) -> None:
+        """Test that normal (non-draft) PRs are not affected by draft skipping logic."""
+        pr_data = PullRequestData(
+            info=PullRequestInfo(
+                id=123,
+                number=123,
+                title="feat: ready feature",
+                description="",
+                author="developer",
+                source_branch="feature",
+                target_branch="main",
+                state="open",
+                web_url="https://example.com/pr/123",
+                draft=False,  # Normal PR
+            ),
+            diffs=[PullRequestDiff(file_path="src/feature.py", diff="mock diff")],
+            commits=[],
+        )
+
+        config = Config(
+            gitlab_token="test-token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="qwen2.5-coder:7b",
+            dry_run=True,
+            skip_review=SkipReviewConfig(enabled=True, skip_draft_prs=True),
+        )
+        engine = ReviewEngine(config)
+
+        should_skip, reason, trigger = engine.should_skip_review(pr_data)
+
+        # Normal PRs should not be skipped by draft logic
+        assert should_skip is False
+        assert reason is None
+        assert trigger is None
+
+    def test_default_draft_config(self) -> None:
+        """Test that skip_draft_prs is enabled by default."""
+        config = SkipReviewConfig()
+        assert config.skip_draft_prs is True  # Should be enabled by default
