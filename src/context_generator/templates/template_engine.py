@@ -95,6 +95,9 @@ class TemplateEngine:
             "{{review_focus}}": section_content.get(
                 "review_focus", "*Review focus not available*"
             ),
+            "{{context7_analysis}}": section_content.get(
+                "context7_analysis", "*Library documentation not available*"
+            ),
         }
 
         for placeholder, content in placeholder_mapping.items():

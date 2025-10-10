@@ -81,8 +81,10 @@ class StructureSection(BaseSection):
             # Get git files and resolve them if project_path is absolute
             git_files = self._get_git_files(self.project_path)
             if self.project_path.is_absolute():
-                # Resolve all git files for consistent path handling
-                self._cached_git_files = [f.resolve() for f in git_files]
+                # Resolve git files relative to project_path for consistent path handling
+                self._cached_git_files = [
+                    (self.project_path / f).resolve() for f in git_files
+                ]
             else:
                 self._cached_git_files = git_files
 

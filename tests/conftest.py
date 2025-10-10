@@ -8,6 +8,8 @@ from unittest.mock import Mock
 
 import pytest
 
+from ai_code_review.models.config import Config
+
 
 def create_gitpython_mock() -> Mock:
     """Create a complete GitPython mock for CI compatibility.
@@ -111,3 +113,81 @@ def chdir_tmp(tmp_path: Path):
         yield tmp_path
     finally:
         os.chdir(original_dir)
+
+
+# ===== Configuration Fixtures =====
+# These fixtures provide common test configurations to reduce duplication
+
+
+@pytest.fixture
+def ollama_config() -> Config:
+    """Create a test config for Ollama provider.
+
+    Returns:
+        Config: Configuration with Ollama provider and test values
+    """
+    return Config(
+        gitlab_token="dummy",
+        ai_provider="ollama",
+        dry_run=True,
+        ollama_base_url="http://localhost:11434",
+    )
+
+
+@pytest.fixture
+def anthropic_config() -> Config:
+    """Create a test config for Anthropic provider.
+
+    Returns:
+        Config: Configuration with Anthropic provider and test values
+    """
+    return Config(
+        gitlab_token="dummy",
+        ai_provider="anthropic",
+        dry_run=True,
+        ai_api_key="test_key",
+    )
+
+
+@pytest.fixture
+def gemini_config() -> Config:
+    """Create a test config for Gemini provider.
+
+    Returns:
+        Config: Configuration with Gemini provider and test values
+    """
+    return Config(
+        gitlab_token="dummy",
+        ai_provider="gemini",
+        dry_run=True,
+        ai_api_key="test_key",
+    )
+
+
+@pytest.fixture
+def basic_config() -> Config:
+    """Create a basic test config with minimal required fields.
+
+    Returns:
+        Config: Basic configuration for testing
+    """
+    return Config(
+        gitlab_token="dummy",
+        ai_provider="ollama",
+        dry_run=True,
+    )
+
+
+@pytest.fixture
+def github_config() -> Config:
+    """Create a test config with GitHub tokens.
+
+    Returns:
+        Config: Configuration with both GitLab and GitHub tokens
+    """
+    return Config(
+        gitlab_token="dummy",
+        github_token="dummy",
+        ai_provider="ollama",
+        dry_run=True,
+    )

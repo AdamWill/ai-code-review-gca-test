@@ -114,6 +114,70 @@
 
 - **[Custom Exception Handling and Exit Codes]** - The application defines specific exceptions like `ReviewSkippedError` and `PlatformAPIError` which map to exit codes in `cli.py`. Review changes to ensure that these custom exceptions are raised in the correct business logic paths (e.g., when a diff is too large) and are caught at the entry point to provide clear user feedback and the correct exit code.
 
+## Library Documentation & Best Practices
+
+### 1. API Usage Patterns
+
+*   **aiohttp (Client):** HTTP requests must be made using an `aiohttp.ClientSession` instance, preferably within an `async with` block to ensure proper connection pooling and resource cleanup. Use `session.get()` for GET and `session.post()` for POST requests, awaiting the response methods like `resp.text()`.
+    ```python
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, params=params) as resp:
+            content = await resp.text()
+    ```
+*   **aiohttp (Server):** Applications should be defined by creating a `web.Application` instance, adding routes via `app.add_routes([...])`, and running the server with `web.run_app(app)`. For finer control over the application lifecycle, use `web.AppRunner` and `web.TCPSite`.
+*   **langchain:**
+    *   **Chaining:** The primary pattern for building logic is the LangChain Expression Language (LCEL) using the pipe (`|`) operator. Chains should be composed of `PromptTemplate`, a model object, and an `OutputParser`.
+        ```python
+        chain = prompt | model | output_parser
+        ```
+    *   **Model Invocation:** Use `.ainvoke()` and `.astream()` for non-blocking calls within an `aiohttp` server.
+    *   **RAG:** The standard pattern is to load documents, split them with a `TextSplitter`, create embeddings, store them in a vector store, and use `vectorstore.as_retriever()` to fetch context.
+    *   **Agents & Tools:** Tools should be defined as functions with the `@tool` decorator or as Pydantic `BaseModel` classes. These are then passed to an agent created with `create_tool_calling_agent`.
+*   **pydantic:** Data structures should be defined by inheriting from `pydantic.BaseModel`. This is the standard for data validation, serialization, and defining structured outputs for LangChain.
+*   **aiofiles:** All file I/O must be performed using `aiofiles.open` within an `async with` block. File operations like `read` and `write` are coroutines and must be awaited. Asynchronous filesystem operations (e.g., `rename`, `remove`) should use the `aiofiles.os` module.
+    ```python
+    async with aiofiles.open('filename', mode='r') as f:
+        contents = await f.read()
+    ```
+*   **httpx:** The provided documentation is for a Go-based command-line tool for web reconnaissance, not the Python `httpx` library. It is not applicable for a Python package making HTTP requests. The project should use `aiohttp` for this purpose as per its documentation.
+
+### 2. Best Practices
+
+*   **Asynchronous Operations:** In `aiohttp` handlers, always use the `async` versions of library calls to avoid blocking the event loop. This includes `langchain`'s `.ainvoke()` and `.astream()` methods and all `aiofiles` functions. Standard synchronous file I/O (`open()`) or network calls must be avoided.
+*   **Resource Management:** Use `async with` statements for `aiohttp.ClientSession` and `aiofiles.open` to ensure resources like connection pools and file handles are managed automatically and safely.
+*   **API Key Management:** LangChain API keys should be loaded from environment variables (`os.environ.get(...)`) and never hardcoded in the source code.
+*   **Data Validation:** Use Pydantic models to define and validate the structure of API request bodies and responses in the `aiohttp` application. This ensures type safety and clear API contracts.
+*   **Testing:**
+    *   `aiohttp` endpoints should be tested using `aiohttp.test_utils.TestClient`.
+    *   Code using `aiofiles` should be tested by mocking `aiofiles.threadpool.sync_open` as demonstrated in the documentation.
+*   **LangChain Caching:** To improve performance and reduce costs, enable LLM caching using `langchain.globals.set_llm_cache` with either `InMemoryCache` or a persistent `SQLiteCache`.
+
+### 3. Common Pitfalls
+
+*   **Blocking I/O:** Using standard `open()`, `requests`, or synchronous LangChain methods (`.invoke()`) inside an `async def` function in `aiohttp`. This will block the entire server's event loop and severely degrade performance.
+*   **Improper `ClientSession` Usage:** Creating a new `aiohttp.ClientSession` for each request is inefficient. A single session should be created and reused across multiple requests.
+*   **Missing `await`:** Forgetting to `await` coroutines from `aiohttp`, `langchain`, or `aiofiles` will lead to runtime errors or incorrect behavior.
+*   **Hardcoded Secrets:** Embedding API keys directly in the code instead of using environment variables is a major security risk.
+*   **Ignoring Structured Output:** Manually parsing JSON or string outputs from LLMs is error-prone. Use LangChain's `PydanticOutputParser` or `model.with_structured_output()` for reliable, validated data structures.
+
+### 4. Integration Recommendations
+
+*   **API Layer (`aiohttp` + `pydantic`):** `aiohttp` should serve the web API. Request handlers should use Pydantic models to parse and validate incoming JSON bodies. Pydantic models should also be used to serialize response data, creating a well-defined API.
+*   **Core Logic (`langchain`):** The `aiohttp` handlers will call LangChain components (chains, agents) to execute the core business logic. All calls into LangChain from the API layer must use async methods (e.g., `chain.ainvoke(...)`).
+*   **Filesystem (`aiofiles`):** If an API endpoint needs to read from or write to a file (e.g., processing an upload, logging to a file), it must use `aiofiles` to prevent blocking.
+*   **Tools (`langchain` + `pydantic`):** When building LangChain agents, Pydantic models are the recommended way to define the schema for tools. This provides robust input validation for tool calls initiated by the agent.
+
+### 5. Configuration Guidelines
+
+*   **Development Environment:** The `aiohttp-debugtoolbar` can be enabled during development for easier debugging via `aiohttp_debugtoolbar.setup(app)`. This should not be enabled in production.
+*   **Type Checking:** To ensure correct static analysis of Pydantic models, the Mypy plugin must be enabled in `pyproject.toml` or `mypy.ini`:
+    ```toml
+    [tool.mypy]
+    plugins = ["pydantic.mypy"]
+    ```
+*   **Tracing and Debugging:** For observability into LangChain executions, configure LangSmith by setting the `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, and `LANGSMITH_PROJECT` environment variables.
+*   **Installation:** The project should install specific versions of libraries. For Pydantic, if a specific major version is required (e.g., V1 for compatibility), it should be pinned as `"pydantic==1.*"`. Otherwise, `pydantic` will install V2.
+
 ---
 <!-- MANUAL SECTIONS - DO NOT MODIFY THIS LINE -->
 

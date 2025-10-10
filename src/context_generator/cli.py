@@ -11,6 +11,7 @@ import structlog
 
 from ai_code_review.models.config import Config
 from context_generator.core.context_builder import ContextBuilder
+from context_generator.models import Context7Config
 
 # Setup logging
 structlog.configure(
@@ -60,8 +61,25 @@ logger = structlog.get_logger(__name__)
 @click.option(
     "--section",
     multiple=True,
-    type=click.Choice(["overview", "tech_stack", "structure", "review_focus"]),
+    type=click.Choice(
+        ["overview", "tech_stack", "structure", "review_focus", "context7"]
+    ),
     help="Update only specific sections (can be used multiple times)",
+)
+@click.option(
+    "--enable-context7",
+    is_flag=True,
+    help="Enable Context7 integration for library documentation",
+)
+@click.option(
+    "--context7-libraries",
+    help="Comma-separated list of priority libraries for Context7 (e.g., 'fastapi,pydantic,sqlalchemy')",
+)
+@click.option(
+    "--context7-max-tokens",
+    type=int,
+    default=2000,
+    help="Maximum tokens per library for Context7 documentation (default: 2000)",
 )
 def generate_context(
     project_path: str,
@@ -73,6 +91,9 @@ def generate_context(
     dry_run: bool,
     verbose: bool,
     section: tuple[str, ...],
+    enable_context7: bool,
+    context7_libraries: str | None,
+    context7_max_tokens: int,
 ) -> None:
     """Generate intelligent project context using LLM analysis.
 
@@ -95,6 +116,7 @@ def generate_context(
         --section tech_stack        Update only technology stack
         --section structure         Update only code structure
         --section review_focus      Update only review focus areas
+        --section context7          Update only Context7 library documentation
         Multiple sections: --section overview --section tech_stack
 
     \b
@@ -167,7 +189,32 @@ def generate_context(
     try:
         # Use same config creation as main CLI - automatically loads .env
         config = Config.from_cli_args(cli_args)
-        asyncio.run(_run_generation(project_path, output, config, section))
+
+        # Create Context7 configuration
+        # First load from YAML file, then override with CLI options
+        context7_config = Context7Config.from_yaml_file()
+
+        # Override with CLI options if provided
+        if enable_context7:
+            context7_config.enabled = True
+
+        if context7_libraries:
+            priority_libraries = [
+                lib.strip() for lib in context7_libraries.split(",") if lib.strip()
+            ]
+            context7_config.priority_libraries = priority_libraries
+
+        # Check if user explicitly provided context7_max_tokens value
+        ctx = click.get_current_context()
+        if ctx.get_parameter_source("context7_max_tokens") not in (
+            click.core.ParameterSource.DEFAULT,
+            click.core.ParameterSource.DEFAULT_MAP,
+        ):
+            context7_config.max_tokens_per_library = context7_max_tokens
+
+        asyncio.run(
+            _run_generation(project_path, output, config, section, context7_config)
+        )
     except KeyboardInterrupt:
         click.echo("\n❌ Generation cancelled by user", err=True)
         sys.exit(1)
@@ -181,7 +228,11 @@ def generate_context(
 
 
 async def _run_generation(
-    project_path: str, output_path: str, config: Config, section: tuple[str, ...] = ()
+    project_path: str,
+    output_path: str,
+    config: Config,
+    section: tuple[str, ...] = (),
+    context7_config: Context7Config | None = None,
 ) -> None:
     """Run the context generation process."""
     project_path_obj = Path(project_path).resolve()
@@ -197,8 +248,12 @@ async def _run_generation(
     # Create output directory if needed
     output_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
+    # Use provided Context7 configuration or create default
+    if context7_config is None:
+        context7_config = Context7Config()
+
     # Generate context using new architecture
-    builder = ContextBuilder(project_path_obj, config)
+    builder = ContextBuilder(project_path_obj, config, context7_config=context7_config)
 
     try:
         # Convert section names to template keys if sections are specified
@@ -207,6 +262,7 @@ async def _run_generation(
             "tech_stack": "tech_stack",
             "structure": "code_structure",
             "review_focus": "review_focus",
+            "context7": "context7_analysis",
         }
 
         target_sections = None

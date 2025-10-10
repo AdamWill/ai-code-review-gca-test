@@ -12,9 +12,10 @@ from ai_code_review.models.config import Config
 from context_generator.core.code_extractor import CodeSampleExtractor
 from context_generator.core.facts_extractor import ProjectFactsExtractor
 from context_generator.core.llm_analyzer import SpecializedLLMAnalyzer
-from context_generator.models import ContextResult
+from context_generator.models import Context7Config, ContextResult
 from context_generator.sections import (
     BaseSection,
+    Context7Section,
     OverviewSection,
     ReviewFocusSection,
     SectionRegistry,
@@ -30,11 +31,16 @@ class ContextBuilder:
     """Main orchestrator for context generation with specialized sections."""
 
     def __init__(
-        self, project_path: Path, config: Config, skip_git_validation: bool = False
+        self,
+        project_path: Path,
+        config: Config,
+        skip_git_validation: bool = False,
+        context7_config: Context7Config | None = None,
     ) -> None:
         """Initialize context builder."""
         self.project_path = project_path
         self.config = config
+        self.context7_config = context7_config or Context7Config()
 
         # skip_git_validation should only be True when explicitly passed (for testing)
 
@@ -61,6 +67,11 @@ class ContextBuilder:
 
         # Section 4: Review Focus (with code samples - specific recommendations)
         self.section_registry.register(ReviewFocusSection(self.llm_analyzer))
+
+        # Section 5: Context7 (optional - external library documentation)
+        self.section_registry.register(
+            Context7Section(self.llm_analyzer, self.context7_config)
+        )
 
         logger.info(
             "Registered core sections",

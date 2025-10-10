@@ -376,3 +376,104 @@ CONFIG_FILE_PATTERNS = [
     "src/config.h",
     "include/config.h",
 ]
+
+# Context7 library selection constants
+CONTEXT7_IMPORTANT_LIBRARIES = {
+    # Web frameworks
+    "fastapi",
+    "django",
+    "flask",
+    "starlette",
+    "uvicorn",
+    "gunicorn",
+    # Data & ORM
+    "sqlalchemy",
+    "pydantic",
+    "pandas",
+    "numpy",
+    "requests",
+    "httpx",
+    "aiohttp",
+    # Testing
+    "pytest",
+    "unittest",
+    "mock",
+    # Async
+    "asyncio",
+    "celery",
+    "redis",
+    # CLI
+    "click",
+    "typer",
+    "argparse",
+    # Utilities
+    "pathlib",
+    "datetime",
+    "json",
+    "yaml",
+    "toml",
+    # JavaScript/TypeScript
+    "react",
+    "vue",
+    "angular",
+    "express",
+    "next",
+    "nuxt",
+    "svelte",
+    "axios",
+    "lodash",
+    "moment",
+    "dayjs",
+    # Node.js
+    "node",
+    "npm",
+    "yarn",
+    "webpack",
+    "vite",
+    "rollup",
+    # Testing (JS)
+    "jest",
+    "mocha",
+    "chai",
+    "cypress",
+    "playwright",
+    # Go
+    "gin",
+    "echo",
+    "fiber",
+    "gorilla/mux",
+    "gorm",
+    "testify",
+    # Rust
+    "actix-web",
+    "warp",
+    "rocket",
+    "axum",
+    "serde",
+    "tokio",
+    "reqwest",
+    # Java
+    "spring-boot",
+    "spring-web",
+    "hibernate",
+    "junit",
+    "mockito",
+    # Ruby
+    "rails",
+    "sinatra",
+    "rspec",
+    "capybara",
+    # PHP
+    "laravel",
+    "symfony",
+    "phpunit",
+    # Database
+    "postgresql",
+    "mysql",
+    "sqlite",
+    "mongodb",
+    "elasticsearch",
+}
+
+# Default maximum number of libraries to fetch documentation for
+CONTEXT7_DEFAULT_MAX_LIBRARIES = 3

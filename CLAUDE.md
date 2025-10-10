@@ -69,6 +69,11 @@ ai-code-review --local --provider gemini                 # Local with cloud AI
 ai-generate-context                                    # Generate .ai_review/context.md
 ai-generate-context --output custom-context.md         # Custom output file
 ai-generate-context --provider ollama                  # Use local AI for generation
+
+# Context7 Integration (enhanced library documentation)
+# Set CONTEXT7_API_KEY environment variable to enable
+ai-generate-context --enable-context7                  # Include Context7 docs
+ai-code-review --local --provider gemini               # Reviews automatically use Context7 if enabled
 ```
 
 ## High-Level Architecture
@@ -204,6 +209,12 @@ AI_MODEL=gemini-2.5-pro
 AI_API_KEY=your_gemini_api_key_here
 GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # Or GITHUB_TOKEN for GitHub
 # Usage: ai-code-review --post (in CI)
+
+# Enhanced Context with Context7 (optional)
+AI_PROVIDER=gemini
+AI_API_KEY=your_gemini_api_key_here
+CONTEXT7_API_KEY=ctx7_xxxxxxxxxxxxxxxxxxxx
+# Usage: ai-generate-context --enable-context7
 ```
 
 ### Error Handling Strategy
@@ -294,3 +305,18 @@ GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # Or GITHUB_TOKEN for GitHub
 2. **AI Understanding**: Uses LLM to understand project purpose and architecture
 3. **Context Synthesis**: Generates comprehensive documentation in markdown format
 4. **Integration**: Context automatically included in subsequent code reviews
+
+### Context7 Integration
+
+**Context7 Service Integration** (v1.11.0+):
+- **Official Library Documentation**: Fetches authoritative documentation from Context7 API
+- **Intelligent Library Detection**: Auto-detects dependencies from project files and configuration
+- **Enhanced Code Reviews**: Includes official documentation context in AI prompts for better accuracy
+- **Configurable Priorities**: Specify important libraries for your project type (FastAPI, Django, etc.)
+- **Smart Caching**: Session-based caching to minimize API calls during context generation
+
+**Context7 Configuration**:
+- **API Key Required**: Set `CONTEXT7_API_KEY` environment variable
+- **Service URL**: https://context7.com (sign up for API access)
+- **Integration Points**: Both `ai-generate-context` and `ai-code-review` tools support Context7
+- **YAML Configuration**: Configure via `.ai_review/config.yml` with library priorities and settings

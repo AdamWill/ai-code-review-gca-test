@@ -142,3 +142,76 @@ log_level: INFO
 # ai_provider: gemini
 # ai_model: gemini-2.5-pro
 # platform_provider: gitlab
+
+#==============================================================================
+# Context7 Integration (Optional)
+#==============================================================================
+
+# Context7 provides official library documentation to enhance AI code reviews
+# Requires Context7 API key (set via CONTEXT7_API_KEY environment variable)
+# Sign up at https://context7.com for API access
+
+context7:
+  # Enable Context7 integration for library documentation
+  enabled: false
+
+  # Maximum number of libraries to fetch documentation for (default: 3)
+  # Limits API calls and processing time. Can be overridden by MAX_LIBRARIES env var
+  # Recommended: 3-5 for balanced performance vs coverage
+  max_libraries: 3
+
+  # Maximum tokens to fetch per library (100-10000)
+  max_tokens_per_library: 2000
+
+  # Timeout for Context7 API calls in seconds (1-60)
+  timeout_seconds: 10
+
+  # Priority libraries to fetch documentation for
+  # If empty, will auto-detect important libraries from your dependencies
+  priority_libraries: []
+
+  # Example configurations for different project types:
+
+  # Web API Project (high priority libraries)
+  # max_libraries: 5
+  # priority_libraries:
+  #   - fastapi
+  #   - pydantic
+  #   - sqlalchemy
+  #   - uvicorn
+  #   - aiohttp
+
+  # Data Science Project (focus on core libraries)
+  # max_libraries: 4
+  # priority_libraries:
+  #   - pandas
+  #   - numpy
+  #   - scikit-learn
+  #   - matplotlib
+
+  # Django Project (web framework focused)
+  # max_libraries: 5
+  # priority_libraries:
+  #   - django
+  #   - djangorestframework
+  #   - celery
+  #   - redis
+  #   - psycopg2
+
+  # LangChain/AI Project (AI/ML focused)
+  # max_libraries: 4
+  # priority_libraries:
+  #   - langchain
+  #   - langchain-community
+  #   - openai
+  #   - anthropic
+
+  # Performance-focused (minimal API calls)
+  # max_libraries: 2
+  # priority_libraries:
+  #   - fastapi
+  #   - pydantic
+
+  # Comprehensive coverage (more API calls, slower)
+  # max_libraries: 7
+  # priority_libraries: []  # Auto-detect all important libraries

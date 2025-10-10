@@ -716,6 +716,7 @@ class Config(BaseSettings):
         "env_file_encoding": "utf-8",
         "case_sensitive": False,
         "env_prefix": "",
+        "extra": "ignore",  # Ignore unknown environment variables
     }
 
     def get_effective_repository_path(self) -> str | None:

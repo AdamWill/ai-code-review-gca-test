@@ -225,6 +225,7 @@ ai-code-review --local --provider ollama
 
 - **[User Guide](docs/user-guide.md)** - Complete usage, configuration, and troubleshooting
 - **[Context Generator Guide](docs/context-generator.md)** - AI context generation for better reviews (requires Git repository)
+- **[Context7 Integration Guide](docs/context7-integration.md)** - Enhanced reviews with official library documentation (optional)
 - **[Developer Guide](docs/developer-guide.md)** - Development setup, architecture, and contributing
 
 ## 🤖 AI Tools Disclaimer

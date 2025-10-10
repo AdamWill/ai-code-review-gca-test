@@ -16,6 +16,10 @@
 
 {{review_focus}}
 
+## Library Documentation & Best Practices
+
+{{context7_analysis}}
+
 ---
 <!-- MANUAL SECTIONS - DO NOT MODIFY THIS LINE -->
 <!-- The sections below will be preserved during updates -->
