@@ -13,6 +13,7 @@ The AI Context Generator is a powerful tool that automatically analyzes your pro
   - [Basic Usage](#basic-usage)
   - [Partial Updates](#partial-updates)
   - [Advanced Options](#advanced-options)
+  - [Context7 Integration](#context7-integration)
 - [Generated Sections](#generated-sections)
   - [Automatic Sections](#automatic-sections)
   - [Manual Sections](#manual-sections)
@@ -69,6 +70,9 @@ AI_MAX_TOKENS=8000
 
 # Context Generator Settings
 CONTEXT_OUTPUT_PATH=.ai_review/project.md
+
+# Context7 Integration (Optional)
+CONTEXT7_API_KEY=your_context7_api_key_here
 ```
 
 #### Supported AI Providers
@@ -120,6 +124,123 @@ ai-generate-context . --max-tokens 4000
 
 # Verbose output
 ai-generate-context . --verbose
+
+# Enable Context7 integration for library documentation
+ai-generate-context . --enable-context7
+
+# Context7 with specific libraries
+ai-generate-context . --enable-context7 --context7-libraries "fastapi,pydantic,sqlalchemy"
+
+# Context7 with custom token limit per library
+ai-generate-context . --enable-context7 --context7-max-tokens 1500
+```
+
+### Context7 Integration
+
+Context7 integration enhances AI code reviews by fetching official library documentation for your project's dependencies. This provides the LLM with authoritative information about APIs, best practices, and recommended usage patterns.
+
+#### Context7 Prerequisites
+
+- Context7 API key (sign up at <https://context7.com>)
+- `aiohttp` Python package (usually already installed)
+- Project must have identifiable dependencies (e.g., `requirements.txt`, `pyproject.toml`, `package.json`)
+
+#### Getting Context7 API Access
+
+Context7 integration uses the Context7 REST API to fetch official library documentation. No additional software installation is required.
+
+**Important**: You need a Context7 API key to use this feature.
+
+**How to Get API Access:**
+
+1. **Sign up**: Visit <https://context7.com> and create an account
+2. **Get API Key**: Generate your API key from the dashboard
+3. **Set Environment Variable**: Add to your `.env` file:
+   ```bash
+   CONTEXT7_API_KEY=your_api_key_here
+   ```
+
+#### Configuration Options
+
+You can configure Context7 integration in your `.ai_review/config.yml` file:
+
+```yaml
+context7:
+  enabled: true
+  max_libraries: 3
+  max_tokens_per_library: 2000
+  timeout_seconds: 10
+  priority_libraries:
+    - fastapi
+    - pydantic
+    - sqlalchemy
+    - requests
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `enabled` | boolean | `false` | Enable/disable Context7 integration |
+| `max_libraries` | integer | `3` | Maximum number of libraries to fetch documentation for |
+| `max_tokens_per_library` | integer | `2000` | Maximum tokens to fetch per library (100-10000) |
+| `timeout_seconds` | integer | `10` | Timeout for Context7 API calls (1-60 seconds) |
+| `priority_libraries` | list | `[]` | Specific libraries to fetch documentation for |
+
+#### How It Works
+
+1. **Dependency Detection**: Context7 analyzes your project to identify dependencies
+2. **Library Selection**: Selects important libraries based on priority list or built-in heuristics
+3. **Documentation Fetching**: Retrieves official documentation for selected libraries in parallel
+4. **LLM Enhancement**: Provides documentation context to the LLM for enhanced analysis
+
+#### Library Selection
+
+**Priority Libraries**: If you specify `priority_libraries`, Context7 will only fetch documentation for those libraries that are present in your project dependencies.
+
+**Auto-Detection**: If no priority libraries are specified, Context7 uses built-in heuristics to identify important libraries:
+
+- **Web Frameworks**: fastapi, django, flask, starlette
+- **Data & ORM**: sqlalchemy, pydantic, pandas, numpy
+- **HTTP Clients**: requests, aiohttp, httpx
+- **Testing**: pytest, unittest
+- **Cloud & Infrastructure**: boto3, kubernetes, docker
+- **ML & AI**: tensorflow, pytorch, scikit-learn, langchain
+
+#### Example Configurations
+
+**Web API Project:**
+```yaml
+context7:
+  enabled: true
+  priority_libraries:
+    - fastapi
+    - pydantic
+    - sqlalchemy
+    - uvicorn
+    - requests
+```
+
+**Data Science Project:**
+```yaml
+context7:
+  enabled: true
+  priority_libraries:
+    - pandas
+    - numpy
+    - scikit-learn
+    - matplotlib
+    - jupyter
+```
+
+**Django Project:**
+```yaml
+context7:
+  enabled: true
+  priority_libraries:
+    - django
+    - djangorestframework
+    - celery
+    - redis
+    - psycopg2
 ```
 
 ## Generated Sections
@@ -153,6 +274,14 @@ These sections are generated automatically by analyzing your project:
 - **Common Issues**: Technology-specific things to watch for
 - **Best Practices**: Framework and language-specific guidelines
 
+#### Context7 Library Documentation (Optional)
+
+When Context7 integration is enabled, this section provides:
+- **Official API Documentation**: Authoritative information from library maintainers
+- **Usage Patterns**: Recommended ways to use important dependencies
+- **Best Practices**: Library-specific guidelines and common patterns
+- **Integration Guidelines**: How libraries should work together in your project
+
 ### Manual Sections
 
 These sections are preserved across updates and should be filled manually:
@@ -162,7 +291,7 @@ These sections are preserved across updates and should be filled manually:
 Document unusual patterns, architectural decisions, and domain-specific logic:
 
 ```markdown
-### Business Logic & Implementation Decisions
+## Business Logic & Implementation Decisions
 
 - calculate_vat() complexity is required by EU tax regulations
 - Deliberate N+1 queries in reporting endpoints due to data freshness requirements  
@@ -175,7 +304,7 @@ Document unusual patterns, architectural decisions, and domain-specific logic:
 Information about internal services, external dependencies, and domain terminology:
 
 ```markdown
-### Domain-Specific Context
+## Domain-Specific Context
 
 - Internal APIs: UserService runs on internal-api.company.com:8080
 - Message Queue: Uses company RabbitMQ cluster (connection strings in K8s ConfigMap)
@@ -188,7 +317,7 @@ Information about internal services, external dependencies, and domain terminolo
 Document exceptions, legacy requirements, and intentional "anti-patterns":
 
 ```markdown
-### Special Cases & Edge Handling
+## Special Cases & Edge Handling
 
 - LOG_LEVEL=DEBUG in production is intentional for compliance logging
 - time.sleep() in tests is necessary for rate-limiting integration tests  
@@ -273,15 +402,18 @@ The generated context file follows this structure:
 ## Review Focus Areas
 <!-- Automatically generated -->
 
+## Context7 Library Documentation
+<!-- Automatically generated when Context7 is enabled -->
+
 <!-- MANUAL SECTIONS - DO NOT MODIFY THIS LINE -->
 
-### Business Logic & Implementation Decisions
+## Business Logic & Implementation Decisions
 <!-- Manual content preserved here -->
 
-### Domain-Specific Context
+## Domain-Specific Context
 <!-- Manual content preserved here -->
 
-### Special Cases & Edge Handling
+## Special Cases & Edge Handling
 <!-- Manual content preserved here -->
 ```
 
@@ -342,6 +474,54 @@ ai-generate-context . --verbose
 ai-generate-context . --dry-run
 ```
 
+### Context7 Issues
+
+#### Missing API Key
+
+If you see warnings like:
+```
+WARNING: Context7 API key not available library=fastapi
+INFO: Context7 section skipped - no documentation available
+```
+
+**Cause**: Missing or invalid Context7 API key.
+
+**Solution**: Set your API key in the environment:
+```bash
+export CONTEXT7_API_KEY=your_api_key_here
+# or add to .env file
+echo "CONTEXT7_API_KEY=your_api_key_here" >> .env
+```
+
+#### Context7 Performance Issues
+
+If Context7 integration is slow:
+
+1. Reduce `max_tokens_per_library` (e.g., to 1000)
+2. Decrease `timeout_seconds` (e.g., to 5)
+3. Specify fewer `priority_libraries`
+4. Check your internet connection
+
+#### No Documentation Found
+
+If no Context7 documentation is fetched:
+
+1. Verify your project has recognizable dependencies
+2. Check that priority libraries are correctly spelled
+3. Try with well-known libraries (e.g., fastapi, requests)
+4. Ensure Context7 service is available
+
+#### Expected Behavior
+
+If Context7 API is not available, the integration gracefully degrades:
+
+- ✅ Context generation continues normally
+- ✅ All other sections work as expected
+- ⚠️ Warning messages appear (this is informational, not an error)
+- ❌ No Context7 documentation section is generated
+
+**This is the intended behavior** - Context7 is optional and won't break your workflow.
+
 ## Integration with AI Code Review
 
 The context generator is designed to work seamlessly with the main `ai-code-review` tool:
@@ -381,5 +561,7 @@ The context generator works with any Git repository but has enhanced support for
 - **PHP**: composer.json
 
 **Important**: Only **Git-tracked files** are analyzed. Make sure your project files are committed to Git before running the context generator.
+
+**Context7 Integration**: Works with any project type that has recognizable dependencies. Context7 automatically detects important libraries from your dependency files and fetches official documentation to enhance code reviews.
 
 For other project types, it falls back to generic file analysis and structure detection based on the tracked files.
