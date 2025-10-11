@@ -69,12 +69,16 @@
 
     <div id="app" class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        <header class="text-center mb-12">
-            <div class="inline-flex items-center space-x-4 mb-4">
-                <span class="text-6xl text-purple-400"></span> 
+        <header class="text-center mb-6"> <!-- Reduced mb-12 to mb-6 -->
+            <div class="inline-flex items-center space-x-4 mb-2"> <!-- Reduced mb-4 to mb-2 -->
                 <h1 class="text-4xl md:text-5xl font-bold text-accent">🤖 AI Code Review</h1>
             </div>
             <p class="mt-2 text-lg text-gray-400">A tool to <strong>automate and enhance</strong> code reviews using AI.</p>
+            <a href="https://gitlab.com/redhat/edge/ci-cd/ai-code-review" target="_blank" title="View Project on GitLab" class="inline-flex items-center space-x-2 text-sm text-purple-400 hover:text-purple-300 font-medium mt-3 px-3 py-1 bg-gray-800 rounded-full border border-gray-700 transition-colors">
+                <span>Project Repository (GitLab)</span>
+                <!-- Simple external link icon -->
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4m-6-4l6-6m0 0v4m0-4h-4"></path></svg>
+            </a>
         </header>
 
         <nav class="header-bg rounded-lg shadow-xl mb-8 sticky top-4 z-10">
@@ -96,6 +100,13 @@
                     <p class="mt-4 text-gray-300 leading-relaxed">
                         Our goal is to assist in the review task by providing <strong>deep analysis and rich context</strong>, making human reviews more effective and focused on critical logic. It also provides a valuable safety net for individual developers who lack regular peer review.
                     </p>
+                    <div class="mt-4 pt-4 border-t border-gray-700">
+                        <a href="https://gitlab.com/redhat/edge/ci-cd/ai-code-review/-/blob/main/docs/user-guide.md?ref_type=heads" target="_blank" class="text-sm text-purple-400 hover:text-purple-300 font-medium transition-colors inline-flex items-center space-x-1">
+                            <span>Read the Full User Documentation</span>
+                            <!-- Simple external link icon -->
+                            <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4m-6-4l6-6m0 0v4m0-4h-4"></path></svg>
+                        </a>
+                    </div>
                 </div>
 
                 <div class="feature-card p-8 rounded-lg shadow-lg">
@@ -325,22 +336,28 @@ ai-code-review --local \\
                     title: 'Automatic Context Generation',
                     content: `
                         <p>You don't need to write the context file manually. The tool includes a utility, <code>ai-generate-context</code>, which analyzes your <strong>Git repository and committed files</strong> to automatically generate a draft of the context file.</p>
-                         <h4 class="font-medium mt-6 mb-2">Demo: Context Generation</h4>
-                         <p>This command analyzes your repository and creates/updates the context file. Manual sections will be preserved.</p>
-                         <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm">
+                        <h4 class="font-medium mt-6 mb-2">Demo: Context Generation</h4>
+                        <p>This command analyzes your repository and creates/updates the context file. Manual sections will be preserved.</p>
+                        <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm">
                         <pre><code class="language-bash"># Generate context automatically and save it to the default file
 ai-generate-context . --output .ai_review/project.md</code></pre>
+                        </div>
+                        <div class="mt-4 pt-4 border-t border-gray-700">
+                            <a href="https://gitlab.com/redhat/edge/ci-cd/ai-code-review/-/blob/main/docs/context-generator.md?ref_type=heads" target="_blank" class="text-sm text-purple-400 hover:text-purple-300 font-medium transition-colors inline-flex items-center space-x-1">
+                                <span>Read the Context Generator Documentation</span>
+                                <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4m-6-4l6-6m0 0v4m0-4h-4"></path></svg>
+                            </a>
                         </div>
                     `
                 },
                 'context7': {
                     title: 'Context7 Enrichment',
                     content: `
-                        <p>This advanced feature allows the context generator to connect to the <strong>Context7 API</strong>. It fetches snippets of <strong>official documentation</strong> for the libraries and frameworks used in the project and adds them to the context file.</p>
+                        <p>This advanced feature allows the context generator to connect to the <strong>Context7 API</strong>. It fetches snippets of <strong>official library documentation</strong> for the libraries and frameworks used in the project and adds them to the context file.</p>
                         <p class="mt-2">This feature ensures the AI reviewer has access to <strong>authoritative best practices and API usage guidelines</strong>, resulting in reviews of a superior quality.</p>
                     `
                 },
-                 'skip-review': {
+                'skip-review': {
                     title: 'Smart Skip Review',
                     content: `
                         <p>To prevent noise and reduce costs, the tool automatically detects when an AI review is unnecessary and skips it. This is ideal for CI/CD environments.</p>
@@ -349,7 +366,7 @@ ai-generate-context . --output .ai_review/project.md</code></pre>
                         <ul>
                             <li><strong>Dependency updates</strong> (e.g., Dependabot commits).</li>
                             <li>PRs/MRs marked as <strong>Draft (WIP)</strong>.</li>
-                            <li>Explicit tags in the title like <code>[skip review]</code> or <code>[no review]</code>.</li>
+                            <li>Explicit tags in the title like <code>[skip review]</code>.</li>
                             <li>Changes made by <strong>known bot accounts</strong>.</li>
                         </ul>
                          <h4 class="font-medium mt-6 mb-2">Demo: Test Skip Logic</h4>
