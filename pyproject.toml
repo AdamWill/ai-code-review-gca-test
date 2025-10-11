@@ -2,6 +2,9 @@
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.wheel]
+packages = ["src/ai_code_review", "src/context_generator"]
+
 [project]
 name = "ai-code-review"
 version = "1.12.0"
