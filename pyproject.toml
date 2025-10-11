@@ -7,7 +7,7 @@ packages = ["src/ai_code_review", "src/context_generator"]
 
 [project]
 name = "ai-code-review"
-version = "1.12.0"
+version = "1.12.1"
 description = "AI-powered code review tool with local Git, remote MR/PR analysis, and CI integration"
 readme = "README.md"
 requires-python = ">=3.12"
