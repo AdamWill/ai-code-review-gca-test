@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🤖 AI Code Review</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Dark background color (gray-900) */
+            color: #E5E7EB; /* Light text color (gray-200) */
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Fira+Code&display=swap');
+        .font-fira-code {
+            font-family: 'Fira Code', monospace;
+        }
+        .nav-link.active {
+            border-bottom-color: #A855F7; /* purple-500 (Accent) */
+            color: #A855F7;
+        }
+        .nav-link {
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .feature-card {
+            background-color: #1F2937; /* Darker card background (gray-800) */
+            border-color: #374151; /* Dark border (gray-700) */
+            transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+            min-height: 150px; /* Ensure cards have some minimal height */
+        }
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(168, 85, 247, 0.2), 0 4px 6px -4px rgba(168, 85, 247, 0.1); /* Purple shadow */
+        }
+        .terminal-output::before {
+            content: '$ ';
+            color: #4ade80; /* green-400 */
+        }
+        .header-bg {
+            background-color: #1F2937; /* Darker header background */
+        }
+        .text-accent {
+            color: #A855F7; /* Purple accent */
+        }
+        .text-code-comment {
+            color: #9CA3AF; /* Gray-400 for comments */
+        }
+        .text-code-variable {
+            color: #FACC15; /* Yellow-400 for variables */
+        }
+        /* Fix for code blocks to ensure they don't hide following text */
+        .code-block-container {
+            margin-bottom: 1rem;
+        }
+        /* Ensure the code blocks themselves expand to fill available height but don't force parent to overfill */
+        .code-block-container .bg-gray-900 {
+            height: auto;
+            min-height: 200px; /* Ensure minimal visibility */
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200">
+    <!-- Chosen Palette: Earthy Tech (Adapted to Dark/Cyber Security Theme) -->
+    <!-- Application Structure Plan: I designed the application with top tab navigation (Overview, Use Cases, Advanced Features) to allow non-linear content exploration. This structure is more intuitive for a technical audience who may want to jump directly to a specific feature. Interactivity is prioritized through cards and collapsable sections to keep the interface clean. The goal is to transform a linear presentation into a self-directed discovery tool, where users interact with concepts rather than just reading them. -->
+    <!-- Visualization & Content Choices: Report Info: Use Cases -> Goal: Organize -> Presentation: Interactive tabs -> Interaction: Click to reveal content and copy code. Justification: Allows the user to focus on one use case at a time. Report Info: Advanced Features -> Goal: Organize/Inform -> Presentation: Grid of clickable cards -> Interaction: Click to show details. Justification: Presents features modularly and visually appealingly. CONFIRMED: NO SVG graphics or Mermaid JS used. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+
+    <div id="app" class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        <header class="text-center mb-12">
+            <div class="inline-flex items-center space-x-4 mb-4">
+                <span class="text-6xl text-purple-400"></span> 
+                <h1 class="text-4xl md:text-5xl font-bold text-accent">🤖 AI Code Review</h1>
+            </div>
+            <p class="mt-2 text-lg text-gray-400">A tool to <strong>automate and enhance</strong> code reviews using AI.</p>
+        </header>
+
+        <nav class="header-bg rounded-lg shadow-xl mb-8 sticky top-4 z-10">
+            <ul class="flex justify-center items-center p-2 space-x-2 sm:space-x-6">
+                <li><a href="#general" data-section="general" class="nav-link active font-medium text-gray-300 hover:text-accent px-3 py-2">Overview</a></li>
+                <li><a href="#use-cases" data-section="use-cases" class="nav-link font-medium text-gray-300 hover:text-accent px-3 py-2">Use Cases</a></li>
+                <li><a href="#features" data-section="features" class="nav-link font-medium text-gray-300 hover:text-accent px-3 py-2">Advanced Features</a></li>
+            </ul>
+        </nav>
+
+        <main>
+            <!-- Overview Section -->
+            <section id="general" class="app-section space-y-8">
+                <div class="feature-card p-8 rounded-lg shadow-lg">
+                    <h2 class="text-3xl font-bold text-accent mb-4">What is AI Code Review?</h2>
+                    <p class="text-gray-300 leading-relaxed">
+                        It is an Artificial Intelligence-powered tool designed to <strong>automate and enhance</strong> the code review process. It supports <strong>GitLab</strong> and <strong>GitHub</strong>, and offers flexibility with AI providers like <strong>Gemini</strong>, <strong>Anthropic</strong>, and <strong>local models via Ollama</strong>.
+                    </p>
+                    <p class="mt-4 text-gray-300 leading-relaxed">
+                        Our goal is to assist in the review task by providing <strong>deep analysis and rich context</strong>, making human reviews more effective and focused on critical logic. It also provides a valuable safety net for individual developers who lack regular peer review.
+                    </p>
+                </div>
+
+                <div class="feature-card p-8 rounded-lg shadow-lg">
+                    <h3 class="text-2xl font-bold text-accent mb-6">Three Primary Workflows</h3>
+                    <div class="grid md:grid-cols-3 gap-6 text-center">
+                        <!-- 1. CI Integration (First) -->
+                        <div class="p-6 border border-gray-700 rounded-lg">
+                             <span class="text-4xl">🤖</span>
+                            <h4 class="font-bold mt-2">CI Integration</h4>
+                            <p class="text-sm text-gray-400 mt-1">Automated reviews in your <strong>CI/CD pipeline</strong>.</p>
+                        </div>
+                        <!-- 2. Remote Reviews (Second) -->
+                        <div class="p-6 border border-gray-700 rounded-lg">
+                             <span class="text-4xl">🌐</span>
+                            <h4 class="font-bold mt-2">Remote Reviews</h4>
+                            <p class="text-sm text-gray-400 mt-1">Analyze existing MRs/PRs from the terminal.</p>
+                        </div>
+                        <!-- 3. Local Reviews (Third) -->
+                        <div class="p-6 border border-gray-700 rounded-lg">
+                            <span class="text-4xl">🔍</span>
+                            <h4 class="font-bold mt-2">Local Reviews</h4>
+                            <p class="text-sm text-gray-400 mt-1">Review your changes <strong>before</strong> committing.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Use Cases Section -->
+            <section id="use-cases" class="app-section hidden">
+                 <div class="feature-card p-8 rounded-lg shadow-lg">
+                    <h2 class="text-3xl font-bold text-accent mb-2">Primary Use Cases</h2>
+                    <p class="text-gray-300 mb-6">Explore the three main workflows of the tool. Click on each tab to see the details and code examples.</p>
+                    <div class="flex border-b border-gray-700">
+                        <button data-tab="ci-cd" class="use-case-tab py-2 px-4 text-accent border-b-2 border-accent font-medium">CI/CD Integration</button>
+                        <button data-tab="remote" class="use-case-tab py-2 px-4 text-gray-400 font-medium">Remote Reviews</button>
+                        <button data-tab="local" class="use-case-tab py-2 px-4 text-gray-400 font-medium">Local Review</button>
+                    </div>
+                    <div class="mt-6">
+                        <!-- CI/CD Integration Content -->
+                        <div id="ci-cd" class="use-case-content">
+                            <h3 class="text-xl font-semibold text-gray-200 mb-4">Integration into the CI/CD Pipeline</h3>
+                            <p class="mb-4 text-gray-300">This is the <strong>core use case</strong>. The tool integrates directly with <strong>GitLab</strong> and <strong>GitHub</strong> to provide automated reviews on every Merge Request or Pull Request. The key command is <code>--post</code>, which generates the review and publishes it as a comment.</p>
+                            
+                            <div class="grid md:grid-cols-2 gap-6 mt-6 code-block-container">
+                                <div>
+                                    <h4 class="font-medium mb-2 text-gray-400">Example: GitLab CI/CD (<span class="font-fira-code">.gitlab-ci.yml</span>)</h4>
+                                    <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm relative h-full">
+                                        <button class="copy-btn absolute top-2 right-2 bg-gray-700 text-xs px-2 py-1 rounded hover:bg-purple-600 transition-colors">Copy</button>
+                                        <pre><code class="language-yaml text-code-comment"># Runs only on Merge Request events
+</code>ai-code-review:
+  stage: code-review
+  image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
+  script:
+    - ai-code-review --post
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'</code></pre>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h4 class="font-medium mb-2 text-gray-400">Example: GitHub Actions (<span class="font-fira-code">ai-review.yml</span>)</h4>
+                                    <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm relative h-full">
+                                        <button class="copy-btn absolute top-2 right-2 bg-gray-700 text-xs px-2 py-1 rounded hover:bg-purple-600 transition-colors">Copy</button>
+                                        <pre><code class="language-yaml text-code-comment"># Runs in a container for easy setup
+# Requires: GITHUB_TOKEN and AI_API_KEY secrets
+</code>jobs:
+  ai-review:
+    permissions:
+      pull-requests: write # <strong>IMPORTANT</strong>
+    container:
+      image: registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest
+    steps:
+      - name: Run AI Review
+        env:
+          GITHUB_TOKEN: ${<span class="text-code-variable">secrets.GITHUB_TOKEN</span>}
+          AI_API_KEY: ${<span class="text-code-variable">secrets.GEMINI_API_KEY</span>}
+        run: ai-code-review --post</code></pre>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Adjusted margin-top to ensure visibility -->
+                            <p class="mt-6 text-sm text-gray-400">The result is a <strong>detailed comment</strong> on the MR/PR with an executive summary and the technical code analysis.</p>
+                        </div>
+
+                        <!-- Remote Reviews Content -->
+                        <div id="remote" class="use-case-content hidden">
+                            <h3 class="text-xl font-semibold text-gray-200 mb-4">Remote Reviews (Terminal Analysis)</h3>
+                            <p class="mb-4 text-gray-300">Analyze existing Merge Requests or Pull Requests directly from your terminal <strong>without posting comments</strong>. This is useful for manual verification or saving the review to a local file.</p>
+                            
+                            <h4 class="font-medium mt-6 mb-2 text-gray-400">Examples: Analyze and Post</h4>
+                             <div class="grid md:grid-cols-2 gap-6 mt-6 code-block-container">
+                                <div>
+                                    <h5 class="font-medium mb-2 text-gray-500">GitLab MR Analysis</h5>
+                                    <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm relative">
+                                        <button class="copy-btn absolute top-2 right-2 bg-gray-700 text-xs px-2 py-1 rounded hover:bg-purple-600 transition-colors">Copy</button>
+                                        <pre><code class="language-bash"># Analyze (Prints to terminal)
+ai-code-review group/project 123
+
+# Post review as a comment
+ai-code-review group/project 123 --post</code></pre>
+                                    </div>
+                                </div>
+                                <div>
+                                    <h5 class="font-medium mb-2 text-gray-500">GitHub PR Analysis</h5>
+                                    <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm relative">
+                                        <button class="copy-btn absolute top-2 right-2 bg-gray-700 text-xs px-2 py-1 rounded hover:bg-purple-600 transition-colors">Copy</button>
+                                        <pre><code class="language-bash"># Analyze (Prints to terminal)
+ai-code-review --platform github owner/repo 456
+
+# Post review as a comment
+ai-code-review --platform github owner/repo 456 --post</code></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Local Review Content -->
+                        <div id="local" class="use-case-content hidden">
+                             <h3 class="text-xl font-semibold text-gray-200 mb-4">Local Changes Review (Pre-commit)</h3>
+                             <p class="mb-4 text-gray-300">Get an <strong>instant review</strong> of your uncommitted local changes. This is an excellent way to ensure code quality <strong>before sharing</strong> it with your team.</p>
+                             <h4 class="font-medium mt-6 mb-2 text-gray-400">Example: Local Review</h4>
+                             <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm relative">
+                                 <button class="copy-btn absolute top-2 right-2 bg-gray-700 text-xs px-2 py-1 rounded hover:bg-purple-600 transition-colors">Copy</button>
+                                 <pre><code class="language-bash"># Review current changes vs main branch
+ai-code-review --local
+
+# Or against a different target branch
+ai-code-review --local --target-branch develop</code></pre>
+                             </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Advanced Features Section -->
+            <section id="features" class="app-section hidden">
+                <div class="text-center mb-8">
+                     <h2 class="text-3xl font-bold text-accent mb-2">Advanced Features</h2>
+                     <p class="text-gray-300">Discover the functionalities that make this tool more <strong>powerful and flexible</strong>. Click on each card for more details.</p>
+                </div>
+                <!-- Layout adjusted to fill space in 2 columns -->
+                <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="feature-card p-6 rounded-lg shadow-lg cursor-pointer border border-gray-700" data-feature="ollama">
+                        <h3 class="font-bold text-lg text-gray-200">Local LLM Usage</h3>
+                        <p class="text-sm text-gray-400 mt-2">Utilize local models (Ollama) for <strong>full privacy and cost savings</strong>.</p>
+                    </div>
+                    <div class="feature-card p-6 rounded-lg shadow-lg cursor-pointer border border-gray-700" data-feature="context-files">
+                        <h3 class="font-bold text-lg text-gray-200">Context Files</h3>
+                        <p class="text-sm text-gray-400 mt-2">Improve review quality by providing <strong>project architecture context</strong> to the AI.</p>
+                    </div>
+                    <div class="feature-card p-6 rounded-lg shadow-lg cursor-pointer border border-gray-700" data-feature="context-gen">
+                        <h3 class="font-bold text-lg text-gray-200">Context Generation</h3>
+                        <p class="text-sm text-gray-400 mt-2">Create context files <strong>automatically</strong> by analyzing your Git repository.</p>
+                    </div>
+                    <div class="feature-card p-6 rounded-lg shadow-lg cursor-pointer border border-gray-700" data-feature="context7">
+                        <h3 class="font-bold text-lg text-gray-200">Context7 Enrichment</h3>
+                        <p class="text-sm text-gray-400 mt-2">Add <strong>official library documentation</strong> to the context for accurate reviews.</p>
+                    </div>
+                    <div class="feature-card p-6 rounded-lg shadow-lg cursor-pointer border border-gray-700" data-feature="skip-review">
+                        <h3 class="font-bold text-lg text-gray-200">Smart Skip Review</h3>
+                        <p class="text-sm text-gray-400 mt-2">Automatically <strong>skip unnecessary reviews</strong> (dependabot, WIPs) to save costs.</p>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+    </div>
+    
+    <!-- Modal for Features -->
+    <div id="feature-modal" class="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 hidden z-50">
+        <div class="feature-card rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div class="p-6">
+                <div class="flex justify-between items-start">
+                    <h2 id="modal-title" class="text-2xl font-bold text-accent"></h2>
+                    <button id="modal-close" class="text-gray-400 hover:text-accent">&times;</button>
+                </div>
+                <div id="modal-content" class="mt-4 text-gray-300 prose prose-invert max-w-none"></div>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const sections = document.querySelectorAll('.app-section');
+            const navLinks = document.querySelectorAll('.nav-link');
+            const useCaseTabs = document.querySelectorAll('.use-case-tab');
+            const useCaseContents = document.querySelectorAll('.use-case-content');
+            const featureCards = document.querySelectorAll('.feature-card');
+            const modal = document.getElementById('feature-modal');
+            const modalClose = document.getElementById('modal-close');
+            const modalTitle = document.getElementById('modal-title');
+            const modalContent = document.getElementById('modal-content');
+            
+            // Note: Chart.js related code removed as per user request.
+
+            const copyButtons = document.querySelectorAll('.copy-btn');
+
+            const featureDetails = {
+                'ollama': {
+                    title: 'Local LLM Usage with Ollama',
+                    content: `
+                        <p>You can run code reviews using large language models (LLMs) that run on your own machine through Ollama. This offers two major advantages:</p>
+                        <ul>
+                            <li><strong>Privacy:</strong> Your code never leaves your local environment.</li>
+                            <li><strong>Cost Savings:</strong> There are no costs associated with using cloud provider APIs.</li>
+                        </ul>
+                        <h4 class="font-medium mt-6 mb-2">Demo: Review with Ollama</h4>
+                        <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm">
+                        <pre><code class="language-bash"># 1. Ensure Ollama is running:
+ollama serve
+
+# 2. Review local code using the Ollama model:
+ai-code-review --local \\
+  --ai-provider ollama \\
+  --ai-model qwen2.5-coder:7b</code></pre>
+                        </div>
+                    `
+                },
+                'context-files': {
+                    title: 'Context Files for Quality Improvement',
+                    content: `
+                        <p>For the AI to provide more relevant feedback aligned with your team's practices, you can create a file <code>.ai_review/project.md</code>. In this file, you define the <strong>architecture, tech stack, code conventions</strong>, and other important project details.</p>
+                        <p class="mt-2">The AI will use this information to offer much more specific and useful suggestions, avoiding generic recommendations. This is <strong>crucial for large or domain-specific projects</strong>.</p>
+                    `
+                },
+                'context-gen': {
+                    title: 'Automatic Context Generation',
+                    content: `
+                        <p>You don't need to write the context file manually. The tool includes a utility, <code>ai-generate-context</code>, which analyzes your <strong>Git repository and committed files</strong> to automatically generate a draft of the context file.</p>
+                         <h4 class="font-medium mt-6 mb-2">Demo: Context Generation</h4>
+                         <p>This command analyzes your repository and creates/updates the context file. Manual sections will be preserved.</p>
+                         <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm">
+                        <pre><code class="language-bash"># Generate context automatically and save it to the default file
+ai-generate-context . --output .ai_review/project.md</code></pre>
+                        </div>
+                    `
+                },
+                'context7': {
+                    title: 'Context7 Enrichment',
+                    content: `
+                        <p>This advanced feature allows the context generator to connect to the <strong>Context7 API</strong>. It fetches snippets of <strong>official documentation</strong> for the libraries and frameworks used in the project and adds them to the context file.</p>
+                        <p class="mt-2">This feature ensures the AI reviewer has access to <strong>authoritative best practices and API usage guidelines</strong>, resulting in reviews of a superior quality.</p>
+                    `
+                },
+                 'skip-review': {
+                    title: 'Smart Skip Review',
+                    content: `
+                        <p>To prevent noise and reduce costs, the tool automatically detects when an AI review is unnecessary and skips it. This is ideal for CI/CD environments.</p>
+                        <p>The system uses multiple criteria, including regex patterns, known bot authors, and file analysis, saving <strong>API costs and CI/CD time</strong>.</p>
+                        <p><strong>Skip Criteria:</strong></p>
+                        <ul>
+                            <li><strong>Dependency updates</strong> (e.g., Dependabot commits).</li>
+                            <li>PRs/MRs marked as <strong>Draft (WIP)</strong>.</li>
+                            <li>Explicit tags in the title like <code>[skip review]</code> or <code>[no review]</code>.</li>
+                            <li>Changes made by <strong>known bot accounts</strong>.</li>
+                        </ul>
+                         <h4 class="font-medium mt-6 mb-2">Demo: Test Skip Logic</h4>
+                         <p>Use <code>--test-skip-only</code> to verify if a review would be skipped without incurring any API costs.</p>
+                         <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm">
+                        <pre><code class="language-bash"># This command checks if the review would be skipped
+ai-code-review --test-skip-only group/project 123</code></pre>
+                        </div>
+                    `
+                }
+            };
+
+            function showSection(sectionId) {
+                sections.forEach(section => {
+                    if (section.id === sectionId) {
+                        section.classList.remove('hidden');
+                    } else {
+                        section.classList.add('hidden');
+                    }
+                });
+
+                navLinks.forEach(link => {
+                    if (link.dataset.section === sectionId) {
+                        link.classList.add('active');
+                    } else {
+                        link.classList.remove('active');
+                    }
+                });
+            }
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const sectionId = e.target.dataset.section;
+                    showSection(sectionId);
+                });
+            });
+
+            useCaseTabs.forEach(tab => {
+                tab.addEventListener('click', (e) => {
+                    const tabId = e.target.dataset.tab;
+                    useCaseTabs.forEach(t => {
+                        t.classList.remove('text-accent', 'border-accent');
+                        t.classList.add('text-gray-400');
+                    });
+                    e.target.classList.add('text-accent', 'border-accent');
+                    e.target.classList.remove('text-gray-400');
+
+                    useCaseContents.forEach(content => {
+                        if(content.id === tabId) {
+                            content.classList.remove('hidden');
+                        } else {
+                            content.classList.add('hidden');
+                        }
+                    });
+                });
+            });
+            
+            featureCards.forEach(card => {
+                card.addEventListener('click', () => {
+                    const featureId = card.dataset.feature;
+                    const details = featureDetails[featureId];
+                    if (details) {
+                        modalTitle.textContent = details.title;
+                        modalContent.innerHTML = details.content;
+                        modal.classList.remove('hidden');
+                    }
+                });
+            });
+            
+            modalClose.addEventListener('click', () => modal.classList.add('hidden'));
+            modal.addEventListener('click', (e) => {
+                if(e.target === modal) modal.classList.add('hidden');
+            });
+            
+            copyButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const pre = button.parentElement.querySelector('pre');
+                    if (pre) {
+                        // For the GitHub example, strip the HTML/Tailwind styling used for variable names
+                        let textToCopy = pre.innerText;
+                        textToCopy = textToCopy.replace(/\$\{\s*<span[^>]*>(.*?)<\/span>\}/g, (match, p1) => `\${${p1}}`);
+                        
+                        navigator.clipboard.writeText(textToCopy)
+                            .then(() => {
+                                button.textContent = 'Copied!';
+                                setTimeout(() => {
+                                    button.textContent = 'Copy';
+                                }, 2000);
+                            })
+                            .catch(err => console.error('Error copying: ', err));
+                    }
+                });
+            });
+            
+            const initialSection = 'general';
+            showSection(initialSection);
+
+            // Chart.js was removed. The initialization code is no longer needed.
+        });
+    </script>
+</body>
+</html>
