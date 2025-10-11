@@ -11,7 +11,6 @@ from pydantic import (
     AliasChoices,
     BaseModel,
     Field,
-    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -65,6 +64,9 @@ CLOUD_PROVIDERS = {
     AIProvider.OPENAI,
     AIProvider.ANTHROPIC,
 }
+
+# Default AI provider
+DEFAULT_AI_PROVIDER = AIProvider.GEMINI
 
 
 class SkipReviewConfig(BaseModel):
@@ -234,7 +236,7 @@ class Config(BaseSettings):
 
     # AI provider configuration
     ai_provider: AIProvider = Field(
-        default=AIProvider.GEMINI, description="AI provider to use"
+        default=DEFAULT_AI_PROVIDER, description="AI provider to use"
     )
     ai_model: str = Field(default="gemini-2.5-pro", description="AI model name")
     ai_api_key: str | None = Field(
@@ -522,30 +524,6 @@ class Config(BaseSettings):
 
         return v
 
-    @field_validator("ai_api_key")
-    @classmethod
-    def validate_api_key(cls, v: str | None, info: ValidationInfo) -> str | None:
-        """Validate that API key is provided for cloud providers."""
-        # Get the provider from validation context
-        if info.data and "ai_provider" in info.data:
-            provider = info.data["ai_provider"]
-
-            if provider in CLOUD_PROVIDERS:
-                if not v or (isinstance(v, str) and not v.strip()):
-                    provider_urls = {
-                        AIProvider.GEMINI: "https://makersuite.google.com/app/apikey",
-                        AIProvider.OPENAI: "https://platform.openai.com/api-keys",
-                        AIProvider.ANTHROPIC: "https://console.anthropic.com/",
-                    }
-                    url = provider_urls.get(provider, "provider website")
-                    raise ValueError(
-                        f"API key is required for cloud provider '{provider.value}'. "
-                        f"Get one at: {url} "
-                        f"Set it as AI_API_KEY environment variable or in .env file."
-                    )
-
-        return v
-
     @model_validator(mode="before")
     @classmethod
     def validate_required_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
@@ -621,6 +599,39 @@ class Config(BaseSettings):
                         "with scopes: repo, read:org. "
                         "Set it as GITHUB_TOKEN environment variable or in .env file."
                     )
+
+            # Validate AI provider API key requirements (skip in dry run mode)
+            ai_provider_value = data.get("ai_provider")
+            # Coerce string to enum for comparison, or use default if not provided
+            try:
+                ai_provider = (
+                    AIProvider(ai_provider_value)
+                    if ai_provider_value
+                    else DEFAULT_AI_PROVIDER
+                )
+            except ValueError:
+                # Let Pydantic handle the invalid enum value later
+                ai_provider = None
+
+            if ai_provider and ai_provider in CLOUD_PROVIDERS:
+                # Skip API key validation in dry run mode
+                dry_run = data.get("dry_run", False)
+                if not dry_run:
+                    ai_api_key = data.get("ai_api_key")
+                    if not ai_api_key or (
+                        isinstance(ai_api_key, str) and not ai_api_key.strip()
+                    ):
+                        provider_urls = {
+                            AIProvider.GEMINI: "https://makersuite.google.com/app/apikey",
+                            AIProvider.OPENAI: "https://platform.openai.com/api-keys",
+                            AIProvider.ANTHROPIC: "https://console.anthropic.com/",
+                        }
+                        url = provider_urls.get(ai_provider, "provider website")
+                        raise ValueError(
+                            f"API key is required for cloud provider '{ai_provider.value}'. "
+                            f"Get one at: {url} "
+                            f"Set it as AI_API_KEY environment variable or in .env file."
+                        )
 
         return data
 
