@@ -6,9 +6,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import yaml
+import structlog
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
+
+logger = structlog.get_logger(__name__)
 
 
 class ContextResult(BaseModel):
@@ -67,54 +69,6 @@ class Context7Config(BaseSettings):
         default=10, description="Timeout for Context7 API calls in seconds", ge=1, le=60
     )
 
-    model_config = {
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-        "case_sensitive": False,
-        "env_prefix": "",  # No prefix to read CONTEXT7_API_KEY directly
-        "extra": "ignore",  # Ignore unknown environment variables
-    }
-
-    @classmethod
-    def from_yaml_file(cls, config_path: Path | None = None) -> Context7Config:
-        """Load Context7 configuration from YAML file.
-
-        Args:
-            config_path: Path to config file. If None, auto-detects .ai_review/config.yml
-
-        Returns:
-            Context7Config instance with loaded settings
-        """
-        # Auto-detect config file if not specified
-        if config_path is None:
-            config_path = Path(".ai_review/config.yml")
-            if not config_path.exists():
-                # Return default config (BaseSettings will load from environment automatically)
-                return cls()
-
-        # Load YAML file
-        try:
-            with open(config_path, encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
-
-            # Extract context7 section
-            context7_data = data.get("context7", {})
-
-            # Create config with extracted data (BaseSettings will merge with environment)
-            return cls(**context7_data)
-
-        except (OSError, yaml.YAMLError) as e:
-            # Return default config on any error
-            import structlog
-
-            logger = structlog.get_logger(__name__)
-            logger.warning(
-                "Failed to load Context7 config from YAML",
-                error=str(e),
-                path=config_path,
-            )
-            return cls()
-
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Context7Config:
         """Create Context7Config from dictionary data.
@@ -126,3 +80,33 @@ class Context7Config(BaseSettings):
             Context7Config instance
         """
         return cls(**data)
+
+
+class CIDocsConfig(BaseSettings):
+    """Configuration for CI documentation provider.
+
+    By default, CI documentation fetching is disabled to reduce token consumption.
+    Enable it only for projects that heavily rely on CI/CD configuration.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Enable CI documentation fetching (disabled by default)",
+    )
+    timeout_seconds: int = Field(default=30, description="Timeout for HTTP requests")
+    max_content_length: int = Field(
+        default=200000,
+        description="Maximum content length to fetch per document (truncates if exceeded)",
+    )
+    prompt_content_preview_length: int = Field(
+        default=8000,
+        description="Maximum content length to include in LLM prompt for analysis",
+    )
+
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False,
+        "env_prefix": "",  # No prefix to read CONTEXT7_API_KEY directly
+        "extra": "ignore",  # Ignore unknown environment variables
+    }

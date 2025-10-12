@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import sys
 from pathlib import Path
+from typing import Any
 
 import click
 import structlog
+from dotenv import load_dotenv
 
 from ai_code_review.models.config import Config
 from context_generator.core.context_builder import ContextBuilder
-from context_generator.models import Context7Config
+from context_generator.models import CIDocsConfig, Context7Config
+from context_generator.utils.helpers import load_feature_config
 
 # Setup logging
 structlog.configure(
@@ -62,7 +65,7 @@ logger = structlog.get_logger(__name__)
     "--section",
     multiple=True,
     type=click.Choice(
-        ["overview", "tech_stack", "structure", "review_focus", "context7"]
+        ["overview", "tech_stack", "structure", "review_focus", "context7", "ci_docs"]
     ),
     help="Update only specific sections (can be used multiple times)",
 )
@@ -81,6 +84,12 @@ logger = structlog.get_logger(__name__)
     default=2000,
     help="Maximum tokens per library for Context7 documentation (default: 2000)",
 )
+@click.option(
+    "--enable-ci-docs/--disable-ci-docs",
+    is_flag=True,
+    default=False,
+    help="Enable fetching official CI/CD documentation (default: False, recommended only for CI-heavy projects)",
+)
 def generate_context(
     project_path: str,
     output: str,
@@ -94,6 +103,7 @@ def generate_context(
     enable_context7: bool,
     context7_libraries: str | None,
     context7_max_tokens: int,
+    enable_ci_docs: bool,
 ) -> None:
     """Generate intelligent project context using LLM analysis.
 
@@ -117,6 +127,7 @@ def generate_context(
         --section structure         Update only code structure
         --section review_focus      Update only review focus areas
         --section context7          Update only Context7 library documentation
+        --section ci_docs           Update only CI/CD documentation
         Multiple sections: --section overview --section tech_stack
 
     \b
@@ -187,22 +198,24 @@ def generate_context(
         cli_args["ollama_url"] = ollama_url  # Maps to ollama_base_url in Config
 
     try:
+        # Load .env file explicitly to ensure environment variables are available
+        load_dotenv()
+
         # Use same config creation as main CLI - automatically loads .env
         config = Config.from_cli_args(cli_args)
 
-        # Create Context7 configuration
-        # First load from YAML file, then override with CLI options
-        context7_config = Context7Config.from_yaml_file()
+        # Load configuration from YAML file using the same logic as main CLI
+        yaml_config = Config._load_config_file_if_enabled({})
 
-        # Override with CLI options if provided
+        # Create Context7 configuration using helper function
+        context7_cli_overrides: dict[str, Any] = {}
         if enable_context7:
-            context7_config.enabled = True
-
+            context7_cli_overrides["enabled"] = True
         if context7_libraries:
             priority_libraries = [
                 lib.strip() for lib in context7_libraries.split(",") if lib.strip()
             ]
-            context7_config.priority_libraries = priority_libraries
+            context7_cli_overrides["priority_libraries"] = priority_libraries
 
         # Check if user explicitly provided context7_max_tokens value
         ctx = click.get_current_context()
@@ -210,10 +223,25 @@ def generate_context(
             click.core.ParameterSource.DEFAULT,
             click.core.ParameterSource.DEFAULT_MAP,
         ):
-            context7_config.max_tokens_per_library = context7_max_tokens
+            context7_cli_overrides["max_tokens_per_library"] = context7_max_tokens
+
+        context7_config: Context7Config = load_feature_config(
+            Context7Config, yaml_config, "context7", context7_cli_overrides
+        )
+
+        # Create CI docs configuration using helper function
+        ci_docs_cli_overrides: dict[str, Any] = {}
+        if enable_ci_docs:
+            ci_docs_cli_overrides["enabled"] = True
+
+        ci_docs_config: CIDocsConfig = load_feature_config(
+            CIDocsConfig, yaml_config, "ci_docs", ci_docs_cli_overrides
+        )
 
         asyncio.run(
-            _run_generation(project_path, output, config, section, context7_config)
+            _run_generation(
+                project_path, output, config, section, context7_config, ci_docs_config
+            )
         )
     except KeyboardInterrupt:
         click.echo("\n❌ Generation cancelled by user", err=True)
@@ -233,6 +261,7 @@ async def _run_generation(
     config: Config,
     section: tuple[str, ...] = (),
     context7_config: Context7Config | None = None,
+    ci_docs_config: CIDocsConfig | None = None,
 ) -> None:
     """Run the context generation process."""
     project_path_obj = Path(project_path).resolve()
@@ -252,8 +281,17 @@ async def _run_generation(
     if context7_config is None:
         context7_config = Context7Config()
 
+    # Use provided CI docs configuration or create default
+    if ci_docs_config is None:
+        ci_docs_config = CIDocsConfig()
+
     # Generate context using new architecture
-    builder = ContextBuilder(project_path_obj, config, context7_config=context7_config)
+    builder = ContextBuilder(
+        project_path_obj,
+        config,
+        context7_config=context7_config,
+        ci_docs_config=ci_docs_config,
+    )
 
     try:
         # Convert section names to template keys if sections are specified
@@ -263,6 +301,7 @@ async def _run_generation(
             "structure": "code_structure",
             "review_focus": "review_focus",
             "context7": "context7_analysis",
+            "ci_docs": "ci_docs_analysis",
         }
 
         target_sections = None

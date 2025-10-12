@@ -12,7 +12,7 @@ from ai_code_review.models.config import Config
 from context_generator.core.code_extractor import CodeSampleExtractor
 from context_generator.core.facts_extractor import ProjectFactsExtractor
 from context_generator.core.llm_analyzer import SpecializedLLMAnalyzer
-from context_generator.models import Context7Config, ContextResult
+from context_generator.models import CIDocsConfig, Context7Config, ContextResult
 from context_generator.sections import (
     BaseSection,
     Context7Section,
@@ -22,6 +22,7 @@ from context_generator.sections import (
     StructureSection,
     TechStackSection,
 )
+from context_generator.sections.ci_docs_section import CIDocsSection
 from context_generator.templates.template_engine import TemplateEngine
 
 logger = structlog.get_logger(__name__)
@@ -36,11 +37,13 @@ class ContextBuilder:
         config: Config,
         skip_git_validation: bool = False,
         context7_config: Context7Config | None = None,
+        ci_docs_config: CIDocsConfig | None = None,
     ) -> None:
         """Initialize context builder."""
         self.project_path = project_path
         self.config = config
         self.context7_config = context7_config or Context7Config()
+        self.ci_docs_config = ci_docs_config or CIDocsConfig()
 
         # skip_git_validation should only be True when explicitly passed (for testing)
 
@@ -71,6 +74,11 @@ class ContextBuilder:
         # Section 5: Context7 (optional - external library documentation)
         self.section_registry.register(
             Context7Section(self.llm_analyzer, self.context7_config)
+        )
+
+        # Section 6: CI Docs (optional - official CI/CD documentation)
+        self.section_registry.register(
+            CIDocsSection(self.llm_analyzer, self.ci_docs_config)
         )
 
         logger.info(

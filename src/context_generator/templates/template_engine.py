@@ -98,6 +98,9 @@ class TemplateEngine:
             "{{context7_analysis}}": section_content.get(
                 "context7_analysis", "*Library documentation not available*"
             ),
+            "{{ci_docs_analysis}}": section_content.get(
+                "ci_docs_analysis", "*CI/CD documentation not available*"
+            ),
         }
 
         for placeholder, content in placeholder_mapping.items():
@@ -161,6 +164,15 @@ class TemplateEngine:
                 ["## Code Review Focus Areas", section_content["review_focus"], ""]
             )
 
+        if "ci_docs_analysis" in section_content:
+            context_parts.extend(
+                [
+                    "## CI/CD Configuration Guide",
+                    section_content["ci_docs_analysis"],
+                    "",
+                ]
+            )
+
         return "\n".join(context_parts)
 
     def _extract_existing_sections(self, file_path: Path) -> dict[str, str]:
@@ -184,6 +196,7 @@ class TemplateEngine:
                 "tech_stack": r"## Technology Stack\n(.*?)(?=\n## |\n---|\Z)",
                 "code_structure": r"## Architecture & Code Organization\n(.*?)(?=\n## |\n---|\Z)",
                 "review_focus": r"## Code Review Focus Areas\n(.*?)(?=\n## |\n---|\Z)",
+                "ci_docs_analysis": r"## CI/CD Configuration Guide\n(.*?)(?=\n## |\n---|\Z)",
             }
 
             import re

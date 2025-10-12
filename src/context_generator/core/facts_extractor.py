@@ -611,8 +611,6 @@ class ProjectFactsExtractor:
             indicators["ci_cd"].append("gitlab-ci")
         if any(path.startswith(".github/workflows/") for path in git_file_paths):
             indicators["ci_cd"].append("github-actions")
-        if ".travis.yml" in git_file_names:
-            indicators["ci_cd"].append("travis-ci")
         if ".pre-commit-config.yaml" in git_file_names:
             indicators["quality_tools"].append("pre-commit")
 

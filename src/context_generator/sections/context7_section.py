@@ -7,10 +7,14 @@ from typing import Any
 
 import structlog
 
-from context_generator.constants import CONTEXT7_IMPORTANT_LIBRARIES
+from context_generator.constants import (
+    CI_SYSTEM_CONTEXT7_LIBRARIES,
+    CONTEXT7_IMPORTANT_LIBRARIES,
+)
 from context_generator.models import Context7Config
 from context_generator.providers.context7_provider import Context7Provider
 from context_generator.sections.base_section import BaseSection
+from context_generator.utils.helpers import extract_ci_system
 
 logger = structlog.get_logger(__name__)
 
@@ -50,16 +54,24 @@ class Context7Section(BaseSection):
             logger.debug("Context7 disabled, skipping section")
             return ""
 
+        # Extract CI system first
+        ci_system = extract_ci_system(facts)
+        ci_library = None
+        if ci_system and ci_system in CI_SYSTEM_CONTEXT7_LIBRARIES:
+            ci_library = CI_SYSTEM_CONTEXT7_LIBRARIES[ci_system]
+
         # Extract dependencies and detected languages from facts
         dependencies = self._extract_dependencies(facts)
-        if not dependencies:
-            logger.debug("No dependencies found, skipping Context7 section")
-            return ""
-
         detected_languages = self._extract_project_languages(facts)
 
         # Determine which libraries to fetch documentation for
         target_libraries = self._select_target_libraries(dependencies)
+
+        # Insert CI library at position 0 if detected (highest priority)
+        if ci_library:
+            target_libraries.insert(0, ci_library)
+            logger.info("Added CI library to target libraries", ci_library=ci_library)
+
         if not target_libraries:
             logger.debug("No target libraries selected, skipping Context7 section")
             return ""
@@ -77,7 +89,9 @@ class Context7Section(BaseSection):
             return ""
 
         # Generate LLM analysis with the documentation
-        prompt = self._create_context7_prompt(facts, library_docs)
+        prompt = self._create_context7_prompt(
+            facts, library_docs, ci_library is not None
+        )
         result = await self.llm_analyzer.call_llm(prompt, self.get_template_key())
 
         logger.info("Context7 LLM analysis completed", result_length=len(str(result)))
@@ -391,7 +405,10 @@ class Context7Section(BaseSection):
             return None
 
     def _create_context7_prompt(
-        self, facts: dict[str, Any], library_docs: dict[str, str]
+        self,
+        facts: dict[str, Any],
+        library_docs: dict[str, str],
+        has_ci_library: bool = False,
     ) -> str:
         """Create prompt for LLM analysis with Context7 documentation.
 
@@ -431,7 +448,35 @@ class Context7Section(BaseSection):
 - Performance optimization recommendations from the docs
 - Security considerations mentioned in the documentation
 - Compatibility and version considerations
-- Testing approaches recommended by the library maintainers
+- Testing approaches recommended by the library maintainers"""
+
+        # Add CI-specific focus areas if CI library is included
+        if has_ci_library:
+            prompt += """
+
+            **CRITICAL: This project uses CI/CD - Extract ALL YAML Configuration Information**
+
+            The documentation contains extensive YAML configuration examples for .gitlab-ci.yml files. You MUST extract and explain ALL of these examples:
+
+            **MANDATORY EXTRACTION REQUIREMENTS:**
+            1. **Variables**: Extract ALL examples of `variables:` blocks, `$VARIABLE_NAME` usage, and variable precedence
+            2. **Rules**: Extract ALL examples of `rules:`, `if:`, `when:` conditions and conditional logic
+            3. **Stages**: Extract ALL examples of `stages:`, `stage:` keywords and job stage definitions
+            4. **Jobs**: Extract ALL examples of job definitions, `script:`, `before_script:`, `after_script:`
+            5. **Artifacts**: Extract ALL examples of `artifacts:`, `dependencies:`, `needs:` keywords
+            6. **Complete Examples**: Show ALL full YAML configuration examples from the documentation
+
+            **Output Format**: Include a comprehensive "CI/CD Configuration Guide" section with:
+            - **Variables Section**: All variable definitions, usage patterns, and precedence rules
+            - **Rules Section**: All conditional logic examples, if/when conditions, and complex rules
+            - **Stages Section**: All stage definitions and job stage assignments
+            - **Complete Examples**: All full YAML configuration examples from the documentation
+
+            **CRITICAL**: The documentation contains MANY YAML examples with variables, rules, stages, and complete configurations. Extract ALL of them, not just basic examples.
+
+Provide actionable insights that will help during code review to ensure the project follows documented best practices for these libraries."""
+        else:
+            prompt += """
 
 Provide actionable insights that will help during code review to ensure the project follows documented best practices for these libraries."""
 

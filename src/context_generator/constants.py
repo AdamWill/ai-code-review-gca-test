@@ -186,7 +186,6 @@ IMPORTANT_ROOT_FILES = {
     ".github/workflows/*.yml",
     ".github/workflows/*.yaml",
     "Jenkinsfile",
-    ".travis.yml",
     "appveyor.yml",
     "azure-pipelines.yml",
     ".circleci/config.yml",
@@ -477,3 +476,9 @@ CONTEXT7_IMPORTANT_LIBRARIES = {
 
 # Default maximum number of libraries to fetch documentation for
 CONTEXT7_DEFAULT_MAX_LIBRARIES = 3
+
+# CI/CD system Context7 library names
+CI_SYSTEM_CONTEXT7_LIBRARIES = {
+    "gitlab-ci": "/websites/docs_gitlab_com",
+    "github-actions": "/github/docs",
+}

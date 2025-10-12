@@ -1187,3 +1187,114 @@ class TestStructureSection(GitTestMixin):
 
                 assert isinstance(lines_max, list)
                 assert isinstance(lines_beyond, list)
+
+    # ===== Extended Coverage Tests =====
+
+    def test_get_src_structure_no_src_dir(self) -> None:
+        """Test _get_src_structure when src/ doesn't exist."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            analyzer = MagicMock()
+            section = StructureSection(analyzer)
+            section.project_path = Path(tmp_dir)
+            result = section._get_src_structure(is_parent_last=False)
+            assert result == []
+
+    def test_get_src_structure_git_error(self) -> None:
+        """Test _get_src_structure with Git error."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+            src_dir = project_path / "src"
+            src_dir.mkdir()
+
+            analyzer = MagicMock()
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            # Mock _get_git_files_in_dir to raise ValueError
+            section._get_git_files_in_dir = MagicMock(
+                side_effect=ValueError("Git error")
+            )
+            result = section._get_src_structure(is_parent_last=False)
+            assert result == []
+
+    def test_get_key_items_in_dir_no_dir(self) -> None:
+        """Test _get_key_items_in_dir when directory doesn't exist."""
+        analyzer = MagicMock()
+        section = StructureSection(analyzer)
+        non_existent = Path("/non/existent/path")
+        result = section._get_key_items_in_dir(non_existent)
+        assert result == []
+
+    def test_get_key_items_in_dir_git_error(self) -> None:
+        """Test _get_key_items_in_dir with Git error."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dir_path = Path(tmp_dir)
+
+            analyzer = MagicMock()
+            section = StructureSection(analyzer)
+
+            # Mock _get_git_files_in_dir to raise error
+            section._get_git_files_in_dir = MagicMock(
+                side_effect=ValueError("Git error")
+            )
+
+            result = section._get_key_items_in_dir(dir_path)
+            assert result == []
+
+    def test_get_files_in_subdir_no_dir(self) -> None:
+        """Test _get_files_in_subdir when directory doesn't exist."""
+        analyzer = MagicMock()
+        section = StructureSection(analyzer)
+        non_existent = Path("/non/existent/path")
+        result = section._get_files_in_subdir(non_existent)
+        assert result == []
+
+    def test_get_files_in_subdir_git_error(self) -> None:
+        """Test _get_files_in_subdir with Git error."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            subdir = Path(tmp_dir)
+
+            analyzer = MagicMock()
+            section = StructureSection(analyzer)
+
+            # Mock _get_git_files_in_dir to raise error
+            section._get_git_files_in_dir = MagicMock(
+                side_effect=AttributeError("Git error")
+            )
+
+            result = section._get_files_in_subdir(subdir)
+            assert result == []
+
+    def test_get_files_in_subdir_with_files(self) -> None:
+        """Test _get_files_in_subdir with Python files."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            subdir = Path(tmp_dir)
+
+            # Create Python files
+            (subdir / "file1.py").write_text("def func1(): pass")
+            (subdir / "file2.py").write_text("def func2(): pass")
+            (subdir / "__init__.py").write_text("")  # Should be excluded
+
+            analyzer = MagicMock()
+            section = StructureSection(analyzer)
+
+            # Mock Git method
+            section._get_git_files_in_dir = MagicMock(
+                return_value=(
+                    [
+                        subdir / "file1.py",
+                        subdir / "file2.py",
+                        subdir / "__init__.py",
+                    ],
+                    [],
+                )
+            )
+
+            result = section._get_files_in_subdir(subdir)
+
+            # Should have marked files with indentation prefix
+            assert len(result) == 2  # __init__.py should be excluded
+            assert all(item.startswith("│   ") for item in result)
+            assert any("file1.py" in item for item in result)
+            assert any("file2.py" in item for item in result)
+            assert not any("__init__.py" in item for item in result)

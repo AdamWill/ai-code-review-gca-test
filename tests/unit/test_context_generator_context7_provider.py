@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import inspect
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -451,4 +451,269 @@ class TestContext7Provider:
         search_data = {"results": []}
 
         result = provider._extract_best_library_id(search_data, "fastapi")
+        assert result is None
+
+    # ===== Extended Coverage Tests =====
+
+    @pytest.mark.asyncio
+    async def test_resolve_library_id_success_with_library_found(self) -> None:
+        """Test successful resolve_library_id with library found."""
+        provider = Context7Provider(api_key="test_key")
+
+        mock_response_data = {
+            "results": [
+                {
+                    "id": "/fastapi/fastapi",
+                    "title": "FastAPI",
+                    "description": "Modern web framework",
+                    "trust_score": 10,
+                }
+            ]
+        }
+
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = MagicMock()
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value=mock_response_data)
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session.get = MagicMock(return_value=mock_response)
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session_class.return_value = mock_session
+
+            result = await provider.resolve_library_id("fastapi")
+            assert result == "/fastapi/fastapi"
+
+    @pytest.mark.asyncio
+    async def test_resolve_library_id_success_with_library_not_found(self) -> None:
+        """Test resolve_library_id when library is not found."""
+        provider = Context7Provider(api_key="test_key")
+
+        mock_response_data = {"results": []}
+
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = MagicMock()
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.json = AsyncMock(return_value=mock_response_data)
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session.get = MagicMock(return_value=mock_response)
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session_class.return_value = mock_session
+
+            result = await provider.resolve_library_id("nonexistent")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_library_id_http_error_with_logging(self) -> None:
+        """Test resolve_library_id with HTTP error."""
+        provider = Context7Provider(api_key="test_key")
+
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = MagicMock()
+            mock_response = MagicMock()
+            mock_response.status = 404
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session.get = MagicMock(return_value=mock_response)
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session_class.return_value = mock_session
+
+            result = await provider.resolve_library_id("nonexistent")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_resolve_library_id_timeout_with_logging(self) -> None:
+        """Test resolve_library_id with timeout."""
+        provider = Context7Provider(api_key="test_key")
+
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = MagicMock()
+            mock_session.get.side_effect = TimeoutError("Timeout!")
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session_class.return_value = mock_session
+
+            result = await provider.resolve_library_id("fastapi")
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_library_docs_success_with_topic_extended(self) -> None:
+        """Test get_library_docs success with topic."""
+        provider = Context7Provider(api_key="test_key")
+
+        mock_content = "FastAPI routing documentation"
+
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = MagicMock()
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.text = AsyncMock(return_value=mock_content)
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session.get = MagicMock(return_value=mock_response)
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session_class.return_value = mock_session
+
+            result = await provider.get_library_docs(
+                "/fastapi/fastapi", topic="routing", max_tokens=5000
+            )
+            assert result == mock_content
+
+    @pytest.mark.asyncio
+    async def test_get_library_docs_success_without_topic_extended(self) -> None:
+        """Test get_library_docs success without topic."""
+        provider = Context7Provider(api_key="test_key")
+
+        mock_content = "FastAPI documentation"
+
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = MagicMock()
+            mock_response = MagicMock()
+            mock_response.status = 200
+            mock_response.text = AsyncMock(return_value=mock_content)
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session.get = MagicMock(return_value=mock_response)
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session_class.return_value = mock_session
+
+            result = await provider.get_library_docs("/fastapi/fastapi")
+            assert result == mock_content
+
+    @pytest.mark.asyncio
+    async def test_get_library_docs_http_error_with_logging(self) -> None:
+        """Test get_library_docs with HTTP error."""
+        provider = Context7Provider(api_key="test_key")
+
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = MagicMock()
+            mock_response = MagicMock()
+            mock_response.status = 500
+            mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+            mock_response.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session.get = MagicMock(return_value=mock_response)
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session_class.return_value = mock_session
+
+            result = await provider.get_library_docs("/fastapi/fastapi")
+            assert result is None
+
+    def test_extract_best_library_id_description_match(self) -> None:
+        """Test _extract_best_library_id with description match."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {
+                    "id": "/some/other",
+                    "title": "Other Library",
+                    "description": "Some other description",
+                },
+                {
+                    "id": "/fastapi/fastapi",
+                    "title": "Web Framework",
+                    "description": "FastAPI is a modern web framework",
+                    "trust_score": 9,
+                },
+            ]
+        }
+
+        result = provider._extract_best_library_id(search_data, "fastapi")
+        assert result == "/fastapi/fastapi"
+
+    def test_extract_best_library_id_no_match_fallback(self) -> None:
+        """Test _extract_best_library_id with no match returns first result."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {"id": "/some/lib", "title": "Some Library"},
+                {"id": "/other/lib", "title": "Other Library"},
+            ]
+        }
+
+        # When no title or description matches, should return first result
+        result = provider._extract_best_library_id(search_data, "nonexistent")
+        assert result == "/some/lib"
+
+    @pytest.mark.asyncio
+    async def test_get_library_docs_timeout_with_detailed_logging(self) -> None:
+        """Test get_library_docs with timeout and detailed logging."""
+        provider = Context7Provider(api_key="test_key")
+
+        with patch("aiohttp.ClientSession") as mock_session_class:
+            mock_session = MagicMock()
+            # Raise TimeoutError during session.get
+            mock_session.get.side_effect = TimeoutError("Request timeout")
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+
+            mock_session_class.return_value = mock_session
+
+            result = await provider.get_library_docs("/fastapi/fastapi")
+            assert result is None
+
+    def test_extract_best_library_id_none_id_skipped(self) -> None:
+        """Test _extract_best_library_id skips results with None id."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {"id": None, "title": "Bad Entry"},
+                {"id": "/good/lib", "title": "Good Library"},
+            ]
+        }
+
+        result = provider._extract_best_library_id(search_data, "good")
+        assert result == "/good/lib"
+
+    def test_extract_best_library_id_non_string_id_skipped(self) -> None:
+        """Test _extract_best_library_id skips results with non-string id."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {"id": 12345, "title": "Bad Entry"},  # Integer ID
+                {"id": "/good/lib", "title": "Good Library"},
+            ]
+        }
+
+        result = provider._extract_best_library_id(search_data, "good")
+        assert result == "/good/lib"
+
+    def test_extract_best_library_id_no_valid_results(self) -> None:
+        """Test _extract_best_library_id when no valid results exist."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {"id": None, "title": "Bad Entry 1"},
+                {"id": 123, "title": "Bad Entry 2"},
+                {"title": "No ID Entry"},
+            ]
+        }
+
+        result = provider._extract_best_library_id(search_data, "nonexistent")
         assert result is None

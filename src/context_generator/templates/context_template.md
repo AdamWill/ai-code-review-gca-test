@@ -20,6 +20,10 @@
 
 {{context7_analysis}}
 
+## CI/CD Configuration Guide
+
+{{ci_docs_analysis}}
+
 ---
 <!-- MANUAL SECTIONS - DO NOT MODIFY THIS LINE -->
 <!-- The sections below will be preserved during updates -->

@@ -73,7 +73,8 @@ Generate EXACTLY this format:
 - **Testing:** [Test framework and coverage requirements]
 - **Code Quality:** [Linters, formatters, type checkers with specific tools]
 - **Build/Package:** [Build system and package manager]
-- **CI/CD:** [Pipeline and automation details if detected]
+- **CI/CD:** [Platform name from CI/CD list] - [Key configuration patterns]
+  (REQUIRED if ci_cd list is not empty, otherwise write "None detected")
 
 Requirements:
 - Include ACTUAL version constraints from dependencies (>=, ==, etc.)

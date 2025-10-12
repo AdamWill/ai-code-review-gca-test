@@ -14,6 +14,7 @@ The AI Context Generator is a powerful tool that automatically analyzes your pro
   - [Partial Updates](#partial-updates)
   - [Advanced Options](#advanced-options)
   - [Context7 Integration](#context7-integration)
+  - [CI/CD Documentation Integration](#cicd-documentation-integration)
 - [Generated Sections](#generated-sections)
   - [Automatic Sections](#automatic-sections)
   - [Manual Sections](#manual-sections)
@@ -36,7 +37,7 @@ The context generator analyzes your **Git-tracked files**, project structure, de
 
 - **Project Overview**: Purpose, domain, and key characteristics
 - **Technology Stack**: Dependencies, frameworks, and tools with versions
-- **Architecture**: Code organization, patterns, and design principles  
+- **Architecture**: Code organization, patterns, and design principles
 - **Review Focus**: Areas that deserve special attention during code review
 
 ## Installation & Setup
@@ -243,6 +244,117 @@ context7:
     - psycopg2
 ```
 
+### CI/CD Documentation Integration
+
+The context generator can automatically fetch and analyze official CI/CD documentation for projects using GitLab CI or GitHub Actions. This feature is **disabled by default** to reduce token consumption, as CI/CD documentation can be quite extensive.
+
+#### When to Enable CI/CD Documentation
+
+Enable this feature only for projects that **heavily rely on CI/CD configuration**:
+
+- ✅ Projects with complex multi-stage pipelines
+- ✅ Projects using advanced CI/CD features (rules, dynamic pipelines, matrix builds)
+- ✅ Projects where CI/CD configuration changes frequently
+- ✅ Teams that need to review CI/CD configuration changes regularly
+
+**Do NOT enable** for:
+
+- ❌ Simple projects with basic CI/CD setup
+- ❌ Projects where CI/CD rarely changes
+- ❌ Token-constrained environments
+
+#### CI/CD Prerequisites
+
+- Project must have CI/CD configuration files:
+  - **GitLab CI**: `.gitlab-ci.yml`
+  - **GitHub Actions**: `.github/workflows/*.yml`
+- Internet connection to fetch official documentation
+- No API key required (fetches from public repositories)
+
+#### CI/CD Configuration Options
+
+**Via `.env` file:**
+```bash
+# Enable CI/CD documentation fetching (default: false)
+ENABLE_CI_DOCS=true
+```
+
+**Via `.ai_review/config.yml` file:**
+```yaml
+ci_docs:
+  enabled: true
+  timeout_seconds: 30         # Timeout for HTTP requests (default: 30)
+  max_content_length: 200000  # Maximum content length per document (default: 200K, truncates if exceeded)
+```
+
+**Via command-line:**
+```bash
+# Enable for specific generation
+ai-generate-context . --enable-ci-docs
+
+# Explicitly disable (default)
+ai-generate-context . --disable-ci-docs
+```
+
+#### CI/CD Documentation Process
+
+1. **CI System Detection**: Automatically detects GitLab CI or GitHub Actions from configuration files
+2. **Documentation Fetching**: Retrieves official YAML syntax documentation directly from source repositories
+3. **LLM Analysis**: Analyzes documentation to extract recent changes, deprecations, and critical updates
+4. **Context Integration**: Adds a focused "CI/CD Recent Changes & Critical Updates" section to the generated context
+
+#### What's Included
+
+The generated CI/CD section focuses on **recent changes and critical updates** that LLMs need for accurate code reviews:
+
+- **Recent Changes & New Features**: New keywords, syntax, or capabilities introduced in the last 2-3 years
+- **Deprecated & Removed Features**: What no longer works and how to migrate
+- **Security Updates & Vulnerabilities**: Recent security changes and common misconfigurations
+- **Breaking Changes & Migration Issues**: Configuration changes that break existing setups
+- **Common Configuration Errors**: Specific mistakes that cause pipeline failures
+
+#### Supported CI/CD Systems
+
+| System | Configuration File(s) | Documentation Source |
+|--------|----------------------|---------------------|
+| **GitLab CI** | `.gitlab-ci.yml` | Official GitLab repository |
+| **GitHub Actions** | `.github/workflows/*.yml` | Official GitHub docs repository |
+
+#### Example Configuration
+
+**For CI-Heavy Projects:**
+```yaml
+# .ai_review/config.yml
+ci_docs:
+  enabled: true
+  timeout_seconds: 30
+  max_content_length: 200000  # Can be increased if documentation is very large
+
+context7:
+  enabled: true
+  max_libraries: 3
+```
+
+**For Standard Projects (Recommended):**
+```yaml
+# .ai_review/config.yml
+ci_docs:
+  enabled: false  # Keep disabled to save tokens
+
+context7:
+  enabled: true
+  max_libraries: 3
+```
+
+#### Token Consumption
+
+CI/CD documentation is now highly focused on recent changes:
+
+- **GitLab CI**: ~2,000-3,000 tokens for recent changes guide
+- **GitHub Actions**: ~1,500-2,500 tokens for recent changes guide
+
+**Recommendation**: Enable this feature if your project uses advanced CI/CD features or needs to stay current with recent changes and deprecations.
+
 ## Generated Sections
 
 ### Automatic Sections
@@ -294,7 +406,7 @@ Document unusual patterns, architectural decisions, and domain-specific logic:
 ## Business Logic & Implementation Decisions
 
 - calculate_vat() complexity is required by EU tax regulations
-- Deliberate N+1 queries in reporting endpoints due to data freshness requirements  
+- Deliberate N+1 queries in reporting endpoints due to data freshness requirements
 - Long functions in data_migrations.py are acceptable (one-time transformation scripts)
 - Custom retry logic in payment_processor.py handles bank API quirks
 ```
@@ -320,7 +432,7 @@ Document exceptions, legacy requirements, and intentional "anti-patterns":
 ## Special Cases & Edge Handling
 
 - LOG_LEVEL=DEBUG in production is intentional for compliance logging
-- time.sleep() in tests is necessary for rate-limiting integration tests  
+- time.sleep() in tests is necessary for rate-limiting integration tests
 - `# noqa` comments are legitimate for SQLAlchemy dynamic attributes
 - UserRole.SUPER_ADMIN bypass checks are audited and approved by security
 ```
@@ -396,7 +508,7 @@ The generated context file follows this structure:
 ## Technology Stack
 <!-- Automatically generated -->
 
-## Architecture & Code Organization  
+## Architecture & Code Organization
 <!-- Automatically generated -->
 
 ## Review Focus Areas

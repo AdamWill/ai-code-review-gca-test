@@ -268,6 +268,10 @@ ai-code-review --local --target-branch develop</code></pre>
                         <h3 class="font-bold text-lg text-gray-200">Smart Skip Review</h3>
                         <p class="text-sm text-gray-400 mt-2">Automatically <strong>skip unnecessary reviews</strong> (dependabot, WIPs) to save costs.</p>
                     </div>
+                    <div class="feature-card p-6 rounded-lg shadow-lg cursor-pointer border border-gray-700" data-feature="ci-docs">
+                        <h3 class="font-bold text-lg text-gray-200">CI/CD Documentation</h3>
+                        <p class="text-sm text-gray-400 mt-2">Fetch <strong>recent changes and deprecations</strong> from official CI/CD documentation for accurate reviews.</p>
+                    </div>
                 </div>
             </section>
         </main>
@@ -375,6 +379,29 @@ ai-generate-context . --output .ai_review/project.md</code></pre>
                         <pre><code class="language-bash"># This command checks if the review would be skipped
 ai-code-review --test-skip-only group/project 123</code></pre>
                         </div>
+                    `
+                },
+                'ci-docs': {
+                    title: 'CI/CD Documentation Integration',
+                    content: `
+                        <p>This feature automatically fetches <strong>recent changes and deprecations</strong> from official CI/CD documentation (GitLab CI and GitHub Actions) to provide more accurate and up-to-date code reviews.</p>
+                        <p class="mt-2">Since LLMs are trained on data from the past, they might not know about recent changes in CI/CD systems. This feature bridges that gap by providing current information about:</p>
+                        <ul>
+                            <li><strong>New features</strong> introduced in the last 2-3 years</li>
+                            <li><strong>Deprecated syntax</strong> that no longer works</li>
+                            <li><strong>Security updates</strong> and best practices</li>
+                            <li><strong>Breaking changes</strong> and migration paths</li>
+                        </ul>
+                        <h4 class="font-medium mt-6 mb-2">Demo: Enable CI/CD Documentation</h4>
+                        <p>Use the <code>--enable-ci-docs</code> flag when generating context to include CI/CD documentation:</p>
+                        <div class="bg-gray-900 rounded-md p-4 text-white font-fira-code text-sm">
+                        <pre><code class="language-bash"># Generate context with CI/CD documentation
+ai-generate-context . --enable-ci-docs
+
+# Or update only the CI/CD section
+ai-generate-context . --section ci_docs --enable-ci-docs</code></pre>
+                        </div>
+                        <p class="mt-4 text-sm text-gray-400"><strong>Note:</strong> This feature is disabled by default to save tokens. Enable it only for projects that heavily rely on CI/CD configuration.</p>
                     `
                 }
             };
