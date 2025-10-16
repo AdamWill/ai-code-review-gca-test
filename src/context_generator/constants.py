@@ -482,3 +482,28 @@ CI_SYSTEM_CONTEXT7_LIBRARIES = {
     "gitlab-ci": "/websites/docs_gitlab_com",
     "github-actions": "/github/docs",
 }
+
+# Context7 library ID denylist patterns (documentation sites, not actual libraries)
+# CI/CD documentation should be handled exclusively by CIDocsSection when enabled
+CONTEXT7_LIBRARY_DENYLIST_PATTERNS = [
+    "/websites/",  # Documentation sites (e.g., docs.gitlab.com)
+    "/github/docs",  # GitHub documentation site
+    "/docs/",  # Generic docs sites
+    "/tutorials/",  # Tutorial sites
+]
+
+# Minimum trust score for library selection
+CONTEXT7_MIN_TRUST_SCORE = 5
+
+# Official library patterns (higher priority)
+CONTEXT7_OFFICIAL_LIBRARY_PATTERNS = {
+    "react": ["/facebook/react", "/reactjs/"],
+    "vue": ["/vuejs/"],
+    "angular": ["/angular/"],
+    "django": ["/django/"],
+    "flask": ["/pallets/flask"],
+    "fastapi": ["/tiangolo/fastapi"],
+    "nextjs": ["/vercel/next"],
+    "express": ["/expressjs/"],
+    "typescript": ["/microsoft/typescript"],
+}

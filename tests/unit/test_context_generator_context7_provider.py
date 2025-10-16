@@ -349,8 +349,18 @@ class TestContext7Provider:
 
         search_data = {
             "results": [
-                {"id": "/fastapi/fastapi", "title": "FastAPI"},
-                {"id": "/django/django", "title": "Django"},
+                {
+                    "id": "/fastapi/fastapi",
+                    "title": "FastAPI",
+                    "description": "FastAPI framework",
+                    "trust_score": 10,
+                },
+                {
+                    "id": "/django/django",
+                    "title": "Django",
+                    "description": "Django framework",
+                    "trust_score": 9,
+                },
             ]
         }
 
@@ -358,19 +368,30 @@ class TestContext7Provider:
         assert result == "/fastapi/fastapi"
 
     def test_extract_best_library_id_first_result(self) -> None:
-        """Test extracting best library ID when no exact match, returns top-ranked result (trusts Context7)."""
+        """Test extracting best library ID when no exact match, returns highest trust_score result."""
         provider = Context7Provider()
 
         search_data = {
             "results": [
-                {"id": "/pydantic/pydantic", "title": "Pydantic V2"},
-                {"id": "/fastapi/fastapi", "title": "FastAPI"},
+                {
+                    "id": "/pydantic/pydantic",
+                    "title": "Pydantic V2",
+                    "description": "Data validation",
+                    "trust_score": 9,
+                },
+                {
+                    "id": "/fastapi/fastapi",
+                    "title": "FastAPI",
+                    "description": "FastAPI framework",
+                    "trust_score": 10,
+                },
             ]
         }
 
-        # Search for "sqlalchemy" but it's not in results, should return first result (trusts Context7 ranking)
+        # Search for "sqlalchemy" but it's not in results
+        # Should return the one with highest trust_score when relevance is equal
         result = provider._extract_best_library_id(search_data, "sqlalchemy")
-        assert result == "/pydantic/pydantic"
+        assert result == "/fastapi/fastapi"
 
     def test_extract_best_library_id_empty_results(self) -> None:
         """Test extracting library ID from empty results."""
@@ -387,8 +408,18 @@ class TestContext7Provider:
 
         search_data = {
             "results": [
-                {"id": None, "title": "Invalid Result"},
-                {"id": "/fastapi/fastapi", "title": "FastAPI"},
+                {
+                    "id": None,
+                    "title": "Invalid Result",
+                    "description": "Invalid",
+                    "trust_score": 8,
+                },
+                {
+                    "id": "/fastapi/fastapi",
+                    "title": "FastAPI",
+                    "description": "FastAPI framework",
+                    "trust_score": 10,
+                },
             ]
         }
 
@@ -402,8 +433,18 @@ class TestContext7Provider:
 
         search_data = {
             "results": [
-                {"id": "/other/library", "title": "Other Library"},
-                {"id": "/fastapi/fastapi", "title": "FastAPI Framework"},
+                {
+                    "id": "/other/library",
+                    "title": "Other Library",
+                    "description": "Some library",
+                    "trust_score": 7,
+                },
+                {
+                    "id": "/fastapi/fastapi",
+                    "title": "FastAPI Framework",
+                    "description": "FastAPI framework",
+                    "trust_score": 10,
+                },
             ]
         }
 
@@ -420,8 +461,15 @@ class TestContext7Provider:
                 {
                     "id": "/fastapi/fastapi",
                     "title": "FastAPI Framework",
+                    "description": "FastAPI framework",
+                    "trust_score": 10,
                 },  # Better match
-                {"id": "/django/django", "title": "Django Framework"},
+                {
+                    "id": "/django/django",
+                    "title": "Django Framework",
+                    "description": "Django framework",
+                    "trust_score": 9,
+                },
             ]
         }
 
@@ -435,8 +483,18 @@ class TestContext7Provider:
 
         search_data = {
             "results": [
-                {"id": "/some/library", "title": "Some Library"},
-                {"id": "/other/library", "title": "Other Library"},
+                {
+                    "id": "/some/library",
+                    "title": "Some Library",
+                    "description": "Some description",
+                    "trust_score": 8,
+                },
+                {
+                    "id": "/other/library",
+                    "title": "Other Library",
+                    "description": "Other description",
+                    "trust_score": 7,
+                },
             ]
         }
 
@@ -649,8 +707,18 @@ class TestContext7Provider:
 
         search_data = {
             "results": [
-                {"id": "/some/lib", "title": "Some Library"},
-                {"id": "/other/lib", "title": "Other Library"},
+                {
+                    "id": "/some/lib",
+                    "title": "Some Library",
+                    "description": "Some description",
+                    "trust_score": 8,
+                },
+                {
+                    "id": "/other/lib",
+                    "title": "Other Library",
+                    "description": "Other description",
+                    "trust_score": 7,
+                },
             ]
         }
 
@@ -681,8 +749,18 @@ class TestContext7Provider:
 
         search_data = {
             "results": [
-                {"id": None, "title": "Bad Entry"},
-                {"id": "/good/lib", "title": "Good Library"},
+                {
+                    "id": None,
+                    "title": "Bad Entry",
+                    "description": "Bad",
+                    "trust_score": 7,
+                },
+                {
+                    "id": "/good/lib",
+                    "title": "Good Library",
+                    "description": "Good",
+                    "trust_score": 8,
+                },
             ]
         }
 
@@ -695,8 +773,18 @@ class TestContext7Provider:
 
         search_data = {
             "results": [
-                {"id": 12345, "title": "Bad Entry"},  # Integer ID
-                {"id": "/good/lib", "title": "Good Library"},
+                {
+                    "id": 12345,
+                    "title": "Bad Entry",
+                    "description": "Bad",
+                    "trust_score": 7,
+                },  # Integer ID
+                {
+                    "id": "/good/lib",
+                    "title": "Good Library",
+                    "description": "Good",
+                    "trust_score": 8,
+                },
             ]
         }
 
@@ -716,4 +804,185 @@ class TestContext7Provider:
         }
 
         result = provider._extract_best_library_id(search_data, "nonexistent")
+        assert result is None
+
+    # ===== New Filtering Tests =====
+
+    def test_extract_best_library_id_official_pattern(self) -> None:
+        """Test that official library patterns are prioritized."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {
+                    "id": "/websites/docs_gitlab_com",
+                    "title": "GitLab Docs",
+                    "description": "GitLab documentation site that uses React",
+                    "trust_score": 9,
+                },
+                {
+                    "id": "/facebook/react",
+                    "title": "React",
+                    "description": "Official React library",
+                    "trust_score": 10,
+                },
+            ]
+        }
+
+        result = provider._extract_best_library_id(search_data, "react")
+        # Should select official React, not GitLab docs
+        assert result == "/facebook/react"
+
+    def test_is_denylisted(self) -> None:
+        """Test denylist filtering."""
+        provider = Context7Provider()
+
+        # Test denylisted IDs
+        assert provider._is_denylisted("/websites/docs_gitlab_com") is True
+        assert provider._is_denylisted("/github/docs") is True
+        assert provider._is_denylisted("/docs/some-project") is True
+        assert provider._is_denylisted("/tutorials/learn-react") is True
+
+        # Test non-denylisted IDs
+        assert provider._is_denylisted("/facebook/react") is False
+        assert provider._is_denylisted("/vercel/next.js") is False
+
+    def test_extract_best_library_id_filters_denylisted(self) -> None:
+        """Test that denylisted results are filtered out."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {
+                    "id": "/websites/docs_site",
+                    "title": "Documentation Site",
+                    "description": "Some docs",
+                    "trust_score": 8,
+                },
+                {
+                    "id": "/facebook/react",
+                    "title": "React",
+                    "description": "Official React library",
+                    "trust_score": 10,
+                },
+            ]
+        }
+
+        result = provider._extract_best_library_id(search_data, "react")
+        # Should skip denylisted /websites/ and select React
+        assert result == "/facebook/react"
+
+    def test_extract_best_library_id_filters_low_trust_score(self) -> None:
+        """Test that low trust score results are filtered out."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {
+                    "id": "/low/trust",
+                    "title": "Low Trust Library",
+                    "description": "Some library",
+                    "trust_score": 3,  # Below minimum of 5
+                },
+                {
+                    "id": "/high/trust",
+                    "title": "High Trust Library",
+                    "description": "Reliable library",
+                    "trust_score": 8,
+                },
+            ]
+        }
+
+        result = provider._extract_best_library_id(search_data, "library")
+        # Should skip low trust score and select high trust
+        assert result == "/high/trust"
+
+    def test_calculate_relevance_score(self) -> None:
+        """Test relevance score calculation."""
+        provider = Context7Provider()
+
+        # Exact title match (100 points)
+        score = provider._calculate_relevance_score(
+            "react", "react", "A JavaScript library", "/facebook/react"
+        )
+        assert score >= 100
+
+        # Title starts with library name (50 points)
+        score = provider._calculate_relevance_score(
+            "react", "react-dom", "React DOM library", "/facebook/react-dom"
+        )
+        assert score >= 50
+
+        # Library name in title (30 points)
+        score = provider._calculate_relevance_score(
+            "react", "awesome react library", "Great library", "/awesome/react"
+        )
+        assert score >= 30
+
+        # Library name in description (10 points)
+        score = provider._calculate_relevance_score(
+            "react", "some library", "Uses react framework", "/some/library"
+        )
+        assert score >= 10
+
+    def test_extract_best_library_id_relevance_scoring(self) -> None:
+        """Test that results are scored and sorted by relevance."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {
+                    "id": "/some/react-wrapper",
+                    "title": "React Wrapper",
+                    "description": "Wrapper around React",
+                    "trust_score": 7,
+                },
+                {
+                    "id": "/facebook/react",
+                    "title": "React",
+                    "description": "Official React library",
+                    "trust_score": 10,
+                },
+                {
+                    "id": "/other/lib",
+                    "title": "Some Library",
+                    "description": "Uses react internally",
+                    "trust_score": 6,
+                },
+            ]
+        }
+
+        result = provider._extract_best_library_id(search_data, "react")
+        # Should select official React with exact title match
+        assert result == "/facebook/react"
+
+    def test_extract_best_library_id_all_filtered_out(self) -> None:
+        """Test when all results are filtered out."""
+        provider = Context7Provider()
+
+        search_data = {
+            "results": [
+                {
+                    "id": "/websites/docs",
+                    "title": "Docs Site",
+                    "description": "Documentation",
+                    "trust_score": 8,
+                },
+                {
+                    "id": "/tutorials/learn",
+                    "title": "Tutorial",
+                    "description": "Learn something",
+                    "trust_score": 7,
+                },
+                {
+                    "id": "/low/trust",
+                    "title": "Low Trust",
+                    "description": "Unreliable",
+                    "trust_score": 2,
+                },
+            ]
+        }
+
+        result = provider._extract_best_library_id(search_data, "something")
+        # All results should be filtered out
         assert result is None

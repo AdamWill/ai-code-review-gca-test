@@ -6,6 +6,12 @@ from typing import Any
 
 import structlog
 
+from context_generator.constants import (
+    CONTEXT7_LIBRARY_DENYLIST_PATTERNS,
+    CONTEXT7_MIN_TRUST_SCORE,
+    CONTEXT7_OFFICIAL_LIBRARY_PATTERNS,
+)
+
 logger = structlog.get_logger(__name__)
 
 
@@ -212,7 +218,11 @@ class Context7Provider:
     ) -> str | None:
         """Extract the best matching library ID from Context7 search results.
 
-        Uses intelligent selection to prefer Python libraries over other languages.
+        Uses intelligent selection with multiple filtering strategies:
+        1. Prioritizes official library repositories
+        2. Filters out documentation sites (denylist)
+        3. Requires minimum trust score
+        4. Validates relevance through title/description matching
 
         Args:
             search_data: JSON response from Context7 search API
@@ -227,66 +237,160 @@ class Context7Provider:
 
         library_name_lower = library_name.lower()
 
-        # Strategy: Use Context7's ranking and trust score, but validate relevance
-        # Context7 already provides good ranking based on search query
+        # Step 1: Check for official library patterns first
+        official_patterns = CONTEXT7_OFFICIAL_LIBRARY_PATTERNS.get(
+            library_name_lower, []
+        )
+        if official_patterns:
+            for result in results:
+                library_id = result.get("id", "")
+                if not library_id or not isinstance(library_id, str):
+                    continue
 
+                # Check if this matches an official pattern
+                for pattern in official_patterns:
+                    if pattern in library_id.lower():
+                        logger.info(
+                            "Selected official library",
+                            library=library_name,
+                            selected_id=library_id,
+                            title=result.get("title"),
+                            trust_score=result.get("trust_score"),
+                            match_type="official_pattern",
+                        )
+                        return str(library_id)
+
+        # Step 2: Filter and score all results
+        scored_results = []
         for result in results:
             title = result.get("title", "").lower()
             library_id = result.get("id", "")
             description = result.get("description", "").lower()
+            trust_score = result.get("trust_score", 0)
 
-            # Skip results with None library_id
+            # Skip invalid results
             if not library_id or not isinstance(library_id, str):
                 continue
 
-            # Look for exact or close matches in title
-            if (
-                library_name_lower == title
-                or library_name_lower in title
-                or title.startswith(library_name_lower)
-            ):
-                logger.info(
-                    "Selected library by title relevance",
+            # Apply denylist filtering
+            if self._is_denylisted(library_id):
+                logger.debug(
+                    "Skipping denylisted library ID",
                     library=library_name,
-                    selected_id=library_id,
+                    library_id=library_id,
                     title=result.get("title"),
-                    trust_score=result.get("trust_score"),
                 )
-                return str(library_id)
+                continue
 
-            # Look for matches in description if title doesn't match
-            if library_name_lower in description:
-                logger.info(
-                    "Selected library by description relevance",
+            # Apply minimum trust score filter
+            if trust_score < CONTEXT7_MIN_TRUST_SCORE:
+                logger.debug(
+                    "Skipping low trust score result",
                     library=library_name,
-                    selected_id=library_id,
+                    library_id=library_id,
                     title=result.get("title"),
-                    trust_score=result.get("trust_score"),
+                    trust_score=trust_score,
                 )
-                return str(library_id)
+                continue
 
-        # If no clear match found, return the first result (Context7's top recommendation)
-        # This trusts Context7's ranking algorithm
-        if results:
-            first_result = results[0]
-            library_id = first_result.get("id")
-            if library_id and isinstance(library_id, str):
-                logger.info(
-                    "Selected top-ranked library from Context7",
-                    library=library_name,
-                    selected_id=library_id,
-                    title=first_result.get("title"),
-                    trust_score=first_result.get("trust_score"),
-                )
-                return str(library_id)
+            # Calculate relevance score
+            relevance_score = self._calculate_relevance_score(
+                library_name_lower, title, description, library_id
+            )
+
+            scored_results.append(
+                {
+                    "result": result,
+                    "library_id": library_id,
+                    "relevance_score": relevance_score,
+                    "trust_score": trust_score,
+                }
+            )
+
+        # Step 3: Sort by relevance score first, then trust score
+        scored_results.sort(
+            key=lambda x: (x["relevance_score"], x["trust_score"]), reverse=True
+        )
+
+        # Step 4: Return the best match if any
+        if scored_results:
+            best_match = scored_results[0]
+            result = best_match["result"]
+            logger.info(
+                "Selected library by scoring",
+                library=library_name,
+                selected_id=best_match["library_id"],
+                title=result.get("title"),
+                trust_score=best_match["trust_score"],
+                relevance_score=best_match["relevance_score"],
+            )
+            return str(best_match["library_id"])
 
         # No suitable results found
         logger.warning(
-            "No suitable library match found",
+            "No suitable library match found after filtering",
             library=library_name,
-            available_results=[r.get("title") for r in results[:3]],
+            total_results=len(results),
+            filtered_out=len(results) - len(scored_results),
         )
         return None
+
+    def _is_denylisted(self, library_id: str) -> bool:
+        """Check if a library ID matches denylist patterns.
+
+        Args:
+            library_id: Context7 library ID to check
+
+        Returns:
+            True if denylisted, False otherwise
+        """
+        library_id_lower = library_id.lower()
+        for pattern in CONTEXT7_LIBRARY_DENYLIST_PATTERNS:
+            if pattern.lower() in library_id_lower:
+                return True
+        return False
+
+    def _calculate_relevance_score(
+        self, library_name: str, title: str, description: str, library_id: str
+    ) -> int:
+        """Calculate cumulative relevance score for a library match.
+
+        Scores are additive - multiple conditions can contribute to the final score.
+        For example, an exact title match (100) with the library name in the ID (20)
+        results in a total score of 120.
+
+        Args:
+            library_name: Original library name (lowercase)
+            title: Library title (lowercase)
+            description: Library description (lowercase)
+            library_id: Context7 library ID
+
+        Returns:
+            Cumulative relevance score (higher is better)
+        """
+        score = 0
+
+        # Exact title match is best
+        if library_name == title:
+            score += 100
+
+        # Title starts with library name
+        if title.startswith(library_name):
+            score += 50
+
+        # Library name in title
+        if library_name in title:
+            score += 30
+
+        # Library name in description
+        if library_name in description:
+            score += 10
+
+        # Library ID contains library name
+        if library_name in library_id.lower():
+            score += 20
+
+        return score
 
     def clear_cache(self) -> None:
         """Clear the session cache."""
