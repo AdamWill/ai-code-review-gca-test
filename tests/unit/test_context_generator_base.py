@@ -58,11 +58,19 @@ class GitTestMixin:
                 # Return the explicitly provided files
                 return [Path(f) for f in files]
 
+        # Mock for symlinks - return empty dict by default
+        def mock_get_tracked_symlinks(path):
+            return {}
+
         # Apply the mock to multiple modules - make them persistent
         patchers = [
             patch(
                 "context_generator.utils.git_utils.get_tracked_files",
                 side_effect=mock_get_tracked_files,
+            ),
+            patch(
+                "context_generator.utils.git_utils.get_tracked_symlinks",
+                side_effect=mock_get_tracked_symlinks,
             ),
             patch(
                 "context_generator.utils.git_utils.is_git_repository",

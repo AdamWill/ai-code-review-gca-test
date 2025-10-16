@@ -222,3 +222,45 @@ class TestGitUtilsFunctions:
 
                 assert result == expected_files
                 mock_runner.get_tracked_files.assert_called_once_with(Path(tmp_dir))
+
+    def test_get_tracked_files_git_error_non_128(self) -> None:
+        """Test get_tracked_files with git error (non-128 exit code)."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch("shutil.which", return_value="/usr/bin/git"):
+                runner = SecureGitRunner()
+
+                # Mock subprocess.run to raise CalledProcessError with exit code != 128
+                mock_error = subprocess.CalledProcessError(
+                    1, "git", stderr=b"Some error"
+                )
+                with patch("subprocess.run", side_effect=mock_error):
+                    with pytest.raises(
+                        RuntimeError, match="Git command failed with exit code 1"
+                    ):
+                        runner.get_tracked_files(Path(tmp_dir))
+
+    def test_get_tracked_symlinks_git_error_non_128(self) -> None:
+        """Test get_tracked_symlinks with git error (non-128 exit code)."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch("shutil.which", return_value="/usr/bin/git"):
+                runner = SecureGitRunner()
+
+                # Mock subprocess.run to raise CalledProcessError with exit code != 128
+                mock_error = subprocess.CalledProcessError(1, "git")
+                with patch("subprocess.run", side_effect=mock_error):
+                    with pytest.raises(
+                        RuntimeError, match="Git command failed with exit code 1"
+                    ):
+                        runner.get_tracked_symlinks(Path(tmp_dir))
+
+    def test_get_tracked_symlinks_timeout(self) -> None:
+        """Test get_tracked_symlinks with timeout."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            with patch("shutil.which", return_value="/usr/bin/git"):
+                runner = SecureGitRunner()
+
+                # Mock subprocess.run to raise TimeoutExpired
+                mock_error = subprocess.TimeoutExpired("git", 30)
+                with patch("subprocess.run", side_effect=mock_error):
+                    with pytest.raises(RuntimeError, match="Git command timed out"):
+                        runner.get_tracked_symlinks(Path(tmp_dir))

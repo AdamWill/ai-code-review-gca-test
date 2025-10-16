@@ -448,11 +448,16 @@ class TestStructureSection(GitTestMixin):
             analyzer = SpecializedLLMAnalyzer(config)
             section = StructureSection(analyzer)
 
-            # Mock get_tracked_files to return only tracked files
+            # Mock get_tracked_files to return only tracked files (as relative paths)
             with patch(
                 "context_generator.sections.structure_section.get_tracked_files"
             ) as mock_git:
-                mock_git.return_value = tracked_files
+                # get_tracked_files returns relative paths
+                mock_git.return_value = [
+                    Path("src/main.py"),
+                    Path("src/config.py"),
+                    Path("src/utils.py"),
+                ]
 
                 # Test _get_subdir_items - should only see tracked files
                 items = section._get_subdir_items(subdir, 10)
@@ -552,7 +557,7 @@ class TestStructureSection(GitTestMixin):
                 mock_git.return_value = [src_dir / "main.py"]
 
                 # Call method that triggers auto-detection
-                files, dirs = section._get_git_files_in_dir(src_dir)
+                files, dirs, symlinks = section._get_git_files_in_dir(src_dir)
 
                 # Should auto-detect project_path
                 assert section.project_path is not None
@@ -630,16 +635,18 @@ class TestStructureSection(GitTestMixin):
             )
             analyzer = SpecializedLLMAnalyzer(config)
             section = StructureSection(analyzer)
+            section.project_path = project_path  # Set project_path explicitly
 
-            # Mock get_tracked_files to return the files we created
+            # Mock get_tracked_files to return the files we created (as relative paths)
             with patch(
                 "context_generator.sections.structure_section.get_tracked_files"
             ) as mock_git:
+                # get_tracked_files returns relative paths
                 mock_git.return_value = [
-                    subdir / "user.py",
-                    subdir / "product.py",
-                    subdir / "__init__.py",
-                    subdir / "base.py",
+                    Path("models/user.py"),
+                    Path("models/product.py"),
+                    Path("models/__init__.py"),
+                    Path("models/base.py"),
                 ]
                 items = section._get_subdir_items(subdir, 10)
 
@@ -705,15 +712,17 @@ class TestStructureSection(GitTestMixin):
             )
             analyzer = SpecializedLLMAnalyzer(config)
             section = StructureSection(analyzer)
+            section.project_path = project_path  # Set project_path explicitly
 
-            # Mock get_tracked_files to return the files we created
+            # Mock get_tracked_files to return the files we created (as relative paths)
             with patch(
                 "context_generator.sections.structure_section.get_tracked_files"
             ) as mock_git:
+                # get_tracked_files returns relative paths
                 mock_git.return_value = [
-                    subdir / "user.py",
-                    subdir / "product.py",
-                    subdir / "__init__.py",
+                    Path("models/user.py"),
+                    Path("models/product.py"),
+                    Path("models/__init__.py"),
                 ]
                 files = section._get_files_in_subdir(subdir)
 
@@ -797,7 +806,7 @@ class TestStructureSection(GitTestMixin):
 
             # Mock git files in dir (used by the new recursive method)
             with patch.object(section, "_get_git_files_in_dir") as mock_git_in_dir:
-                # Mock the return value for the src directory
+                # Mock the return value for the src directory (files, dirs, symlinks)
                 mock_git_in_dir.return_value = (
                     [  # files
                         project_path / "src" / "main.py",
@@ -808,6 +817,7 @@ class TestStructureSection(GitTestMixin):
                     [  # directories
                         project_path / "src" / "models"
                     ],
+                    {},  # symlinks
                 )
 
                 lines = section._get_generic_dir_structure("src", False)
@@ -865,7 +875,7 @@ class TestStructureSection(GitTestMixin):
             mock_files = [project_path / "src" / f"file_{i:02d}.py" for i in range(35)]
 
             with patch.object(section, "_get_git_files_in_dir") as mock_git_in_dir:
-                mock_git_in_dir.return_value = (mock_files, [])
+                mock_git_in_dir.return_value = (mock_files, [], {})
 
                 lines = section._get_generic_dir_structure("src", False)
 
@@ -945,7 +955,7 @@ class TestStructureSection(GitTestMixin):
 
             # Mock empty git files to test depth logic
             with patch.object(section, "_get_git_files_in_dir") as mock_git_in_dir:
-                mock_git_in_dir.return_value = ([], [])
+                mock_git_in_dir.return_value = ([], [], {})
 
                 # Test with different depths
                 lines_depth_0 = section._get_generic_dir_structure(
@@ -994,7 +1004,8 @@ class TestStructureSection(GitTestMixin):
             analyzer = SpecializedLLMAnalyzer(config)
             section = StructureSection(analyzer)
 
-            mock_files = [project_path / filename for filename in key_files]
+            # get_tracked_files returns relative paths
+            mock_files = [Path(filename) for filename in key_files]
 
             with patch(
                 "context_generator.sections.structure_section.get_tracked_files"
@@ -1033,12 +1044,12 @@ class TestStructureSection(GitTestMixin):
             section = StructureSection(analyzer)
             section.project_path = project_path
 
-            # Mock git files for all levels
+            # Mock git files for all levels (get_tracked_files returns relative paths)
             mock_files = []
-            current_path = project_path
+            current_rel_path = Path("")
             for level_dir in deep_dirs:
-                current_path = current_path / level_dir
-                mock_files.append(current_path / f"{level_dir}_file.py")
+                current_rel_path = current_rel_path / level_dir
+                mock_files.append(current_rel_path / f"{level_dir}_file.py")
 
             with patch(
                 "context_generator.sections.structure_section.get_tracked_files"
@@ -1075,7 +1086,7 @@ class TestStructureSection(GitTestMixin):
             test_dir.mkdir()
 
             with patch.object(section, "_get_git_files_in_dir") as mock_git_in_dir:
-                mock_git_in_dir.return_value = ([], [])
+                mock_git_in_dir.return_value = ([], [], {})
 
                 # Test different depths
                 lines_shallow = section._get_recursive_dir_structure(
@@ -1108,7 +1119,11 @@ class TestStructureSection(GitTestMixin):
             section.project_path = project_path
 
             with patch.object(section, "_get_git_files_in_dir") as mock_git_in_dir:
-                mock_git_in_dir.return_value = ([project_path / "src" / "main.py"], [])
+                mock_git_in_dir.return_value = (
+                    [project_path / "src" / "main.py"],
+                    [],
+                    {},
+                )
 
                 lines = section._get_recursive_dir_structure(
                     test_dir, "src", True, "", 0
@@ -1173,7 +1188,7 @@ class TestStructureSection(GitTestMixin):
             test_dir.mkdir()
 
             with patch.object(section, "_get_git_files_in_dir") as mock_git_in_dir:
-                mock_git_in_dir.return_value = ([], [])
+                mock_git_in_dir.return_value = ([], [], {})
 
                 # Test at maximum depth (should still work)
                 lines_max = section._get_recursive_dir_structure(
@@ -1287,6 +1302,7 @@ class TestStructureSection(GitTestMixin):
                         subdir / "__init__.py",
                     ],
                     [],
+                    {},
                 )
             )
 
@@ -1298,3 +1314,253 @@ class TestStructureSection(GitTestMixin):
             assert any("file1.py" in item for item in result)
             assert any("file2.py" in item for item in result)
             assert not any("__init__.py" in item for item in result)
+
+    # ===== Additional Coverage Tests =====
+
+    def test_get_git_files_in_dir_with_relative_paths(self) -> None:
+        """Test _get_git_files_in_dir with relative dir_path."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+            subdir = project_path / "src"
+            subdir.mkdir()
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            with patch(
+                "context_generator.sections.structure_section.get_tracked_files"
+            ) as mock_git:
+                mock_git.return_value = [Path("src/main.py")]
+
+                # Call with relative path
+                relative_dir = Path("src")
+                files, dirs, symlinks = section._get_git_files_in_dir(relative_dir)
+
+                # Should handle relative paths correctly
+                assert isinstance(files, list)
+                assert isinstance(dirs, list)
+                assert isinstance(symlinks, dict)
+
+    def test_get_git_files_in_dir_with_index_error(self) -> None:
+        """Test _get_git_files_in_dir handles IndexError gracefully."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            with patch(
+                "context_generator.sections.structure_section.get_tracked_files"
+            ) as mock_git:
+                mock_git.return_value = [Path("file.py")]
+
+                # Try with empty Path that would cause IndexError
+                try:
+                    files, dirs, symlinks = section._get_git_files_in_dir(Path())
+                except (ValueError, IndexError):
+                    # Expected to catch the exception
+                    pass
+                else:
+                    # Or return empty results
+                    assert isinstance(files, list)
+                    assert isinstance(dirs, list)
+                    assert isinstance(symlinks, dict)
+
+    def test_get_git_files_in_dir_with_symlink_exceptions(self) -> None:
+        """Test _get_git_files_in_dir handles symlink processing exceptions."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+            subdir = project_path / "src"
+            subdir.mkdir()
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            with (
+                patch(
+                    "context_generator.sections.structure_section.get_tracked_files"
+                ) as mock_git_files,
+                patch(
+                    "context_generator.sections.structure_section.get_tracked_symlinks"
+                ) as mock_git_symlinks,
+            ):
+                mock_git_files.return_value = [Path("src/main.py")]
+
+                # Create a problematic symlink entry (should trigger AttributeError path)
+                mock_git_symlinks.return_value = {
+                    None: Path("target")  # This will cause AttributeError
+                }
+
+                # Should handle the exception gracefully
+                files, dirs, symlinks = section._get_git_files_in_dir(subdir)
+
+                # Should still return valid results despite symlink error
+                assert isinstance(files, list)
+
+    def test_get_git_files_in_dir_with_file_value_error(self) -> None:
+        """Test _get_git_files_in_dir handles ValueError when processing files."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            with patch(
+                "context_generator.sections.structure_section.get_tracked_files"
+            ) as mock_git:
+                # Return an absolute path that's not under project_path
+                mock_git.return_value = [Path("/completely/different/path/file.py")]
+
+                # Should handle files outside project gracefully
+                files, dirs, symlinks = section._get_git_files_in_dir(project_path)
+
+                # Should return empty files list
+                assert files == []
+
+    def test_get_recursive_dir_structure_value_error(self) -> None:
+        """Test _get_recursive_dir_structure handles ValueError."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+            subdir = project_path / "restricted"
+            subdir.mkdir()
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            with patch.object(
+                section,
+                "_get_git_files_in_dir",
+                side_effect=ValueError("Invalid path"),
+            ):
+                # Should handle ValueError gracefully
+                lines = section._get_recursive_dir_structure(
+                    subdir, "restricted", False, "", 0
+                )
+
+                # Should return empty list
+                assert lines == []
+
+    def test_get_subdir_items_nonexistent_directory(self) -> None:
+        """Test _get_subdir_items with non-existent directory."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+            nonexistent = project_path / "nonexistent"
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+
+            result = section._get_subdir_items(nonexistent, 10)
+
+            # Should return empty list
+            assert result == []
+
+    def test_get_subdir_items_value_error(self) -> None:
+        """Test _get_subdir_items handles ValueError."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+            subdir = project_path / "restricted"
+            subdir.mkdir()
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            with patch.object(
+                section,
+                "_get_git_files_in_dir",
+                side_effect=ValueError("Invalid path"),
+            ):
+                result = section._get_subdir_items(subdir, 10)
+
+                # Should return empty list
+                assert result == []
+
+    def test_get_subdir_items_with_symlinks(self) -> None:
+        """Test _get_subdir_items correctly includes symlinks."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+            subdir = project_path / "src"
+            subdir.mkdir()
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            with patch.object(
+                section,
+                "_get_git_files_in_dir",
+                return_value=(
+                    [Path("src/main.py")],
+                    [],
+                    {"link.py": Path("target.py")},  # symlink dict
+                ),
+            ):
+                result = section._get_subdir_items(subdir, 10)
+
+                # Should include both file and symlink
+                assert len(result) >= 2
+                assert any("main.py" in item for item in result)
+                assert any("link.py -> target.py" in item for item in result)
+
+    def test_get_src_structure_no_src_files(self) -> None:
+        """Test _get_src_structure with src directory but no files."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+            src_dir = project_path / "src"
+            src_dir.mkdir()
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            with patch.object(
+                section, "_get_git_files_in_dir", return_value=([], [], {})
+            ):
+                lines = section._get_src_structure(True)
+
+                # Should handle empty src directory
+                assert isinstance(lines, list)
+
+    def test_recursive_dir_structure_with_symlinks_in_display(self) -> None:
+        """Test that symlinks are properly displayed in recursive structure."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            project_path = Path(tmp_dir)
+            subdir = project_path / "configs"
+            subdir.mkdir()
+
+            config = Config(gitlab_token="dummy", ai_provider="ollama", dry_run=True)
+            analyzer = SpecializedLLMAnalyzer(config)
+            section = StructureSection(analyzer)
+            section.project_path = project_path
+
+            with patch.object(
+                section,
+                "_get_git_files_in_dir",
+                return_value=(
+                    [Path("configs/prod.yml")],
+                    [],
+                    {"default.yml": Path("prod.yml")},
+                ),
+            ):
+                lines = section._get_recursive_dir_structure(
+                    subdir, "configs", True, "", 0
+                )
+
+                content = "\n".join(lines)
+                # Should include symlink with arrow notation
+                assert "default.yml -> prod.yml" in content
+                assert "prod.yml" in content

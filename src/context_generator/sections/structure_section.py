@@ -12,7 +12,7 @@ from context_generator.constants import (
     PRIORITY_PYTHON_FILES,
 )
 from context_generator.sections.base_section import BaseSection
-from context_generator.utils.git_utils import get_tracked_files
+from context_generator.utils.git_utils import get_tracked_files, get_tracked_symlinks
 
 
 class StructureSection(BaseSection):
@@ -54,11 +54,14 @@ class StructureSection(BaseSection):
         """Get all tracked files from git."""
         return get_tracked_files(project_path)
 
-    def _get_git_files_in_dir(self, dir_path: Path) -> tuple[list[Path], list[Path]]:
-        """Get Git tracked files and directories within a specific directory.
+    def _get_git_files_in_dir(
+        self, dir_path: Path
+    ) -> tuple[list[Path], list[Path], dict[str, Path]]:
+        """Get Git tracked files, directories, and symlinks within a specific directory.
 
         Returns:
-            tuple: (files, directories) that are Git tracked within dir_path
+            tuple: (files, directories, symlinks_dict) that are Git tracked within dir_path.
+                   symlinks_dict maps symlink filenames (str) to their targets (Path).
         """
         if not hasattr(self, "_cached_git_files"):
             # Get project_path from dir_path if not set
@@ -78,55 +81,73 @@ class StructureSection(BaseSection):
                     # Fallback: use the directory itself as project root
                     self.project_path = dir_path
 
-            # Get git files and resolve them if project_path is absolute
-            git_files = self._get_git_files(self.project_path)
-            if self.project_path.is_absolute():
-                # Resolve git files relative to project_path for consistent path handling
-                self._cached_git_files = [
-                    (self.project_path / f).resolve() for f in git_files
-                ]
-            else:
-                self._cached_git_files = git_files
+            # Get git files - keep them as relative paths (DON'T resolve - that would follow symlinks!)
+            self._cached_git_files = self._get_git_files(self.project_path)
 
-        # Filter files that are within the specified directory
-        # Handle both absolute and relative paths carefully
+            # Get and cache symlinks - keep them as relative paths (DON'T resolve - that would follow symlinks!)
+            self._cached_git_symlinks = get_tracked_symlinks(self.project_path)
+
+        # Calculate relative directory path WITHOUT resolving (to preserve symlinks)
+        # We cannot use .resolve() or .relative_to() on symlink-containing paths
+        # because .resolve() follows symlinks to their targets
         try:
-            # First try without resolving (for relative paths)
-            if self.project_path.is_absolute() and dir_path.is_absolute():
-                # Both absolute - use resolve to handle symlinks
-                resolved_project_path = self.project_path.resolve()
-                resolved_dir_path = dir_path.resolve()
-                relative_dir = resolved_dir_path.relative_to(resolved_project_path)
-            elif not self.project_path.is_absolute() and not dir_path.is_absolute():
-                # Both relative - use as-is
+            if dir_path.is_absolute() and self.project_path.is_absolute():
+                # Both absolute - create relative path by slicing path parts
+                # Example: /home/user/project/src -> Path('src') when project is /home/user/project
+                relative_dir = Path(*dir_path.parts[len(self.project_path.parts) :])
+            elif not dir_path.is_absolute() and not self.project_path.is_absolute():
+                # Both relative - use standard relative_to method
                 relative_dir = dir_path.relative_to(self.project_path)
+            elif not dir_path.is_absolute():
+                # dir_path is relative, use as-is if it matches structure
+                relative_dir = dir_path
             else:
-                # Mixed absolute/relative - resolve both for consistency
-                resolved_project_path = self.project_path.resolve()
-                resolved_dir_path = dir_path.resolve()
-                relative_dir = resolved_dir_path.relative_to(resolved_project_path)
-        except ValueError:
+                # Mixed: dir_path absolute, project_path relative - extract relative part
+                # by slicing to avoid symlink resolution
+                relative_dir = Path(*dir_path.parts[len(self.project_path.parts) :])
+        except (ValueError, IndexError):
             # If dir_path is not within project_path, return empty results
-            return [], []
+            return [], [], {}
 
         files = []
         dirs = set()
+        symlinks_in_dir = {}
 
+        # First, collect symlinks to exclude them from files
+        symlink_paths_set = set()  # Store as strings for reliable comparison
+        for symlink_path, target in self._cached_git_symlinks.items():
+            try:
+                # symlink_path is already relative from get_tracked_symlinks
+                symlink_relative = symlink_path
+
+                # Check if the symlink is directly in this directory
+                if len(symlink_relative.parts) == len(relative_dir.parts) + 1:
+                    if (
+                        symlink_relative.parts[: len(relative_dir.parts)]
+                        == relative_dir.parts
+                    ):
+                        # Symlink is in this directory
+                        # Store as string for reliable comparison (convert Path to string)
+                        symlink_paths_set.add(str(symlink_relative))
+                        # Get just the filename for display
+                        symlink_name = symlink_relative.parts[-1]
+                        symlinks_in_dir[symlink_name] = target
+
+            except (ValueError, AttributeError):
+                # symlink is not relative to project_path, skip
+                continue
+
+        # Now process regular files, excluding symlinks
         for git_file in self._cached_git_files:
             try:
-                # Check if this git file is within our target directory
-                # Use the same path handling logic as above
-                if self.project_path.is_absolute() and dir_path.is_absolute():
-                    # Both absolute - use resolved paths
-                    resolved_git_file = (
-                        git_file.resolve() if not git_file.is_absolute() else git_file
-                    )
-                    git_file_relative = resolved_git_file.relative_to(
-                        resolved_project_path
-                    )
-                else:
-                    # Use relative paths
-                    git_file_relative = git_file.relative_to(self.project_path)
+                # git_file is already relative (from get_tracked_files)
+                # DON'T resolve() - that would follow symlinks to their targets
+                # Just use the path as-is
+                git_file_relative = git_file
+
+                # Skip if this file is actually a symlink (compare as strings)
+                if str(git_file_relative) in symlink_paths_set:
+                    continue
 
                 # Check if the file is within the target directory
                 if len(git_file_relative.parts) > len(relative_dir.parts):
@@ -153,7 +174,7 @@ class StructureSection(BaseSection):
                 # git_file is not relative to project_path, skip
                 continue
 
-        return files, sorted(dirs)
+        return files, sorted(dirs), symlinks_in_dir
 
     def _generate_directory_tree(self, facts: dict[str, Any]) -> str:
         """Generate deterministic directory tree from actual project structure."""
@@ -238,15 +259,15 @@ class StructureSection(BaseSection):
 
         # Get items in this subdirectory
         try:
-            git_files, git_dirs = self._get_git_files_in_dir(subdir_path)
+            git_files, git_dirs, git_symlinks = self._get_git_files_in_dir(subdir_path)
 
-            # Collect all items (directories and files)
-            items: list[tuple[str, bool]] = []
+            # Collect all items (directories, files, and symlinks)
+            items: list[tuple[str, bool, bool]] = []  # (name, is_dir, is_symlink)
 
             # Add directories first
             for git_dir in git_dirs:
                 if not git_dir.name.startswith(".") and git_dir.name != "__pycache__":
-                    items.append((f"{git_dir.name}/", True))
+                    items.append((f"{git_dir.name}/", True, False))
 
             # Add important files
             for git_file in git_files:
@@ -261,10 +282,21 @@ class StructureSection(BaseSection):
                         or has_important_name
                         or is_priority_python
                     ):
-                        items.append((git_file.name, False))
+                        items.append((git_file.name, False, False))
 
-            # Sort: directories first, then files
-            items.sort(key=lambda x: (not x[1], x[0]))
+            # Add symlinks (git_symlinks is now {filename: target})
+            for symlink_name, target in git_symlinks.items():
+                if not symlink_name.startswith("."):
+                    # Format: "link -> target"
+                    symlink_display = f"{symlink_name} -> {target}"
+                    items.append((symlink_display, False, True))
+
+            # Sort items: directories first, then files, then symlinks
+            # Key explanation: (not x[1], x[2], x[0]) where x = (name, is_dir, is_symlink)
+            # - not x[1]: directories (True) come first (False < True, so not True < not False)
+            # - x[2]: among non-dirs, non-symlinks (False) come before symlinks (True)
+            # - x[0]: alphabetically by name as final tiebreaker
+            items.sort(key=lambda x: (not x[1], x[2], x[0]))
 
             # Limit items but show more for important directories
             items = items[:max_items]
@@ -279,14 +311,15 @@ class StructureSection(BaseSection):
             current_prefix = f"{parent_prefix}│   "
 
         # Generate tree lines for items in this directory
-        for i, (item_name, is_dir) in enumerate(items):
+        for i, (item_name, is_dir, is_symlink) in enumerate(items):
             is_last_item = i == len(items) - 1
             connector = "└──" if is_last_item else "├──"
             lines.append(f"{current_prefix}{connector} {item_name}")
 
-            # Recursive exploration for subdirectories
+            # Recursive exploration for subdirectories (not for symlinks)
             if (
                 is_dir
+                and not is_symlink
                 and current_depth < 6  # Allow deep recursion (up to 7 levels total)
                 and self._should_explore_subdir(item_name.rstrip("/"))
             ):
@@ -430,7 +463,7 @@ class StructureSection(BaseSection):
 
         try:
             # Use Git tracked files instead of filesystem
-            git_files, git_dirs = self._get_git_files_in_dir(subdir_path)
+            git_files, git_dirs, git_symlinks = self._get_git_files_in_dir(subdir_path)
 
             # Add directories
             for git_dir in git_dirs:
@@ -447,10 +480,15 @@ class StructureSection(BaseSection):
                     if has_important_extension or has_important_name:
                         items.append(git_file.name)
 
+            # Add symlinks (git_symlinks is now {filename: target})
+            for symlink_name, target in git_symlinks.items():
+                if not symlink_name.startswith("."):
+                    items.append(f"{symlink_name} -> {target}")
+
         except (PermissionError, ValueError):
             return items
 
-        # Sort and limit
+        # Sort and limit (symlinks like files, not directories)
         items.sort(key=lambda x: (not x.endswith("/"), x))  # Directories first
         return items[:max_items]
 
@@ -465,7 +503,7 @@ class StructureSection(BaseSection):
 
         # Get Git tracked directories in src/
         try:
-            _, git_dirs = self._get_git_files_in_dir(src_path)
+            _, git_dirs, _ = self._get_git_files_in_dir(src_path)
             subdirs = [d for d in git_dirs if not d.name.startswith(".")]
             subdirs.sort(key=lambda d: d.name)
         except (ValueError, AttributeError):
@@ -518,7 +556,7 @@ class StructureSection(BaseSection):
 
         try:
             # Get Git tracked files and directories
-            git_files, git_dirs = self._get_git_files_in_dir(dir_path)
+            git_files, git_dirs, _ = self._get_git_files_in_dir(dir_path)
 
             # Add key subdirectories first (with their contents)
             subdirs = [
@@ -561,7 +599,7 @@ class StructureSection(BaseSection):
 
         try:
             # Get Git tracked files in this subdirectory
-            git_files, _ = self._get_git_files_in_dir(subdir)
+            git_files, _, _ = self._get_git_files_in_dir(subdir)
             py_files = [
                 f.name
                 for f in git_files
