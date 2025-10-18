@@ -6,8 +6,8 @@ build-backend = "hatchling.build"
 packages = ["src/ai_code_review", "src/context_generator"]
 
 [project]
-name = "ai-code-review"
-version = "1.13.1"
+name = "ai-code-review-cli"
+version = "1.14.0"
 description = "AI-powered code review tool with local Git, remote MR/PR analysis, and CI integration"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -145,6 +145,7 @@ exclude_lines = [
 [dependency-groups]
 dev = [
     "bandit>=1.8.6",
+    "hatch>=1.15.1",
     "mypy>=1.17.1",
     "pre-commit>=4.3.0",
     "pymarkdownlnt>=0.9.32",
@@ -153,6 +154,7 @@ dev = [
     "pytest-cov>=6.2.1",
     "pytest-mock>=3.14.1",
     "ruff>=0.12.11",
+    "twine>=6.2.0",
     "types-aiofiles>=24.1.0.20250822",
     "types-defusedxml>=0.7.0.20250822",
     "types-pyyaml>=6.0.12.20250822",
