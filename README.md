@@ -2,86 +2,31 @@
 
 AI-powered code review tool with **3 powerful use cases**:
 
+- 🤖 **CI Integration** - Automated reviews in your CI/CD pipeline
 - 🔍 **Local Reviews** - Review your local changes before committing
 - 🌐 **Remote Reviews** - Analyze existing MRs/PRs from the terminal
-- 🤖 **CI Integration** - Automated reviews in your CI/CD pipeline
 
-## 🚀 Quick Start
+## 📑 Table of Contents
 
-### Installation
+- [🚀 Primary Use Case: CI/CD Integration](#-primary-use-case-cicd-integration)
+- [⚙️ Secondary Use Cases](#️-secondary-use-cases)
+  - [Local Usage (Container)](#local-usage-container)
+  - [Local Usage (CLI Tool)](#local-usage-cli-tool)
+  - [Remote Reviews](#remote-reviews)
+- [🔧 Configuration](#-configuration)
+- [⚡ Smart Skip Review](#-smart-skip-review)
+- [For Developers](#for-developers)
+- [🔧 Common Issues](#-common-issues)
+- [📖 Documentation](#-documentation)
+- [🤖 AI Tools Disclaimer](#-ai-tools-disclaimer)
+- [📄 License](#-license)
+- [👥 Author](#-author)
 
-```bash
-# Install using uv (recommended)
-uv sync
+## 🚀 Primary Use Case: CI/CD Integration
 
-# Or with pip
-pip install -e .
-```
+This is the primary and recommended way to use the AI Code Review tool.
 
-> To install or learn more about `uv`, check here:
-[uv](https://docs.astral.sh/uv)
-
-### Required Setup
-
-#### 1. Platform Token (Not needed for local reviews)
-
-```bash
-# For GitLab remote reviews
-export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
-
-# For GitHub remote reviews
-export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-
-# Local reviews don't need platform tokens! 🎉
-```
-
-#### 2. AI API Key
-
-```bash
-# Get key from: https://makersuite.google.com/app/apikey
-export AI_API_KEY=your_gemini_api_key_here
-```
-
-## 📋 Usage
-
-### 🔍 Use Case 1: Local Code Review
-
-**Review your local changes before committing:**
-
-> **Prerequisites:** Git must be installed ([git-scm.com](https://git-scm.com/))
-
-```bash
-# Review current local changes vs main branch
-ai-code-review --local
-
-# Review against specific target branch
-ai-code-review --local --target-branch develop
-
-# Save review to file (terminal-friendly format)
-ai-code-review --local -o local-review.md
-```
-
-### 🌐 Use Case 2: Remote Code Review
-
-**Analyze existing MRs/PRs from terminal (no posting):**
-
-```bash
-# GitLab MR
-ai-code-review group/project 123
-
-# GitHub PR
-ai-code-review --platform github owner/repo 456
-
-# Save to file
-ai-code-review group/project 123 -o review.md
-
-# Post the review to the MR/PR
-ai-code-review group/project 123 --post
-```
-
-### 🤖 Use Case 3: CI/CD Integration
-
-#### GitLab CI
+### GitLab CI
 
 Add to `.gitlab-ci.yml`:
 ```yaml
@@ -97,7 +42,7 @@ ai-review:
   allow_failure: true
 ```
 
-#### GitHub Actions
+### GitHub Actions
 
 Add to `.github/workflows/ai-review.yml`:
 ```yaml
@@ -122,21 +67,82 @@ jobs:
         run: ai-code-review --pr-number ${{ github.event.pull_request.number }} --post
 ```
 
-## ⚡ Smart Skip Review
+## ⚙️ Secondary Use Cases
 
-**AI Code Review automatically skips unnecessary reviews** to reduce noise and costs:
+### Local Usage (Container)
 
-- 🔄 **Dependency updates** (`chore(deps): bump lodash 4.1.0 to 4.2.0`)
-- 🤖 **Bot changes** (from `dependabot[bot]`, `renovate[bot]`)
-- 📝 **Documentation-only** changes (if enabled)
-- 🏷️ **Tagged PRs/MRs** (`[skip review]`, `[automated]`)
-- 📝 **Draft/WIP PRs/MRs** (work in progress)
+This is the recommended way to use the tool locally, as it doesn't require any installation on your system.
 
-**Result:** Focus on meaningful changes, save API costs, faster CI/CD pipelines.
+```bash
+# Review local changes
+podman run -it --rm -v .:/app -w /app registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest --local
 
-> **📖 Learn more:** Configuration, customization, and CI integration → [User Guide - Skip Review](docs/user-guide.md#smart-skip-review)
+# Review a remote MR
+podman run -it --rm -e GITLAB_TOKEN=$GITLAB_TOKEN -e AI_API_KEY=$AI_API_KEY registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest group/project 123
+```
+
+> **Note**: You can use `docker` instead of `podman` and the command should work the same.
+
+### Local Usage (CLI Tool)
+
+This is a good option if you have Python installed and want to use the tool as a CLI command.
+
+> **Note on package vs. command name:** The package is registered on PyPI as `ai-code-review-cli`, but for ease of use, the command to execute remains `ai-code-review`.
+
+`pipx` is a more mature and well-known tool for the same purpose. It handles the package vs. command name difference automatically.
+
+```bash
+# Install pipx
+pip install pipx
+pipx ensurepath
+
+# Install the package
+pipx install ai-code-review-cli
+
+# Run the command
+ai-code-review --local
+```
+
+### Remote Reviews
+
+You can also analyze existing MRs/PRs from your terminal.
+
+```bash
+# GitLab MR
+ai-code-review group/project 123
+
+# GitHub PR
+ai-code-review --platform github owner/repo 456
+
+# Save to file
+ai-code-review group/project 123 -o review.md
+
+# Post the review to the MR/PR
+ai-code-review group/project 123 --post
+```
 
 ## 🔧 Configuration
+
+### Required Setup
+
+#### 1. Platform Token (Not needed for local reviews)
+
+```bash
+# For GitLab remote reviews
+export GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
+
+# For GitHub remote reviews
+export GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
+
+# Local reviews don't need platform tokens! 🎉
+```
+
+#### 2. AI API Key
+
+```bash
+# Get key from: https://makersuite.google.com/app/apikey
+export AI_API_KEY=your_gemini_api_key_here
+```
 
 ### Configuration Methods (Priority Order)
 
@@ -156,7 +162,7 @@ Create a YAML configuration file for persistent settings:
 cp .ai_review/config.yml.example .ai_review/config.yml
 
 # Edit your project settings
-vim .ai_review/config.yml
+nano .ai_review/config.yml
 ```
 
 **Key benefits:**
@@ -198,6 +204,35 @@ ai-code-review project/123 2>logs.txt            # Logs to stderr
 ```
 
 **For all configuration options, troubleshooting, and advanced usage → see [User Guide](docs/user-guide.md)**
+
+## ⚡ Smart Skip Review
+
+**AI Code Review automatically skips unnecessary reviews** to reduce noise and costs:
+
+- 🔄 **Dependency updates** (`chore(deps): bump lodash 4.1.0 to 4.2.0`)
+- 🤖 **Bot changes** (from `dependabot[bot]`, `renovate[bot]`)
+- 📝 **Documentation-only** changes (if enabled)
+- 🏷️ **Tagged PRs/MRs** (`[skip review]`, `[automated]`)
+- 📝 **Draft/WIP PRs/MRs** (work in progress)
+
+**Result:** Focus on meaningful changes, save API costs, faster CI/CD pipelines.
+
+> **📖 Learn more:** Configuration, customization, and CI integration → [User Guide - Skip Review](docs/user-guide.md#smart-skip-review)
+
+## For Developers
+
+### Development Setup
+
+```bash
+# Install using uv (recommended)
+uv sync
+
+# Or with pip
+pip install -e .
+```
+
+> To install or learn more about `uv`, check here:
+[uv](https://docs.astral.sh/uv)
 
 ## 🔧 Common Issues
 
