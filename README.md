@@ -2,7 +2,7 @@
 
 AI-powered code review tool with **3 powerful use cases**:
 
-- 🤖 **CI Integration** - Automated reviews in your CI/CD pipeline
+- 🤖 **CI Integration** - Automated reviews in your CI/CD pipeline (GitLab or GitHub)
 - 🔍 **Local Reviews** - Review your local changes before committing
 - 🌐 **Remote Reviews** - Analyze existing MRs/PRs from the terminal
 

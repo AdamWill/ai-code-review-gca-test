@@ -7,16 +7,35 @@ packages = ["src/ai_code_review", "src/context_generator"]
 
 [project]
 name = "ai-code-review-cli"
-version = "1.14.0"
-description = "AI-powered code review tool with local Git, remote MR/PR analysis, and CI integration"
+version = "1.14.1"
+description = "AI-powered code review tool with local Git, remote MR/PR analysis, and CI integration (GitLab or GitHub)"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
     {name = "Juanje Ojeda", email = "juanje@redhat.com"},
 ]
+keywords = [
+    "static code analysis",
+    "code review",
+    "code quality",
+    "ai",
+    "coding",
+    "assistant",
+    "llm",
+    "github",
+    "gitlab",
+    "automation",
+    "devops",
+    "developer tools",
+    "github actions",
+    "gitlab-ci",
+    "workflows",
+    "git"
+]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
