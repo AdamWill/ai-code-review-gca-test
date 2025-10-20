@@ -75,10 +75,14 @@ This is the recommended way to use the tool locally, as it doesn't require any i
 
 ```bash
 # Review local changes
-podman run -it --rm -v .:/app -w /app registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest --local
+podman run -it --rm -v .:/app -w /app \
+       registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest \
+       ai-code-review --local
 
 # Review a remote MR
-podman run -it --rm -e GITLAB_TOKEN=$GITLAB_TOKEN -e AI_API_KEY=$AI_API_KEY registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest group/project 123
+podman run -it --rm -e GITLAB_TOKEN=$GITLAB_TOKEN -e AI_API_KEY=$AI_API_KEY \
+       registry.gitlab.com/redhat/edge/ci-cd/ai-code-review:latest \
+       ai-code-review group/project 123
 ```
 
 > **Note**: You can use `docker` instead of `podman` and the command should work the same.
