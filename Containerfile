@@ -11,6 +11,7 @@ FROM registry.access.redhat.com/ubi9:latest
 ENV DNF_OPTS="--setopt=install_weak_deps=False --setopt=tsflags=nodocs"
 RUN dnf install -y \
                 python3.12-pip \
+                git-core \
  && dnf clean all -y
 COPY --from=builder /code/dist/*.whl /tmp/
 RUN pip3.12 install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
