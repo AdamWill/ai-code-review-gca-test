@@ -195,7 +195,7 @@ Full multi-platform support for GitLab, GitHub, and Local Git repositories.
 
 **Currently Implemented:**
 - **Local Development**: Ollama with qwen2.5-coder:7b (local development only, cost-free)
-- **Production Default**: Google Gemini (gemini-2.5-pro)
+- **Production Default**: Google Gemini (gemini-3-pro-preview)
 - **High-Quality Alternative**: Anthropic Claude (claude-sonnet-4-20250514)
 
 **Planned (Not Implemented):**
@@ -818,7 +818,7 @@ GITHUB_URL=https://api.github.com       # GitHub API URL (supports Enterprise)
 
 # Core AI Configuration
 AI_PROVIDER=gemini                      # gemini, anthropic, ollama (openai: configured but not implemented)
-AI_MODEL=gemini-2.5-pro                 # AI model name for selected provider
+AI_MODEL=gemini-3-pro-preview           # AI model name for selected provider
 AI_API_KEY=your_gemini_api_key_here     # Required for cloud providers (not needed for ollama)
 
 # AI Model Parameters (defaults optimized for code review)

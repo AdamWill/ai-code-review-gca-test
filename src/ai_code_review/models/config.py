@@ -166,7 +166,7 @@ class SkipReviewConfig(BaseModel):
 # Default models for each AI provider
 _DEFAULT_MODELS = {
     AIProvider.OLLAMA: "qwen2.5-coder:7b",
-    AIProvider.GEMINI: "gemini-2.5-pro",
+    AIProvider.GEMINI: "gemini-3-pro-preview",
     AIProvider.ANTHROPIC: "claude-sonnet-4-20250514",
     AIProvider.OPENAI: "gpt-5-mini",  # Default for future OpenAI implementation
 }
@@ -238,7 +238,10 @@ class Config(BaseSettings):
     ai_provider: AIProvider = Field(
         default=DEFAULT_AI_PROVIDER, description="AI provider to use"
     )
-    ai_model: str = Field(default="gemini-2.5-pro", description="AI model name")
+    ai_model: str = Field(
+        default_factory=lambda: get_default_model_for_provider(DEFAULT_AI_PROVIDER),
+        description="AI model name",
+    )
     ai_api_key: str | None = Field(
         default=None, description="API key for cloud AI providers"
     )
@@ -689,6 +692,7 @@ class Config(BaseSettings):
             # Valid models based on https://ai.google.dev/gemini-api/docs/models
             valid_gemini_models = {
                 # Current models
+                "gemini-3-pro-preview",
                 "gemini-2.5-pro",
                 "gemini-2.5-flash",
                 "gemini-2.5-flash-lite",
@@ -712,7 +716,7 @@ class Config(BaseSettings):
             )
 
             if not is_valid_model:
-                suggested_model = "gemini-2.5-pro"
+                suggested_model = _DEFAULT_MODELS[AIProvider.GEMINI]
                 raise ValueError(
                     f"AI model '{model}' is not a valid Gemini model. "
                     f"Valid models include: {', '.join(sorted(valid_gemini_models))}. "

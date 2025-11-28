@@ -382,7 +382,7 @@ ai-code-review group/project 123 --config-file my-config.yml
 platform_provider: gitlab
 gitlab_url: https://gitlab.com
 ai_provider: gemini
-ai_model: gemini-2.5-pro
+ai_model: gemini-3-pro-preview
 max_files: 50
 include_mr_summary: true
 
@@ -427,7 +427,7 @@ gitlab_url: https://gitlab.company.com
 ssl_verify: true
 ssl_cert_path: /etc/ssl/certs/company-ca.pem
 ai_provider: gemini
-ai_model: gemini-2.5-pro
+ai_model: gemini-3-pro-preview
 
 # Project context
 enable_project_context: true
@@ -518,7 +518,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here    # For Anthropic
 ```bash
 # AI Configuration
 AI_PROVIDER=gemini              # gemini, anthropic (cloud providers only for CI/CD - no local models)
-AI_MODEL=gemini-2.5-pro         # Model name (gemini-2.5-pro, claude-sonnet-4-20250514)
+AI_MODEL=gemini-3-pro-preview   # Model name (gemini-3-pro-preview, claude-sonnet-4-20250514)
 TEMPERATURE=0.1                 # Response randomness (0.1 default)
 MAX_TOKENS=8000                 # Max response tokens (8000 default)
 

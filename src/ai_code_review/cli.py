@@ -10,7 +10,12 @@ import click
 import structlog
 
 from ai_code_review.core.review_engine import ReviewEngine
-from ai_code_review.models.config import AIProvider, Config, PlatformProvider
+from ai_code_review.models.config import (
+    _DEFAULT_MODELS,
+    AIProvider,
+    Config,
+    PlatformProvider,
+)
 from ai_code_review.utils.exceptions import (
     EXIT_CODE_SKIPPED,
     AICodeReviewError,
@@ -241,7 +246,7 @@ def _setup_logging(config: Config) -> None:
 @click.option(
     "--model",
     default=None,
-    help="AI model name (default: provider-specific - gemini-2.5-pro, claude-sonnet-4-20250514, qwen2.5-coder:7b)",
+    help=f"AI model name (default: provider-specific - {_DEFAULT_MODELS[AIProvider.GEMINI]}, {_DEFAULT_MODELS[AIProvider.ANTHROPIC]}, {_DEFAULT_MODELS[AIProvider.OLLAMA]})",
 )
 @click.option(
     "--ollama-url",

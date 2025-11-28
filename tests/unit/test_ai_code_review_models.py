@@ -690,8 +690,10 @@ DRY_RUN=true
         config = Config(gitlab_token="test_token", ai_api_key="test_api_key")
 
         # Should default to Gemini provider and auto-assign model
+        from ai_code_review.models.config import _DEFAULT_MODELS
+
         assert config.ai_provider == AIProvider.GEMINI
-        assert config.ai_model == "gemini-2.5-pro"
+        assert config.ai_model == _DEFAULT_MODELS[AIProvider.GEMINI]
 
     def test_auto_model_assignment_explicit_provider(
         self, monkeypatch: MonkeyPatch
@@ -884,19 +886,29 @@ class TestGetDefaultModelForProvider:
 
     def test_get_default_model_for_all_providers(self) -> None:
         """Test that all AIProvider enum values have default models."""
+        # Test each provider has a default model (use the constants)
         from ai_code_review.models.config import (
+            _DEFAULT_MODELS,
             AIProvider,
             get_default_model_for_provider,
         )
 
-        # Test each provider has a default model
-        assert get_default_model_for_provider(AIProvider.OLLAMA) == "qwen2.5-coder:7b"
-        assert get_default_model_for_provider(AIProvider.GEMINI) == "gemini-2.5-pro"
+        assert (
+            get_default_model_for_provider(AIProvider.OLLAMA)
+            == _DEFAULT_MODELS[AIProvider.OLLAMA]
+        )
+        assert (
+            get_default_model_for_provider(AIProvider.GEMINI)
+            == _DEFAULT_MODELS[AIProvider.GEMINI]
+        )
         assert (
             get_default_model_for_provider(AIProvider.ANTHROPIC)
-            == "claude-sonnet-4-20250514"
+            == _DEFAULT_MODELS[AIProvider.ANTHROPIC]
         )
-        assert get_default_model_for_provider(AIProvider.OPENAI) == "gpt-5-mini"
+        assert (
+            get_default_model_for_provider(AIProvider.OPENAI)
+            == _DEFAULT_MODELS[AIProvider.OPENAI]
+        )
 
         # Ensure all enum members are covered (no missing providers)
         all_providers = set(AIProvider)

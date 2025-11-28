@@ -152,13 +152,15 @@ class TestGeminiProvider:
     @pytest.mark.asyncio
     async def test_health_check_dry_run(self, dry_run_config: Config) -> None:
         """Test health check in dry run mode."""
+        from ai_code_review.models.config import _DEFAULT_MODELS, AIProvider
+
         provider = GeminiProvider(dry_run_config)
         result = await provider.health_check()
 
         expected = {
             "status": "healthy",
             "dry_run": True,
-            "model": "gemini-2.5-pro",
+            "model": _DEFAULT_MODELS[AIProvider.GEMINI],
             "provider": "gemini",
         }
         assert result == expected

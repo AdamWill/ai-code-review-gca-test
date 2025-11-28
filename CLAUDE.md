@@ -93,7 +93,7 @@ The tool provides both **local development support** (Ollama, no API keys) and *
 #### Multi-Modal AI Strategy
 
 - **Local Development**: Ollama with `qwen2.5-coder:7b` (cost-free, no API keys required)
-- **Production/CI**: Google Gemini `gemini-2.5-pro` (default cloud provider)
+- **Production/CI**: Google Gemini `gemini-3-pro-preview` (default cloud provider)
 - **High-Quality Alternative**: Anthropic Claude `claude-sonnet-4-20250514`
 - **Extensible**: LangChain abstraction supports multiple providers
 
@@ -183,8 +183,8 @@ Arguments    Environment         ├─ GitHub Client ─┤  Context Prep   Lan
 ### Configuration Architecture
 
 **Environment Priority System:**
-1. **CLI Arguments** (highest): `--provider gemini --model gemini-2.5-pro`
-2. **Environment Variables**: `AI_PROVIDER=gemini AI_MODEL=gemini-2.5-pro`
+1. **CLI Arguments** (highest): `--provider gemini --model gemini-3-pro-preview`
+2. **Environment Variables**: `AI_PROVIDER=gemini AI_MODEL=gemini-3-pro-preview`
 3. **CI/CD Variables**: `CI_PROJECT_PATH`, `CI_MERGE_REQUEST_IID` (auto-detected)
 4. **Defaults** (lowest): Gemini production, Ollama local development
 
@@ -205,7 +205,7 @@ GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
 
 # Production CI/CD (API key required)
 AI_PROVIDER=gemini
-AI_MODEL=gemini-2.5-pro
+AI_MODEL=gemini-3-pro-preview
 AI_API_KEY=your_gemini_api_key_here
 GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # Or GITHUB_TOKEN for GitHub
 # Usage: ai-code-review --post (in CI)
