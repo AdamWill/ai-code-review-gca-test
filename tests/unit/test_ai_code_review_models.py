@@ -296,16 +296,20 @@ DRY_RUN=true
         )
         assert config2.ai_model == "qwen2.5-coder:7b"  # Should be trimmed
 
-        # Invalid model names should raise ValueError
-        with pytest.raises(ValueError, match="AI model name cannot be empty"):
-            Config(
-                gitlab_token="test_token", ai_provider=AIProvider.OLLAMA, ai_model=""
-            )
+        # Empty strings are normalized to None (use provider's default)
+        config_empty = Config(
+            gitlab_token="test_token", ai_provider=AIProvider.OLLAMA, ai_model=""
+        )
+        assert config_empty.ai_model is None
+        assert config_empty.get_ai_model() == "qwen2.5-coder:7b"  # Default for Ollama
 
-        with pytest.raises(ValueError, match="AI model name cannot be empty"):
-            Config(
-                gitlab_token="test_token", ai_provider=AIProvider.OLLAMA, ai_model="   "
-            )
+        config_spaces = Config(
+            gitlab_token="test_token", ai_provider=AIProvider.OLLAMA, ai_model="   "
+        )
+        assert config_spaces.ai_model is None
+        assert config_spaces.get_ai_model() == "qwen2.5-coder:7b"  # Default for Ollama
+
+        # Model names with invalid characters should raise ValueError
 
         with pytest.raises(ValueError, match="invalid characters"):
             Config(
@@ -689,11 +693,14 @@ DRY_RUN=true
         # Gemini is a cloud provider, so it needs an API key
         config = Config(gitlab_token="test_token", ai_api_key="test_api_key")
 
-        # Should default to Gemini provider and auto-assign model
+        # Should default to Gemini provider and auto-assign model through get_ai_model()
         from ai_code_review.models.config import _DEFAULT_MODELS
 
         assert config.ai_provider == AIProvider.GEMINI
-        assert config.ai_model == _DEFAULT_MODELS[AIProvider.GEMINI]
+        assert config.ai_model is None  # Field is None
+        assert (
+            config.get_ai_model() == _DEFAULT_MODELS[AIProvider.GEMINI]
+        )  # Getter returns default
 
     def test_auto_model_assignment_explicit_provider(
         self, monkeypatch: MonkeyPatch
@@ -707,9 +714,9 @@ DRY_RUN=true
             ai_api_key="test_key",
         )
 
-        # Should auto-assign model for Anthropic
+        # Should auto-assign model for Anthropic through get_ai_model()
         assert config.ai_provider == AIProvider.ANTHROPIC
-        assert config.ai_model == "claude-sonnet-4-20250514"
+        assert config.get_ai_model() == "claude-sonnet-4-20250514"
 
     def test_enable_project_context_defaults_true(
         self, monkeypatch: MonkeyPatch

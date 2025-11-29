@@ -238,9 +238,9 @@ class Config(BaseSettings):
     ai_provider: AIProvider = Field(
         default=DEFAULT_AI_PROVIDER, description="AI provider to use"
     )
-    ai_model: str = Field(
-        default_factory=lambda: get_default_model_for_provider(DEFAULT_AI_PROVIDER),
-        description="AI model name",
+    ai_model: str | None = Field(
+        default=None,
+        description="AI model name (auto-selects default model if not specified)",
     )
     ai_api_key: str | None = Field(
         default=None, description="API key for cloud AI providers"
@@ -433,10 +433,18 @@ class Config(BaseSettings):
 
     @field_validator("ai_model")
     @classmethod
-    def validate_ai_model(cls, v: str) -> str:
-        """Validate AI model name format."""
-        if not v or not v.strip():
-            raise ValueError("AI model name cannot be empty")
+    def validate_ai_model(cls, v: str | None) -> str | None:
+        """Validate AI model name format.
+
+        Empty strings are treated as None (use provider's default model).
+        """
+        # None is allowed - get_ai_model() will resolve to default
+        if v is None:
+            return v
+
+        # Empty string is treated as None - use provider's default
+        if not v.strip():
+            return None
 
         # Basic validation: no special characters that could cause issues
         if any(char in v for char in ["\n", "\r", "\t", "\0"]):
@@ -674,7 +682,7 @@ class Config(BaseSettings):
     def validate_model_provider_compatibility(cls, config: Any) -> Any:
         """Validate that the AI model is compatible with the selected provider."""
         provider = config.ai_provider
-        model = config.ai_model
+        model = config.get_ai_model()
 
         # Check for obvious mismatches
         if provider == AIProvider.OLLAMA:
@@ -738,6 +746,19 @@ class Config(BaseSettings):
         """Get effective repository path from CI environment or explicit config."""
         # Priority: new fields -> legacy GitLab fields -> None
         return self.repository_path or self.ci_project_path
+
+    def get_ai_model(self) -> str:
+        """Get AI model to use for main review.
+
+        Returns configured model or appropriate default model based on provider.
+
+        Returns:
+            Model name to use for main review
+        """
+        if self.ai_model:
+            return self.ai_model
+
+        return get_default_model_for_provider(self.ai_provider)
 
     def get_effective_pull_request_number(self) -> int | None:
         """Get effective pull/merge request number from CI environment or explicit config."""

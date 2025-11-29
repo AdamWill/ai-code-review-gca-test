@@ -595,7 +595,7 @@ async def _run_review(
     click.echo(f"  Platform: {platform_name.title()}")
     click.echo(f"  Server URL: {config.get_effective_server_url()}")
     click.echo(f"  AI Provider: {_get_enum_value(config.ai_provider)}")
-    click.echo(f"  Model: {config.ai_model}")
+    click.echo(f"  Model: {config.get_ai_model()}")
 
     if config.is_ci_mode():
         ci_system = "GitLab CI" if platform_name == "gitlab" else "GitHub Actions"

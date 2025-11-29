@@ -28,9 +28,7 @@ class BaseAIProvider(ABC):
     @property
     def model_name(self) -> str:
         """Get model name."""
-        if self.config.ai_model is None:
-            raise ValueError("AI model is not set")
-        return self.config.ai_model
+        return self.config.get_ai_model()
 
     @property
     def provider_name(self) -> str:
@@ -69,5 +67,6 @@ class BaseAIProvider(ABC):
     def validate_config(self) -> None:
         """Validate provider-specific configuration."""
         # Base validation - subclasses can override
-        if not self.config.ai_model:
+        model = self.config.get_ai_model()
+        if not model:
             raise ValueError(f"Model name is required for {self.provider_name}")

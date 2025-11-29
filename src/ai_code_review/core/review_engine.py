@@ -198,7 +198,7 @@ class ReviewEngine:
             project_id=project_id,
             mr_iid=mr_iid,
             provider=self.config.ai_provider.value,
-            model=self.config.ai_model,
+            model=self.config.get_ai_model(),
             dry_run=self.config.dry_run,
         )
 
@@ -767,7 +767,7 @@ class ReviewEngine:
         footer_parts = [
             "---",
             "🤖 **AI Code Review** | Generated with ai-code-review",
-            f"**Platform:** {platform_name} | **AI Provider:** {self.config.ai_provider.value} | **Model:** {self.config.ai_model}",
+            f"**Platform:** {platform_name} | **AI Provider:** {self.config.ai_provider.value} | **Model:** {self.config.get_ai_model()}",
         ]
 
         if self.config.dry_run:

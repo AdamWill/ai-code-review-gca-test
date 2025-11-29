@@ -126,7 +126,7 @@ class ContextBuilder:
             project_name=self.project_path.name,
             context_content=context_content,
             ai_provider=self.config.ai_provider.value,
-            ai_model=self.config.ai_model,
+            ai_model=self.config.get_ai_model(),
         )
 
         logger.info(
@@ -271,7 +271,7 @@ class ContextBuilder:
         return {
             "project_name": self.project_path.name,
             "ai_provider": self.config.ai_provider.value,
-            "ai_model": self.config.ai_model,
+            "ai_model": self.config.get_ai_model(),
             "sections_registered": len(self.section_registry.sections),
             "dry_run": self.config.dry_run,
         }

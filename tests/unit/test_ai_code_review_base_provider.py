@@ -73,25 +73,46 @@ class TestBaseAIProvider:
         assert provider.provider_name == "ollama"
 
     def test_validate_config_with_missing_model(self, test_config: Config) -> None:
-        """Test config validation with missing model."""
+        """Test config validation with missing model uses default."""
         test_config.ai_model = None
         provider = MockAIProvider(test_config)
 
-        with pytest.raises(ValueError, match="Model name is required for ollama"):
-            provider.validate_config()
+        # With new behavior, get_ai_model() returns default model for provider
+        # So validation should pass and return default model
+        provider.validate_config()
+        assert provider.model_name == "qwen2.5-coder:7b"  # Default for Ollama
 
     def test_validate_config_with_empty_model(self, test_config: Config) -> None:
-        """Test config validation with empty model."""
+        """Test config validation with empty model uses default.
+
+        Note: Empty strings are normalized to None by the validator,
+        then get_ai_model() returns the provider's default model.
+        """
         test_config.ai_model = ""
         provider = MockAIProvider(test_config)
 
-        with pytest.raises(ValueError, match="Model name is required for ollama"):
-            provider.validate_config()
+        # Empty string is normalized to None, then uses default
+        provider.validate_config()
+        assert provider.model_name == "qwen2.5-coder:7b"  # Default for Ollama
 
     def test_model_name_property_with_none(self, test_config: Config) -> None:
-        """Test model_name property when model is None."""
+        """Test model_name property when model is None returns default."""
         test_config.ai_model = None
         provider = MockAIProvider(test_config)
 
-        with pytest.raises(ValueError, match="AI model is not set"):
-            _ = provider.model_name
+        # With new behavior, get_ai_model() returns default model for provider
+        assert provider.model_name == "qwen2.5-coder:7b"  # Default for Ollama
+
+    def test_empty_model_normalized_during_construction(self) -> None:
+        """Test that empty string is normalized to None during Config construction."""
+        # Create config with empty string for ai_model
+        config = Config(
+            gitlab_token="test_token",
+            ai_provider=AIProvider.OLLAMA,
+            ai_model="",  # Empty string should be normalized to None
+        )
+
+        # Empty string should be normalized to None by validator
+        assert config.ai_model is None
+        # get_ai_model() should return provider's default
+        assert config.get_ai_model() == "qwen2.5-coder:7b"

@@ -268,7 +268,7 @@ async def _run_generation(
     output_path_obj = Path(output_path)
 
     click.echo(f"🧠 Analysis: {project_path}")
-    click.echo(f"🤖 AI Provider: {config.ai_provider.value} ({config.ai_model})")
+    click.echo(f"🤖 AI Provider: {config.ai_provider.value} ({config.get_ai_model()})")
     click.echo(f"💾 Output: {output_path}")
 
     if config.dry_run:
