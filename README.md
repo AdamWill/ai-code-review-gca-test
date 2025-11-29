@@ -209,6 +209,42 @@ ai-code-review project/123 2>logs.txt            # Logs to stderr
 
 **For all configuration options, troubleshooting, and advanced usage → see [User Guide](docs/user-guide.md)**
 
+### Intelligent Review Context (Two-Phase Synthesis)
+
+The tool uses a **two-phase approach** to incorporate previous reviews and avoid repeating mistakes:
+
+**Phase 1 - Synthesis (automatic):**
+- Fetches **ALL** comments and reviews (including resolved ones)
+- Uses a fast model (e.g., `gemini-2.5-flash`) to synthesize key insights
+- Identifies author corrections to previous AI reviews
+- Generates concise summary (<500 words)
+
+**Phase 2 - Main Review:**
+- Uses synthesis as context to avoid repeating mistakes
+- Focuses on code changes with awareness of discussions
+
+**Benefits:**
+- ✅ Prevents repeating invalidated suggestions
+- ✅ Reduces token usage (synthesis is much shorter than raw comments)
+- ✅ Lower costs (fast model for preprocessing)
+- ✅ Better quality (focused insights vs raw data)
+
+**Configuration:**
+```yaml
+# Enable/disable (default: enabled)
+enable_review_context: true
+enable_review_synthesis: true
+
+# Custom synthesis model (optional)
+synthesis_model: "gemini-2.5-flash"  # Default for Gemini
+# synthesis_model: "claude-3-5-haiku-20241022"  # For Anthropic
+# synthesis_model: "gpt-4o-mini"  # For OpenAI
+```
+
+**Skips automatically when:**
+- No comments/reviews exist (first review)
+- Feature is disabled
+
 ## ⚡ Smart Skip Review
 
 **AI Code Review automatically skips unnecessary reviews** to reduce noise and costs:

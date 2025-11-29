@@ -21,6 +21,7 @@ class BasePlatformClient(PlatformClientInterface, ABC):
     def __init__(self, config: Config) -> None:
         """Initialize platform client."""
         self.config = config
+        self._authenticated_username: str | None = None
 
     def _should_exclude_file(self, file_path: str) -> bool:
         """Check if file should be excluded from AI review based on patterns.
@@ -74,6 +75,21 @@ class BasePlatformClient(PlatformClientInterface, ABC):
             total_chars += diff_chars
 
         return limited_diffs
+
+    @abstractmethod
+    async def get_authenticated_username(self) -> str:
+        """Get username of authenticated user (bot).
+
+        This is used to identify which comments/reviews were made by this bot
+        to prioritize author responses to previous AI reviews.
+
+        Returns:
+            Username/login of the authenticated user
+
+        Raises:
+            PlatformAPIError: If API call fails
+        """
+        pass
 
     @abstractmethod
     async def get_pull_request_data(

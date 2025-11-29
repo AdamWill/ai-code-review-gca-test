@@ -17,6 +17,8 @@ from ai_code_review.models.platform import (
     PullRequestData,
     PullRequestDiff,
     PullRequestInfo,
+    Review,
+    ReviewComment,
 )
 from ai_code_review.utils.platform_exceptions import GitHubAPIError
 
@@ -40,6 +42,34 @@ class GitHubClient(BasePlatformClient):
                 base_url=self.config.get_effective_server_url(),
             )
         return self._github_client
+
+    async def get_authenticated_username(self) -> str:
+        """Get GitHub username with caching.
+
+        Returns:
+            GitHub username (login) of the authenticated user
+
+        Raises:
+            GitHubAPIError: If getting user fails
+        """
+        if self._authenticated_username is not None:
+            return self._authenticated_username
+
+        if self.config.dry_run:
+            self._authenticated_username = "ai-code-review-bot-dry-run"
+            return self._authenticated_username
+
+        try:
+            # Get authenticated user using thread pool for blocking call
+            user = await asyncio.to_thread(self.github_client.get_user)
+            self._authenticated_username = user.login
+            logger.info(
+                "Authenticated as GitHub user", username=self._authenticated_username
+            )
+            return self._authenticated_username
+
+        except GithubException as e:
+            raise GitHubAPIError(f"Failed to get authenticated user: {e}") from e
 
     async def get_pull_request_data(
         self, project_id: str, pr_number: int
@@ -85,11 +115,20 @@ class GitHubClient(BasePlatformClient):
                 draft=getattr(pull_request, "draft", False),  # GitHub draft status
             )
 
-            # Get diffs and commits
+            # Get diffs, commits, and reviews
             diffs = await self._fetch_pull_request_diffs(pull_request)
             commits = await self._fetch_pull_request_commits(pull_request)
+            reviews, comments = await self._fetch_pull_request_reviews_and_comments(
+                pull_request
+            )
 
-            return PullRequestData(info=pr_info, diffs=diffs, commits=commits)
+            return PullRequestData(
+                info=pr_info,
+                diffs=diffs,
+                commits=commits,
+                reviews=reviews,
+                comments=comments,
+            )
 
         except GithubException as e:
             # GitHub library specific exceptions
@@ -202,6 +241,119 @@ class GitHubClient(BasePlatformClient):
             # Catch any other unexpected errors (should be rare)
             raise GitHubAPIError(f"Unexpected error fetching commits: {e}") from e
 
+    async def _fetch_pull_request_reviews_and_comments(
+        self, pull_request: PullRequest
+    ) -> tuple[list[Review], list[ReviewComment]]:
+        """Fetch ALL reviews and comments (resolved and unresolved).
+
+        Important: Fetches all comments, not just open/unresolved ones,
+        to detect previously invalidated suggestions.
+
+        Args:
+            pull_request: GitHub PullRequest object
+
+        Returns:
+            Tuple of (reviews_list, all_comments)
+        """
+
+        def _fetch_all_sync() -> tuple[list[Review], list[ReviewComment]]:
+            """Fetch and iterate over paginated lists in thread.
+
+            Limits total comments fetched to max_comments_to_fetch to avoid
+            performance issues on PRs with hundreds of comments.
+            """
+            from itertools import islice
+
+            reviews_list_sync = []
+            all_comments_sync = []
+            max_to_fetch = self.config.max_comments_to_fetch
+            comments_fetched = 0
+
+            # Get recent reviews - iteration happens in thread
+            reviews = pull_request.get_reviews()
+            for review in islice(reviews, max_to_fetch):
+                reviews_list_sync.append(
+                    Review(
+                        id=review.id,
+                        author=review.user.login,
+                        state=review.state,
+                        body=review.body or "",
+                        submitted_at=review.submitted_at.isoformat(),
+                    )
+                )
+
+            # Get recent review comments (code-level) - iteration in thread
+            review_comments = pull_request.get_review_comments()
+            for comment in islice(review_comments, max_to_fetch - comments_fetched):
+                # Skip comments from bots (GitHub Actions, etc.)
+                if comment.user.type == "Bot":
+                    continue
+
+                all_comments_sync.append(
+                    ReviewComment(
+                        id=comment.id,
+                        author=comment.user.login,
+                        body=comment.body,
+                        created_at=comment.created_at.isoformat(),
+                        updated_at=comment.updated_at.isoformat()
+                        if comment.updated_at
+                        else None,
+                        path=comment.path,
+                        line=comment.line,
+                        in_reply_to_id=comment.in_reply_to_id,
+                        is_system=False,
+                        # Note: GitHub doesn't expose resolved status directly
+                    )
+                )
+                comments_fetched += 1
+                if comments_fetched >= max_to_fetch:
+                    break
+
+            # Get recent issue comments (general PR comments) - iteration in thread
+            if comments_fetched < max_to_fetch:
+                issue_comments = pull_request.get_issue_comments()
+                for issue_comment in islice(
+                    issue_comments, max_to_fetch - comments_fetched
+                ):
+                    # Skip comments from bots (GitHub Actions, etc.)
+                    if issue_comment.user.type == "Bot":
+                        continue
+
+                    all_comments_sync.append(
+                        ReviewComment(
+                            id=issue_comment.id,
+                            author=issue_comment.user.login,
+                            body=issue_comment.body,
+                            created_at=issue_comment.created_at.isoformat(),
+                            updated_at=issue_comment.updated_at.isoformat()
+                            if issue_comment.updated_at
+                            else None,
+                            is_system=False,
+                        )
+                    )
+                    comments_fetched += 1
+                    if comments_fetched >= max_to_fetch:
+                        break
+
+            return reviews_list_sync, all_comments_sync
+
+        try:
+            # Run all blocking operations (including pagination) in thread
+            reviews_list, all_comments = await asyncio.to_thread(_fetch_all_sync)
+
+            logger.info(
+                "Fetched PR reviews and comments",
+                reviews=len(reviews_list),
+                comments=len(all_comments),
+                max_fetched=self.config.max_comments_to_fetch,
+            )
+
+            return reviews_list, all_comments
+
+        except GithubException as e:
+            logger.warning("Failed to fetch reviews/comments", error=str(e))
+            return [], []
+
     def _create_mock_pr_data(self, project_id: str, pr_number: int) -> PullRequestData:
         """Create mock pull request data for dry run mode."""
         mock_info = PullRequestInfo(
@@ -236,7 +388,33 @@ class GitHubClient(BasePlatformClient):
             )
         ]
 
-        return PullRequestData(info=mock_info, diffs=mock_diffs, commits=mock_commits)
+        mock_reviews = [
+            Review(
+                id=1,
+                author="ai-code-review-bot-dry-run",
+                state="COMMENTED",
+                body="Previous AI review (mock)",
+                submitted_at="2024-01-01T10:00:00Z",
+            )
+        ]
+
+        mock_comments = [
+            ReviewComment(
+                id=1,
+                author="mock_user",
+                body="Thanks for the review! I've addressed the concerns about error handling.",
+                created_at="2024-01-01T11:00:00Z",
+                in_reply_to_id=1,
+            )
+        ]
+
+        return PullRequestData(
+            info=mock_info,
+            diffs=mock_diffs,
+            commits=mock_commits,
+            reviews=mock_reviews,
+            comments=mock_comments,
+        )
 
     async def post_review(
         self, project_id: str, pr_number: int, review_content: str

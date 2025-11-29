@@ -910,3 +910,87 @@ class TestGitLabClient:
                 private_token=test_config.gitlab_token,
                 ssl_verify=test_config.ssl_verify,  # Should use config default, not downloaded cert
             )
+
+    @pytest.mark.asyncio
+    async def test_get_authenticated_username_success(
+        self, test_config: Config
+    ) -> None:
+        """Test getting authenticated username successfully."""
+        client = GitLabClient(test_config)
+
+        # Mock GitLab client and user
+        mock_gitlab = MagicMock()
+        mock_user = MagicMock()
+        mock_user.username = "test-bot-user"
+        mock_gitlab.user = mock_user
+
+        # Set the mock on the private attribute
+        client._gitlab_client = mock_gitlab
+
+        username = await client.get_authenticated_username()
+
+        # Should call auth() first
+        mock_gitlab.auth.assert_called_once()
+        # Should return the username
+        assert username == "test-bot-user"
+        # Should cache the result
+        assert client._authenticated_username == "test-bot-user"
+
+    @pytest.mark.asyncio
+    async def test_get_authenticated_username_cached(self, test_config: Config) -> None:
+        """Test that authenticated username is cached."""
+        client = GitLabClient(test_config)
+        client._authenticated_username = "cached-user"
+
+        # Should return cached value without API call
+        username = await client.get_authenticated_username()
+        assert username == "cached-user"
+
+    @pytest.mark.asyncio
+    async def test_get_authenticated_username_dry_run(
+        self, dry_run_config: Config
+    ) -> None:
+        """Test getting authenticated username in dry run mode."""
+        client = GitLabClient(dry_run_config)
+
+        username = await client.get_authenticated_username()
+
+        # Should return mock username
+        assert username == "ai-code-review-bot-dry-run"
+        assert client._authenticated_username == "ai-code-review-bot-dry-run"
+
+    @pytest.mark.asyncio
+    async def test_get_authenticated_username_user_none(
+        self, test_config: Config
+    ) -> None:
+        """Test handling when GitLab returns None for user."""
+        client = GitLabClient(test_config)
+
+        # Mock GitLab client with None user
+        mock_gitlab = MagicMock()
+        mock_gitlab.user = None
+
+        # Set the mock on the private attribute
+        client._gitlab_client = mock_gitlab
+
+        with pytest.raises(
+            GitLabAPIError, match="Failed to get authenticated user: user is None"
+        ):
+            await client.get_authenticated_username()
+
+    @pytest.mark.asyncio
+    async def test_get_authenticated_username_api_error(
+        self, test_config: Config
+    ) -> None:
+        """Test handling GitLab API errors."""
+        client = GitLabClient(test_config)
+
+        # Mock GitLab client that raises error on auth
+        mock_gitlab = MagicMock()
+        mock_gitlab.auth.side_effect = gitlab.GitlabAuthenticationError("Invalid token")
+
+        # Set the mock on the private attribute
+        client._gitlab_client = mock_gitlab
+
+        with pytest.raises(GitLabAPIError, match="Failed to get authenticated user"):
+            await client.get_authenticated_username()

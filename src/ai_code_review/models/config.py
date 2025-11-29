@@ -16,6 +16,8 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings
 
+from ai_code_review.utils.constants import MAX_COMMENTS_TO_FETCH
+
 # Default file exclusion patterns - defined once to avoid duplication
 _DEFAULT_EXCLUDE_PATTERNS = [
     "*.lock",  # All lockfiles (uv.lock, pdm.lock, etc.)
@@ -172,6 +174,15 @@ _DEFAULT_MODELS = {
 }
 
 
+# Default synthesis models (fast/cheap variants for preprocessing)
+_DEFAULT_SYNTHESIS_MODELS = {
+    AIProvider.OLLAMA: "qwen2.5-coder:7b",  # Use same for local
+    AIProvider.GEMINI: "gemini-2.5-flash",
+    AIProvider.ANTHROPIC: "claude-3-5-haiku-20241022",
+    AIProvider.OPENAI: "gpt-4o-mini",
+}
+
+
 def get_default_model_for_provider(provider: AIProvider) -> str:
     """Get default model name for each AI provider.
 
@@ -190,6 +201,29 @@ def get_default_model_for_provider(provider: AIProvider) -> str:
             f"Available providers: {list(_DEFAULT_MODELS.keys())}"
         )
     return _DEFAULT_MODELS[provider]
+
+
+def get_default_synthesis_model_for_provider(provider: AIProvider) -> str:
+    """Get default synthesis model name for each AI provider.
+
+    Synthesis models are fast/cheap variants used for preprocessing
+    comments and reviews before the main review.
+
+    Args:
+        provider: The AI provider
+
+    Returns:
+        str: Default synthesis model name for the provider
+
+    Raises:
+        ValueError: If no default synthesis model is defined for the provider
+    """
+    if provider not in _DEFAULT_SYNTHESIS_MODELS:
+        raise ValueError(
+            f"No default synthesis model defined for provider '{provider.value}'. "
+            f"Available providers: {list(_DEFAULT_SYNTHESIS_MODELS.keys())}"
+        )
+    return _DEFAULT_SYNTHESIS_MODELS[provider]
 
 
 class Config(BaseSettings):
@@ -267,6 +301,30 @@ class Config(BaseSettings):
     max_tokens: int = Field(
         default=8000,
         description="Maximum tokens for AI response generation",
+        gt=0,
+    )
+
+    # Review context preprocessing
+    enable_review_context: bool = Field(
+        default=True,
+        description="Enable fetching previous reviews/comments for context",
+    )
+    enable_review_synthesis: bool = Field(
+        default=True,
+        description="Enable preprocessing of reviews with fast model for synthesis (reduces tokens)",
+    )
+    synthesis_model: str | None = Field(
+        default=None,
+        description="Model for review synthesis (auto-selects fast model if not specified)",
+    )
+    synthesis_max_tokens: int = Field(
+        default=2000,
+        description="Maximum tokens for synthesis output",
+        gt=0,
+    )
+    max_comments_to_fetch: int = Field(
+        default=MAX_COMMENTS_TO_FETCH,
+        description="Maximum number of comments to fetch from platform API for synthesis",
         gt=0,
     )
 
@@ -760,6 +818,19 @@ class Config(BaseSettings):
 
         return get_default_model_for_provider(self.ai_provider)
 
+    def get_synthesis_model(self) -> str:
+        """Get model to use for review synthesis.
+
+        Returns configured synthesis model or appropriate fast model based on provider.
+
+        Returns:
+            Model name to use for synthesis
+        """
+        if self.synthesis_model:
+            return self.synthesis_model
+
+        return get_default_synthesis_model_for_provider(self.ai_provider)
+
     def get_effective_pull_request_number(self) -> int | None:
         """Get effective pull/merge request number from CI environment or explicit config."""
         # Priority: new fields -> legacy GitLab fields -> None
@@ -937,6 +1008,24 @@ class Config(BaseSettings):
                     pass
             elif isinstance(provider_str, AIProvider):
                 data["ai_model"] = get_default_model_for_provider(provider_str)
+
+        # Handle synthesis_model/ai_provider relationship intelligently
+        # If provider changed but synthesis_model wasn't explicitly set, use provider's default synthesis model
+        if "ai_provider" in cli_overrides and "synthesis_model" not in cli_overrides:
+            provider_str = cli_overrides["ai_provider"]
+            if isinstance(provider_str, str):
+                try:
+                    provider = AIProvider(provider_str)
+                    data["synthesis_model"] = get_default_synthesis_model_for_provider(
+                        provider
+                    )
+                except ValueError:
+                    # Invalid provider, let validation handle it
+                    pass
+            elif isinstance(provider_str, AIProvider):
+                data["synthesis_model"] = get_default_synthesis_model_for_provider(
+                    provider_str
+                )
 
         return cls(**data)
 

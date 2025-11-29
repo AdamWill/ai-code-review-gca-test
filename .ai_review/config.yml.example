@@ -99,6 +99,32 @@ project_context_file: .ai_review/project.md
 include_mr_summary: true    # Include MR Summary section in reviews
 
 #==============================================================================
+# Review Context Configuration (Intelligent Synthesis)
+#==============================================================================
+
+# Enable fetching previous reviews and comments for context
+# When enabled, fetches all reviews and comments from previous AI reviews
+# to avoid repeating suggestions that were already addressed
+enable_review_context: true
+
+# Enable two-phase synthesis preprocessing
+# When enabled, uses a fast model to synthesize comments before main review
+# Benefits: reduces tokens, lowers costs, better context quality
+# Automatically skips when no comments/reviews exist
+enable_review_synthesis: true
+
+# Model for review synthesis (preprocessing phase)
+# Default: auto-selects fast model based on ai_provider
+#   - Gemini: gemini-2.5-flash
+#   - Anthropic: claude-3-5-haiku-20241022
+#   - OpenAI: gpt-4o-mini
+#   - Ollama: qwen2.5-coder:7b (same as main model)
+# synthesis_model: gemini-2.5-flash
+
+# Maximum tokens for synthesis output (1-10000, default: 2000)
+synthesis_max_tokens: 2000
+
+#==============================================================================
 # Development/Testing Options
 #==============================================================================
 

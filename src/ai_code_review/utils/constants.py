@@ -34,3 +34,28 @@ SYSTEM_PROMPT_ESTIMATED_TOKENS = int(
     SYSTEM_PROMPT_ESTIMATED_CHARS / CHARS_TO_TOKENS_RATIO
 )
 """Estimated number of tokens in the system prompt (calculated from chars)."""
+
+# Review synthesis constants
+MAX_COMMENTS_TO_FETCH = 30
+"""Maximum number of comments/discussions to fetch from platform API.
+
+This limit prevents performance issues on PRs with hundreds of comments.
+Only the most recent N comments are fetched and processed for synthesis.
+Can be overridden via MAX_COMMENTS_TO_FETCH environment variable.
+"""
+
+MAX_OTHER_COMMENTS_IN_SYNTHESIS = 20
+"""Maximum number of non-author comments to include in synthesis prompt.
+
+After filtering system notes and prioritizing author responses, this limits
+the number of "other comments" included to prevent excessively long prompts.
+The most recent comments are selected after sorting by created_at DESC.
+"""
+
+MAX_COMMENT_BODY_LENGTH = 300
+"""Maximum characters per comment body in synthesis prompt.
+
+Long comments are truncated to this length to keep the synthesis prompt
+concise while still providing sufficient context for the AI to understand
+the discussion points.
+"""

@@ -55,6 +55,31 @@ class LocalGitClient(BasePlatformClient):
         """Set the target branch for comparison."""
         self._target_branch = target_branch
 
+    async def get_authenticated_username(self) -> str:
+        """Get Git username for local mode.
+
+        Returns:
+            Git config user.name or 'local-user' as fallback
+
+        Raises:
+            GitLocalError: If git operations fail
+        """
+        if self._authenticated_username is not None:
+            return self._authenticated_username
+
+        try:
+            # Get username from git config
+            username = await self._get_current_user()
+            self._authenticated_username = username
+            logger.info("Authenticated as local Git user", username=username)
+            return self._authenticated_username
+
+        except Exception as e:
+            # Fallback to generic username
+            logger.warning("Failed to get Git user, using fallback", error=str(e))
+            self._authenticated_username = "local-user"
+            return self._authenticated_username
+
     async def get_pull_request_data(
         self, project_id: str, pr_number: int
     ) -> PullRequestData:

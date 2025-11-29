@@ -28,6 +28,7 @@ Simple guide to get AI-powered code reviews with **3 powerful workflows**:
   - [🚀 Smart Skip Review](#-smart-skip-review)
   - [SSL Configuration for Internal GitLab Instances](#ssl-configuration-for-internal-gitlab-instances)
   - [🎯 Project Context Configuration](#-project-context-configuration)
+  - [🧠 Intelligent Review Context (Two-Phase Synthesis)](#-intelligent-review-context-two-phase-synthesis)
   - [📝 Review Format Configuration](#-review-format-configuration)
 - [🔧 Troubleshooting](#-troubleshooting)
   - [Common Issues](#common-issues)
@@ -931,6 +932,161 @@ mkdir -p .ai_review
 - **Be specific**: Generic advice like "write good code" is less helpful than specific patterns
 - **Include examples**: Show code examples for important conventions
 - **Test the impact**: Compare reviews with and without context to measure improvement
+
+### 🧠 Intelligent Review Context (Two-Phase Synthesis)
+
+The tool automatically learns from previous reviews to avoid repeating suggestions that were already addressed or invalidated by the PR/MR author. This feature uses a **two-phase approach** for optimal cost and quality.
+
+#### How It Works
+
+**Phase 1 - Synthesis (Automatic):**
+1. Fetches **ALL** previous reviews and comments (including resolved ones)
+2. Uses a fast, cheap model (e.g., `gemini-2.5-flash`) to synthesize key insights
+3. Prioritizes author responses to previous AI reviews (**CRITICAL**)
+4. Generates a concise summary (<500 words)
+
+**Phase 2 - Main Review:**
+1. Uses the synthesis as additional context
+2. Main AI model generates review aware of previous discussions
+3. Avoids repeating invalidated suggestions
+
+#### Benefits
+
+- ✅ **Prevents repeating mistakes** - AI knows what was already discussed
+- ✅ **Respects author feedback** - Prioritizes author corrections to previous AI reviews
+- ✅ **Reduces costs** - Synthesis uses cheap models (~1/10 cost of main model)
+- ✅ **Better token efficiency** - 100s of comments → concise summary
+- ✅ **Improves over time** - Each review cycle makes the AI smarter
+
+#### Configuration
+
+**Default behavior** (recommended):
+
+```yaml
+# Both features enabled by default
+enable_review_context: true      # Fetch previous reviews/comments
+enable_review_synthesis: true    # Use fast model for synthesis
+```
+
+**Custom synthesis model:**
+
+```yaml
+# Override default synthesis model (auto-selected per provider)
+synthesis_model: gemini-2.5-flash         # For Gemini
+# synthesis_model: claude-3-5-haiku-20241022  # For Anthropic
+# synthesis_model: gpt-4o-mini              # For OpenAI
+
+# Control synthesis output length
+synthesis_max_tokens: 2000  # Default: 2000
+
+# Limit comments fetched from API (performance optimization)
+max_comments_to_fetch: 30  # Default: 30, increase for very active PRs
+```
+
+**Environment variables:**
+
+```bash
+# Enable/disable features
+export ENABLE_REVIEW_CONTEXT=true
+export ENABLE_REVIEW_SYNTHESIS=true
+
+# Custom synthesis model
+export SYNTHESIS_MODEL=gemini-2.5-flash
+export SYNTHESIS_MAX_TOKENS=2000
+
+# Limit comments fetched (performance optimization)
+export MAX_COMMENTS_TO_FETCH=30  # Increase for very active PRs
+```
+
+**CLI flags:**
+
+```bash
+# Disable synthesis (use raw comments instead)
+ai-code-review group/project 123 --no-synthesis
+
+# Disable review context entirely
+ai-code-review group/project 123 --no-review-context
+```
+
+#### Default Synthesis Models
+
+The tool automatically selects fast/cheap models for synthesis based on your AI provider:
+
+| Provider   | Main Model (Example)        | Synthesis Model (Default)    | Cost Ratio |
+|------------|----------------------------|------------------------------|------------|
+| Gemini     | gemini-3-pro-preview       | gemini-2.5-flash            | ~1/10      |
+| Anthropic  | claude-sonnet-4            | claude-3-5-haiku-20241022   | ~1/5       |
+| OpenAI     | gpt-4                      | gpt-4o-mini                 | ~1/15      |
+| Ollama     | qwen2.5-coder:7b           | qwen2.5-coder:7b (same)     | N/A        |
+
+#### When It Activates
+
+✅ **Automatically activates when:**
+- Previous reviews or comments exist
+- Both features are enabled (default)
+- Running in GitHub/GitLab mode (not local)
+
+⏭️ **Automatically skips when:**
+- First review (no comments yet)
+- Features are disabled
+- Running in `--local` mode
+
+#### Token Usage Example
+
+**Without synthesis (raw comments):**
+- 50 comments × 200 tokens avg = **10,000 tokens** added to main model
+- Cost: 10K tokens × main model price
+
+**With synthesis:**
+- Phase 1: 10,000 tokens × flash price (~$0.0001/1K) = **$0.001**
+- Phase 2: 500 synthesis tokens × main model price
+- **Total savings: ~90%** of comment token costs
+
+#### What Gets Synthesized
+
+The synthesis focuses on:
+
+1. **CRITICAL: Author Responses** - Any responses from the PR/MR author that correct, clarify, or invalidate previous AI suggestions
+2. **Addressed Issues** - Problems that were raised and have been resolved
+3. **Active Discussions** - Ongoing conversations that need attention
+4. **Reviewer Consensus** - Points where multiple reviewers agree
+
+#### Example Synthesis Output
+
+```markdown
+## Review Context and Previous Discussions
+
+### CRITICAL Author Corrections
+- Author clarified that `process_data()` intentionally uses synchronous I/O 
+  because the external API doesn't support async (comment on utils.py:45)
+- Author explained the TODO on line 123 is tracked in issue #456 and will 
+  be addressed in next sprint
+
+### Addressed Issues
+- Memory leak in connection pool was fixed in commit abc123
+- Type hints were added to all public functions per previous review
+
+### Active Discussions
+- Performance optimization of `calculate_metrics()` still under discussion
+- Team considering migration to Pydantic v2 (not yet decided)
+
+**Note:** The above synthesis helps avoid repeating suggestions about 
+synchronous I/O or requesting type hints that were already added.
+```
+
+#### Best Practices
+
+- ✅ **Leave it enabled** - Default settings work well for most projects
+- ✅ **Review first synthesis** - Check the synthesis output in your first review to understand what the AI learned
+- ✅ **Respond to AI comments** - Your responses help the AI understand what's valid/invalid
+- ✅ **Monitor costs** - Track token usage to verify savings (should be ~90% reduction for comments)
+
+#### Disable When
+
+- ❌ **Local reviews** - Feature is automatic-disabled for `--local` mode
+- ❌ **First review ever** - No comments to synthesize yet
+- ❌ **Testing/debugging** - Use `--no-synthesis` to isolate issues
+- ❌ **Limited API quotas** - Disable to reduce API calls (though synthesis saves tokens overall)
 
 ### 📝 Review Format Configuration
 

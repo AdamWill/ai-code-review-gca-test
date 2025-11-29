@@ -29,6 +29,32 @@ class PullRequestCommit(BaseModel):
     short_id: str
 
 
+class ReviewComment(BaseModel):
+    """Represents a single comment/note on a PR/MR."""
+
+    id: int
+    author: str
+    body: str
+    created_at: str
+    updated_at: str | None = None
+    path: str | None = None  # File path for diff comments
+    line: int | None = None  # Line number for diff comments
+    resolved: bool = False
+    is_system: bool = False  # System-generated notes
+    in_reply_to_id: int | None = None  # For threaded discussions
+
+
+class Review(BaseModel):
+    """Represents a review on a PR/MR."""
+
+    id: int
+    author: str
+    state: str  # APPROVED, CHANGES_REQUESTED, COMMENTED
+    body: str | None
+    submitted_at: str
+    comments: list[ReviewComment] = []
+
+
 class PullRequestInfo(BaseModel):
     """Basic pull/merge request information (platform-agnostic)."""
 
@@ -50,6 +76,8 @@ class PullRequestData(BaseModel):
     info: PullRequestInfo
     diffs: list[PullRequestDiff]
     commits: list[PullRequestCommit]
+    reviews: list[Review] = []
+    comments: list[ReviewComment] = []
 
     @property
     def total_chars(self) -> int:
@@ -79,6 +107,18 @@ class PostReviewResponse(BaseModel):
 
 class PlatformClientInterface(ABC):
     """Abstract interface for platform clients (GitLab, GitHub, etc.)."""
+
+    @abstractmethod
+    async def get_authenticated_username(self) -> str:
+        """Get username of authenticated user (bot).
+
+        Returns:
+            Username/login of the authenticated user
+
+        Raises:
+            PlatformAPIError: If API call fails
+        """
+        pass
 
     @abstractmethod
     async def get_pull_request_data(

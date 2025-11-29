@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from typing import Any
 
@@ -17,6 +18,8 @@ from ai_code_review.models.platform import (
     PullRequestData,
     PullRequestDiff,
     PullRequestInfo,
+    Review,
+    ReviewComment,
 )
 from ai_code_review.utils.platform_exceptions import GitLabAPIError
 from ai_code_review.utils.ssl_utils import SSLCertificateManager
@@ -56,6 +59,52 @@ class GitLabClient(BasePlatformClient):
             self._ssl_cert_path = None
 
         self._ssl_initialized = True
+
+    async def get_authenticated_username(self) -> str:
+        """Get GitLab username with caching.
+
+        Returns:
+            GitLab username of the authenticated user
+
+        Raises:
+            GitLabAPIError: If getting user fails
+        """
+        if self._authenticated_username is not None:
+            return self._authenticated_username
+
+        # Initialize SSL before making API calls
+        await self._initialize_ssl_certificate()
+
+        if self.config.dry_run:
+            self._authenticated_username = "ai-code-review-bot-dry-run"
+            return self._authenticated_username
+
+        try:
+            # Define sync function to run in thread
+            def _get_user_sync() -> str:
+                gl_client = self.gitlab_client
+                gl_client.auth()
+                current_user = gl_client.user
+                if current_user is None:
+                    raise GitLabAPIError(
+                        "Failed to get authenticated user: user is None", None
+                    )
+                # CurrentUser has username attribute
+                username: str = current_user.username
+                return username
+
+            # Run blocking calls in separate thread
+            self._authenticated_username = await asyncio.to_thread(_get_user_sync)
+            logger.info(
+                "Authenticated as GitLab user", username=self._authenticated_username
+            )
+            return self._authenticated_username
+
+        except gitlab.GitlabError as e:
+            raise GitLabAPIError(
+                f"Failed to get authenticated user: {e}",
+                getattr(e, "response_code", None),
+            ) from e
 
     @property
     def gitlab_client(self) -> gitlab.Gitlab:
@@ -135,11 +184,20 @@ class GitLabClient(BasePlatformClient):
                 draft=getattr(merge_request, "draft", False),  # GitLab draft status
             )
 
-            # Get diffs and commits
+            # Get diffs, commits, and discussions
             diffs = await self._fetch_merge_request_diffs(merge_request)
             commits = await self._fetch_merge_request_commits(merge_request)
+            reviews, comments = await self._fetch_merge_request_discussions(
+                merge_request
+            )
 
-            return PullRequestData(info=pr_info, diffs=diffs, commits=commits)
+            return PullRequestData(
+                info=pr_info,
+                diffs=diffs,
+                commits=commits,
+                reviews=reviews,
+                comments=comments,
+            )
 
         except gitlab.GitlabError as e:
             raise GitLabAPIError(
@@ -258,6 +316,89 @@ class GitLabClient(BasePlatformClient):
                 f"Failed to fetch commits: {e}", getattr(e, "response_code", None)
             ) from e
 
+    async def _fetch_merge_request_discussions(
+        self, merge_request: ProjectMergeRequest
+    ) -> tuple[list[Review], list[ReviewComment]]:
+        """Fetch ALL discussions and notes for a merge request.
+
+        GitLab uses discussions (threads) which contain notes (comments).
+        We map these to Review/ReviewComment for platform consistency.
+
+        Important: Fetches all discussions, including resolved ones,
+        to detect previously invalidated suggestions.
+
+        Args:
+            merge_request: GitLab ProjectMergeRequest object
+
+        Returns:
+            Tuple of (reviews_list, all_comments)
+        """
+
+        def _fetch_discussions_sync() -> tuple[int, list[ReviewComment]]:
+            """Run blocking GitLab API calls in thread.
+
+            Fetches up to max_comments_to_fetch most recent discussions to avoid
+            performance issues on PRs with hundreds of comments.
+            """
+            all_comments_sync = []
+            # Limit discussions to fetch (GitLab orders by updated_at desc by default)
+            max_discussions = self.config.max_comments_to_fetch
+            discussions = merge_request.discussions.list(
+                per_page=max_discussions, page=1
+            )
+
+            for discussion in discussions:
+                notes = discussion.attributes.get("notes", [])
+
+                for note in notes:
+                    # Skip system-generated notes (e.g., "changed title", "merged", etc.)
+                    if note.get("system", False):
+                        continue
+
+                    comment_obj = ReviewComment(
+                        id=note["id"],
+                        author=note["author"][
+                            "username"
+                        ],  # Use username for consistency
+                        body=note["body"],
+                        created_at=note["created_at"],
+                        updated_at=note.get("updated_at"),
+                        is_system=False,  # Already filtered out
+                        resolved=note.get("resolved", False),
+                    )
+
+                    # Add position information if it's a diff note
+                    if note.get("position"):
+                        pos = note["position"]
+                        comment_obj.path = pos.get("new_path") or pos.get("old_path")
+                        comment_obj.line = pos.get("new_line") or pos.get("old_line")
+
+                    all_comments_sync.append(comment_obj)
+
+            return len(discussions), all_comments_sync
+
+        try:
+            # Run blocking calls in separate thread
+            discussions_count, all_comments = await asyncio.to_thread(
+                _fetch_discussions_sync
+            )
+
+            logger.info(
+                "Fetched MR discussions",
+                discussions=discussions_count,
+                comments=len(all_comments),
+                max_fetched=self.config.max_comments_to_fetch,
+            )
+
+            # GitLab doesn't have explicit "reviews", return empty list for consistency
+            reviews_list: list[Review] = []
+
+            return reviews_list, all_comments
+
+        except gitlab.GitlabError as e:
+            logger.warning("Failed to fetch discussions", error=str(e))
+            return [], []
+
     def _create_mock_pr_data(self, project_id: str, pr_number: int) -> PullRequestData:
         """Create mock merge request data for dry run mode."""
         mock_info = PullRequestInfo(
@@ -292,7 +433,32 @@ class GitLabClient(BasePlatformClient):
             )
         ]
 
-        return PullRequestData(info=mock_info, diffs=mock_diffs, commits=mock_commits)
+        mock_reviews: list[Review] = []
+
+        mock_comments = [
+            ReviewComment(
+                id=1,
+                author="ai-code-review-bot-dry-run",
+                body="Previous AI review comment (mock)",
+                created_at="2024-01-01T10:00:00Z",
+                resolved=False,
+            ),
+            ReviewComment(
+                id=2,
+                author="mock_user",
+                body="Thanks for the review! I've addressed the concerns about error handling.",
+                created_at="2024-01-01T11:00:00Z",
+                resolved=True,
+            ),
+        ]
+
+        return PullRequestData(
+            info=mock_info,
+            diffs=mock_diffs,
+            commits=mock_commits,
+            reviews=mock_reviews,
+            comments=mock_comments,
+        )
 
     async def post_review(
         self, project_id: str, pr_number: int, review_content: str

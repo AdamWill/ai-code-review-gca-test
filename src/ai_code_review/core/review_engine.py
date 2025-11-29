@@ -6,6 +6,7 @@ import logging
 import re
 from typing import Any
 
+import click
 import structlog
 
 from ai_code_review.models.config import AIProvider, Config, PlatformProvider
@@ -24,7 +25,12 @@ from ai_code_review.utils.constants import (
     SYSTEM_PROMPT_ESTIMATED_TOKENS,
 )
 from ai_code_review.utils.exceptions import AIProviderError, ReviewSkippedError
-from ai_code_review.utils.prompts import create_review_chain
+from ai_code_review.utils.prompts import (
+    _format_commit_messages,
+    _format_reviews_and_comments,
+    create_review_chain,
+    create_synthesis_chain,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -66,23 +72,37 @@ class ReviewEngine:
                 config.platform_provider.value,
             )
 
-    def _create_ai_provider(self) -> BaseAIProvider:
-        """Create AI provider instance based on configuration."""
-        if self.config.ai_provider == AIProvider.OLLAMA:
-            return OllamaProvider(self.config)
-        elif self.config.ai_provider == AIProvider.GEMINI:
+    def _create_ai_provider(self, model_override: str | None = None) -> BaseAIProvider:
+        """Create AI provider instance based on configuration.
+
+        Args:
+            model_override: Optional model name to override config.ai_model.
+                          Useful for creating providers with different models
+                          (e.g., fast synthesis model vs main review model).
+
+        Returns:
+            BaseAIProvider instance configured for the specified model
+        """
+        # Use config copy if model override is provided to avoid mutation
+        config_to_use = self.config
+        if model_override:
+            config_to_use = self.config.model_copy(update={"ai_model": model_override})
+
+        if config_to_use.ai_provider == AIProvider.OLLAMA:
+            return OllamaProvider(config_to_use)
+        elif config_to_use.ai_provider == AIProvider.GEMINI:
             from ai_code_review.providers.gemini import GeminiProvider
 
-            return GeminiProvider(self.config)
-        elif self.config.ai_provider == AIProvider.ANTHROPIC:
+            return GeminiProvider(config_to_use)
+        elif config_to_use.ai_provider == AIProvider.ANTHROPIC:
             from ai_code_review.providers.anthropic import AnthropicProvider
 
-            return AnthropicProvider(self.config)
+            return AnthropicProvider(config_to_use)
 
         # TODO: Implement other providers (OpenAI) in future iterations
         raise AIProviderError(
-            f"AI provider '{self.config.ai_provider}' not yet implemented",
-            self.config.ai_provider.value,
+            f"AI provider '{config_to_use.ai_provider}' not yet implemented",
+            config_to_use.ai_provider.value,
         )
 
     def should_skip_review(
@@ -357,6 +377,29 @@ class ReviewEngine:
 
         return total_content_chars, context_window_size, auto_big_diffs
 
+    def _create_llm_for_synthesis(self, model_name: str) -> Any:
+        """Create LLM instance for synthesis phase.
+
+        Uses same provider but typically a faster/cheaper model.
+
+        Args:
+            model_name: Name of the model to use for synthesis
+
+        Returns:
+            LLM client instance configured for synthesis
+        """
+        # Use _create_ai_provider with model override to avoid duplication
+        synthesis_provider = self._create_ai_provider(model_override=model_name)
+
+        # Check availability
+        if not synthesis_provider.is_available():
+            raise AIProviderError(
+                f"{synthesis_provider.provider_name} is not available",
+                synthesis_provider.provider_name,
+            )
+
+        return synthesis_provider.client
+
     async def _generate_review_response(
         self,
         pr_data: PullRequestData,
@@ -364,7 +407,11 @@ class ReviewEngine:
         project_context_chars: int,
         system_prompt_chars: int,
     ) -> tuple[CodeReview, ReviewSummary]:
-        """Generate review response using single LLM call."""
+        """Generate review response using two-phase synthesis (optional).
+
+        Phase 1 (if enabled): Synthesize comments with fast model
+        Phase 2: Generate review with synthesis as context
+        """
         # Check AI provider availability
         if not self.ai_provider.is_available():
             raise AIProviderError(
@@ -373,6 +420,77 @@ class ReviewEngine:
             )
 
         try:
+            review_synthesis = None
+
+            # Phase 1: Synthesize review context if enabled and comments exist
+            if (
+                self.config.enable_review_context
+                and self.config.enable_review_synthesis
+                and (pr_data.reviews or pr_data.comments)
+            ):
+                logger.info("Phase 1: Synthesizing review context with fast model")
+
+                # Get bot username for identifying AI reviews
+                bot_username = await self.platform_client.get_authenticated_username()
+
+                # Create synthesis chain with fast model
+                synthesis_model_name = self.config.get_synthesis_model()
+                synthesis_llm = self._create_llm_for_synthesis(synthesis_model_name)
+                synthesis_chain = create_synthesis_chain(synthesis_llm)
+
+                # Generate synthesis
+                try:
+                    review_synthesis = await synthesis_chain.ainvoke(
+                        {
+                            "pr_description": pr_data.info.description
+                            or "No description provided",
+                            "commit_messages": _format_commit_messages(pr_data),
+                            "reviews_and_comments": _format_reviews_and_comments(
+                                pr_data, bot_username
+                            ),
+                        }
+                    )
+
+                    logger.info(
+                        "Review synthesis complete",
+                        synthesis_length=len(review_synthesis),
+                        reviews_count=len(pr_data.reviews),
+                        comments_count=len(pr_data.comments),
+                    )
+
+                    # Display synthesis output for transparency
+                    # This helps users understand what context is being provided
+                    # to the main review LLM, making the tool's behavior more transparent
+                    click.echo("\n" + "=" * 80)
+                    click.echo("🔍 SYNTHESIS OUTPUT (Phase 1)")
+                    click.echo("=" * 80)
+                    click.echo(review_synthesis)
+                    click.echo("=" * 80 + "\n")
+                except Exception as e:
+                    logger.warning("Failed to generate review synthesis", error=str(e))
+                    review_synthesis = None
+            else:
+                # Log why synthesis was skipped
+                if not self.config.enable_review_context:
+                    logger.debug(
+                        "Skipping review context - disabled in config",
+                        enable_review_context=False,
+                    )
+                elif not self.config.enable_review_synthesis:
+                    logger.debug(
+                        "Skipping review synthesis - disabled in config",
+                        enable_review_synthesis=False,
+                    )
+                elif not (pr_data.reviews or pr_data.comments):
+                    logger.info(
+                        "Skipping review synthesis - no previous reviews or comments",
+                        reviews_count=0,
+                        comments_count=0,
+                    )
+
+            # Phase 2: Generate main review with synthesis (if available)
+            logger.info("Generating main review")
+
             # Create review chain (uses unified prompt with config-based format)
             review_chain = create_review_chain(self.ai_provider.client, self.config)
 
@@ -445,6 +563,7 @@ class ReviewEngine:
                         "diff": diff_content,
                         "language": self.config.language_hint,
                         "context": project_context,
+                        "review_synthesis": review_synthesis,  # Can be None if disabled/failed
                     }
                 )
             finally:

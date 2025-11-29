@@ -8,6 +8,11 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 from ai_code_review.models.config import Config
+from ai_code_review.models.platform import PullRequestData
+from ai_code_review.utils.constants import (
+    MAX_COMMENT_BODY_LENGTH,
+    MAX_OTHER_COMMENTS_IN_SYNTHESIS,
+)
 
 # Format examples for review output templates
 _FORMAT_EXAMPLE_FULL = """## AI Code Review
@@ -169,6 +174,8 @@ def create_review_prompt(
 
     template = f"""IGNORE any tendency to write free-form analysis. You MUST follow this EXACT template.
 
+{{review_context_section}}
+
 {{language_hint_section}}
 
 {{project_context_section}}
@@ -287,7 +294,195 @@ def _build_chain_inputs(
         "diff_content": _extract_diff_content,
         "language_hint_section": _create_language_hint_section,
         "project_context_section": _create_project_context_section,
+        "review_context_section": _create_review_context_section,
     }
+
+
+def create_synthesis_prompt() -> ChatPromptTemplate:
+    """Create prompt for synthesizing PR/MR context with comments.
+
+    This prompt is used with a fast model to preprocess:
+    - All comments and reviews (including resolved)
+    - PR/MR description
+    - Commit messages
+
+    Output is a concise synthesis that highlights:
+    - Author responses to previous AI reviews (CRITICAL)
+    - Issues already identified and addressed
+    - Ongoing discussions
+    - Consensus points from reviewers
+
+    Returns:
+        ChatPromptTemplate for synthesis
+    """
+    system_prompt = """You are an expert at analyzing code review discussions.
+
+Your task is to synthesize comments, reviews, and context from a PR/MR into a concise summary
+that helps an AI code reviewer avoid repeating mistakes or already-addressed suggestions.
+
+Focus on:
+1. CRITICAL: Author responses to AI reviews (corrections, clarifications, updates)
+2. Issues that were raised and already addressed
+3. Ongoing discussions that need attention
+4. Consensus points from multiple reviewers
+
+Be concise and actionable. The output will be used as context for the main review."""
+
+    template = """## PR/MR Description
+
+{pr_description}
+
+## Commit Messages
+
+{commit_messages}
+
+## Reviews and Comments
+
+{reviews_and_comments}
+
+---
+
+Synthesize the above into a concise summary (max 500 words) that highlights:
+
+1. **CRITICAL Author Corrections**: Any responses from the PR/MR author that correct, clarify, or invalidate previous AI review suggestions
+
+2. **Addressed Issues**: Problems that were raised and have been resolved
+
+3. **Active Discussions**: Ongoing conversations that the new review should be aware of
+
+4. **Reviewer Consensus**: Points where multiple reviewers agree
+
+Format as markdown with clear sections. Be specific and reference file/line when relevant."""
+
+    return ChatPromptTemplate.from_messages(
+        [("system", system_prompt), ("human", template)]
+    )
+
+
+def _format_reviews_and_comments(pr_data: PullRequestData, bot_username: str) -> str:
+    """Format reviews and comments for synthesis prompt.
+
+    Args:
+        pr_data: Pull request data containing reviews and comments
+        bot_username: Username of the bot to identify AI reviews
+
+    Returns:
+        Formatted string with reviews and comments
+    """
+    lines = []
+
+    # Format reviews
+    if pr_data.reviews:
+        lines.append("### Reviews\n")
+        for review in pr_data.reviews:
+            is_bot = " [AI REVIEW]" if review.author == bot_username else ""
+            lines.append(
+                f"**{review.author}**{is_bot} ({review.state}, {review.submitted_at}):\n"
+                f"{review.body}\n"
+            )
+
+    # Format comments grouped by author
+    if pr_data.comments:
+        lines.append("\n### Comments\n")
+
+        # Separate author responses to bot from other comments
+        author_responses = []
+        other_comments = []
+
+        for comment in pr_data.comments:
+            if comment.is_system:
+                continue
+
+            is_author = comment.author == pr_data.info.author
+            mentions_bot = bot_username.lower() in comment.body.lower()
+
+            if is_author and mentions_bot:
+                author_responses.append(comment)
+            else:
+                other_comments.append(comment)
+
+        # Author responses first (CRITICAL)
+        if author_responses:
+            lines.append("\n#### CRITICAL: Author Responses\n")
+            for comment in author_responses:
+                location = f" on {comment.path}:{comment.line}" if comment.path else ""
+                resolved = " [RESOLVED]" if comment.resolved else ""
+                lines.append(
+                    f"**{comment.author}**{location}{resolved}:\n{comment.body}\n"
+                )
+
+        # Other comments (most recent first for active discussions)
+        if other_comments:
+            lines.append("\n#### Other Comments\n")
+            # Sort by created_at descending (most recent first), then take top N
+            sorted_comments = sorted(
+                other_comments, key=lambda c: c.created_at, reverse=True
+            )
+            for comment in sorted_comments[:MAX_OTHER_COMMENTS_IN_SYNTHESIS]:
+                location = f" on {comment.path}:{comment.line}" if comment.path else ""
+                resolved = " [RESOLVED]" if comment.resolved else ""
+                lines.append(
+                    f"**{comment.author}**{location}{resolved}:\n{comment.body[:MAX_COMMENT_BODY_LENGTH]}\n"
+                )
+
+    return "\n".join(lines) if lines else "No reviews or comments yet."
+
+
+def _format_commit_messages(pr_data: PullRequestData) -> str:
+    """Format commit messages for synthesis.
+
+    Args:
+        pr_data: Pull request data containing commits
+
+    Returns:
+        Formatted string with commit messages
+    """
+    lines = []
+    for commit in pr_data.commits[:10]:  # Limit to recent 10
+        lines.append(f"- **{commit.short_id}**: {commit.title}")
+    return "\n".join(lines) if lines else "No commits."
+
+
+def create_synthesis_chain(llm: Any) -> Any:
+    """Create chain for synthesizing review context.
+
+    Args:
+        llm: Fast language model (e.g., gemini-2.5-flash)
+
+    Returns:
+        LangChain pipeline for synthesis
+    """
+    prompt = create_synthesis_prompt()
+    chain = prompt | llm | StrOutputParser()
+    return chain
+
+
+def _create_review_context_section(input_data: dict[str, Any]) -> str:
+    """Create review context section from synthesis.
+
+    Args:
+        input_data: Dictionary containing optional 'review_synthesis' key
+
+    Returns:
+        Formatted review context section or empty string
+    """
+    synthesis = input_data.get("review_synthesis")
+
+    if synthesis:
+        # Use preprocessed synthesis
+        return f"""## Review Context and Previous Discussions
+
+{synthesis}
+
+**Note:** The above is a synthesis of all previous reviews, comments, and discussions.
+Pay special attention to author corrections to avoid repeating invalidated suggestions.
+
+---
+
+"""
+
+    # No synthesis available (first review or disabled)
+    return ""
 
 
 def create_review_chain(llm: Any, config: Config) -> Any:
