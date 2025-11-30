@@ -646,10 +646,37 @@ class ReviewEngine:
         if self.config.language_hint:
             context_parts.append(f"Primary Language: {self.config.language_hint}")
 
-        # Load project context from .ai_review/project.md if enabled
+        # Load contexts if enabled
         if self.config.enable_project_context:
+            # Priority 1: Team/organization context (if configured)
+            if self.config.team_context_file:
+                logger.info(
+                    "Loading team/organization context",
+                    source=self.config.team_context_file,
+                )
+                team_context = self._load_context_from_source(
+                    self.config.team_context_file
+                )
+                if team_context:
+                    logger.info(
+                        "Team/organization context loaded successfully",
+                        content_length=len(team_context),
+                    )
+                    context_parts.append("\n**Team/Organization Context:**")
+                    context_parts.append(team_context)
+                else:
+                    logger.warning(
+                        "Team/organization context could not be loaded",
+                        source=self.config.team_context_file,
+                    )
+
+            # Priority 2: Project context
             project_context_content = self._load_project_context_file()
             if project_context_content:
+                logger.info(
+                    "Project context loaded successfully",
+                    content_length=len(project_context_content),
+                )
                 context_parts.append("\n**Project Context:**")
                 context_parts.append(project_context_content)
 
@@ -663,15 +690,31 @@ class ReviewEngine:
                     commit_info += f"\n  {commit.message.strip()}"
                 context_parts.append(commit_info)
 
-        # TODO: Implement additional project context discovery in future iterations
-        # - Auto-discover README.md, CONTRIBUTING.md, etc.
-        # - Support external context URLs
-
-        return (
+        result = (
             "\n".join(context_parts)
             if context_parts
             else "No additional project context available."
         )
+
+        # Log summary of loaded contexts
+        if context_parts:
+            context_types = []
+            if self.config.team_context_file and any(
+                "Team/Organization Context" in part for part in context_parts
+            ):
+                context_types.append("team")
+            if any("Project Context" in part for part in context_parts):
+                context_types.append("project")
+            if pr_data and pr_data.commits:
+                context_types.append(f"{len(pr_data.commits)} commits")
+
+            logger.info(
+                "Context prepared for AI review",
+                contexts=", ".join(context_types),
+                total_chars=len(result),
+            )
+
+        return result
 
     def _load_project_context_file(self) -> str | None:
         """Load project context from configured project context file.
@@ -711,6 +754,103 @@ class ReviewEngine:
                 file_path=context_file_path,
                 error=str(e),
             )
+            return None
+
+    def _load_context_from_source(self, source: str) -> str | None:
+        """Load context from local file or remote URL.
+
+        Args:
+            source: Local file path or HTTP(S) URL
+
+        Returns:
+            Content if successful, None otherwise
+        """
+        if source.startswith(("http://", "https://")):
+            return self._load_remote_context(source)
+        else:
+            return self._load_local_context(source)
+
+    def _load_local_context(self, file_path: str) -> str | None:
+        """Load context from local file.
+
+        Args:
+            file_path: Path to local context file
+
+        Returns:
+            Content if successful, None otherwise
+        """
+        import os.path
+
+        try:
+            if os.path.isfile(file_path):
+                with open(file_path, encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        logger.debug(
+                            "Loaded local context",
+                            file_path=file_path,
+                            content_length=len(content),
+                        )
+                        return content
+                    return None
+            else:
+                logger.debug("Context file not found", file_path=file_path)
+                return None
+        except Exception as e:
+            logger.warning(
+                "Failed to load local context file",
+                file_path=file_path,
+                error=str(e),
+            )
+            return None
+
+    def _load_remote_context(self, url: str) -> str | None:
+        """Load context from remote URL (no caching, always downloads).
+
+        Args:
+            url: HTTP(S) URL to context file
+
+        Returns:
+            Content if successful, None otherwise
+        """
+        import httpx
+
+        try:
+            # Use same timeout as configured for API calls
+            timeout = self.config.http_timeout
+
+            # Use SSL verification settings from config
+            verify: bool | str = self.config.ssl_verify
+            if self.config.ssl_cert_path:
+                verify = self.config.ssl_cert_path
+
+            response = httpx.get(url, timeout=timeout, verify=verify)
+            response.raise_for_status()
+
+            content = response.text.strip()
+            if content:
+                logger.info(
+                    "Loaded remote context",
+                    url=url,
+                    content_length=len(content),
+                )
+                return content
+            else:
+                logger.warning("Remote context file is empty", url=url)
+                return None
+
+        except httpx.TimeoutException:
+            logger.warning("Timeout loading remote context", url=url, timeout=timeout)
+            return None
+        except httpx.HTTPStatusError as e:
+            logger.warning(
+                "Failed to fetch remote context",
+                url=url,
+                status=e.response.status_code,
+            )
+            return None
+        except Exception as e:
+            logger.warning("Error loading remote context", url=url, error=str(e))
             return None
 
     def _create_mock_review(self) -> CodeReview:

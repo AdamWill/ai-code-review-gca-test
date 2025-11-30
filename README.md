@@ -209,6 +209,34 @@ ai-code-review project/123 2>logs.txt            # Logs to stderr
 
 **For all configuration options, troubleshooting, and advanced usage → see [User Guide](docs/user-guide.md)**
 
+### Team/Organization Context
+
+For teams working on multiple projects, you can specify a **shared team context** that applies organization-wide:
+
+```bash
+# Remote team context (recommended - stored in central repo)
+export TEAM_CONTEXT_FILE=https://gitlab.com/org/standards/-/raw/main/review.md
+ai-code-review --local
+
+# Or use CLI option
+ai-code-review project/123 --team-context https://company.com/standards/review.md --post
+
+# Local team context file
+ai-code-review --team-context ../team-standards.md --local
+```
+
+**Use cases:**
+- Organization-wide coding standards
+- Security requirements and compliance rules
+- Team conventions shared across projects
+- Industry-specific guidelines (HIPAA, GDPR, etc.)
+
+**Priority order:** Team context → Project context → Commit history
+
+This allows maintaining org standards while individual projects add specific guidelines.
+
+**See [User Guide - Team Context](docs/user-guide.md#-teamorganization-context) for complete documentation.**
+
 ### Intelligent Review Context (Two-Phase Synthesis)
 
 The tool uses a **two-phase approach** to incorporate previous reviews and avoid repeating mistakes:

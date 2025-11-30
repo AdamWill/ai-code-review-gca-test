@@ -95,6 +95,13 @@ enable_project_context: true
 # Path to project context file (relative to repository root)
 project_context_file: .ai_review/project.md
 
+# Team/organization context file (optional)
+# Can be a local path or remote URL (e.g., https://company.com/standards/review.md)
+# This context has higher priority than project context
+# Use for organization-wide standards, security requirements, and team conventions
+# team_context_file: https://gitlab.com/org/standards/-/raw/main/review-context.md
+# team_context_file: ../team-standards.md
+
 # Review format options
 include_mr_summary: true    # Include MR Summary section in reviews
 

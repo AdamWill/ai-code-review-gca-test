@@ -324,6 +324,11 @@ def _setup_logging(config: Config) -> None:
     help="Path to project context file (default: .ai_review/project.md)",
 )
 @click.option(
+    "--team-context",
+    default=None,
+    help="Team/organization context file (local path or URL, e.g., https://company.com/standards/review-context.md)",
+)
+@click.option(
     "--no-mr-summary",
     is_flag=True,
     help="Skip MR Summary section and show only detailed code review",
@@ -409,6 +414,10 @@ def main(**kwargs: Any) -> None:
         ai-code-review --local --target-branch develop
         ai-code-review --local --output-file local-review.md
         ai-code-review --local --provider ollama  # Use local LLM for cost-free review
+        \b
+        # Team context (shared across projects)
+        ai-code-review --team-context https://gitlab.com/org/standards/-/raw/main/review.md --local
+        ai-code-review group/project 123 --team-context ../team-standards.md --post
         \b
         # Health check
         ai-code-review --health-check

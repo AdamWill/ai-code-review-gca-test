@@ -28,6 +28,7 @@ Simple guide to get AI-powered code reviews with **3 powerful workflows**:
   - [🚀 Smart Skip Review](#-smart-skip-review)
   - [SSL Configuration for Internal GitLab Instances](#ssl-configuration-for-internal-gitlab-instances)
   - [🎯 Project Context Configuration](#-project-context-configuration)
+  - [👥 Team/Organization Context](#-teamorganization-context)
   - [🧠 Intelligent Review Context (Two-Phase Synthesis)](#-intelligent-review-context-two-phase-synthesis)
   - [📝 Review Format Configuration](#-review-format-configuration)
 - [🔧 Troubleshooting](#-troubleshooting)
@@ -932,6 +933,116 @@ mkdir -p .ai_review
 - **Be specific**: Generic advice like "write good code" is less helpful than specific patterns
 - **Include examples**: Show code examples for important conventions
 - **Test the impact**: Compare reviews with and without context to measure improvement
+
+### 👥 Team/Organization Context
+
+For teams working on multiple projects, you can specify a **shared team context** that applies across all projects. This is perfect for organization-wide coding standards, security requirements, or team conventions that should be followed regardless of the specific project.
+
+#### Use Cases
+
+- **Organization Standards**: Shared coding conventions across all projects
+- **Security Requirements**: Company-wide security policies and practices
+- **Team Conventions**: Team-specific patterns and best practices
+- **Compliance Guidelines**: Industry-specific requirements (e.g., HIPAA, GDPR)
+
+#### Setup Team Context
+
+**Option 1: Local Team Context File**
+
+```bash
+# Path to local team standards file
+export TEAM_CONTEXT_FILE=../team-standards.md
+ai-code-review --local
+
+# Or use CLI option
+ai-code-review group/project 123 --team-context ../team-standards.md --post
+```
+
+**Option 2: Remote Team Context (Recommended for Teams)**
+
+Store your team context in a central repository accessible via URL:
+
+```bash
+# URL to team standards (e.g., from company GitLab/GitHub repo)
+export TEAM_CONTEXT_FILE=https://gitlab.com/myorg/standards/-/raw/main/review-context.md
+ai-code-review group/project 123 --post
+
+# Or use CLI option
+ai-code-review --local --team-context https://company.com/standards/review.md
+```
+
+**Example Team Context File:**
+
+```markdown
+# Organization Code Review Standards
+
+## Security Requirements
+- All API endpoints must have authentication
+- Input validation mandatory for all user data
+- No secrets in code - use environment variables
+- SQL queries must use parameterized statements
+
+## Code Quality Standards
+- Test coverage minimum: 80%
+- All functions must have type hints (Python/TypeScript)
+- No commented-out code in production
+- Error messages must be logged with context
+
+## Performance Guidelines
+- Database queries: avoid N+1 queries
+- API response time target: < 200ms p95
+- Use caching for expensive operations
+- Optimize images before committing
+
+## Team Conventions
+- Branch naming: feature/*, bugfix/*, hotfix/*
+- Commit messages: follow Conventional Commits
+- PR size: keep under 400 lines when possible
+- Reviews: approve only when all comments resolved
+```
+
+#### Priority Order
+
+When multiple context sources are configured, they are applied in this priority order:
+
+1. **Team/Organization Context** (highest priority) - Applied first
+2. **Project Context** (`.ai_review/project.md`) - Applied second
+3. **Commit History** - Applied last
+
+This allows teams to maintain organization-wide standards while individual projects can add specific guidelines that complement (not override) the team standards.
+
+#### Configuration Examples
+
+**CLI:**
+```bash
+# Both team and project context
+ai-code-review --team-context https://company.com/standards.md \
+               --context-file .ai_review/project.md \
+               group/project 123 --post
+```
+
+**Environment Variables:**
+```bash
+export TEAM_CONTEXT_FILE=https://gitlab.com/org/standards/-/raw/main/review.md
+export ENABLE_PROJECT_CONTEXT=true  # Project context also enabled
+ai-code-review group/project 123 --post
+```
+
+**YAML Configuration:**
+```yaml
+# .ai_review/config.yml
+enable_project_context: true
+team_context_file: https://gitlab.com/myorg/standards/-/raw/main/review-context.md
+project_context_file: .ai_review/project.md
+```
+
+#### Best Practices
+
+- **Keep team context general**: Focus on org-wide patterns, not project specifics
+- **Use remote URLs**: Makes it easy to update standards across all projects
+- **Version your standards**: Use Git tags or branches to version your team context
+- **Combine with project context**: Team context for org standards, project context for specifics
+- **Update centrally**: Changes to remote team context apply immediately to all projects
 
 ### 🧠 Intelligent Review Context (Two-Phase Synthesis)
 

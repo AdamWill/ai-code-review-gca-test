@@ -378,6 +378,10 @@ class Config(BaseSettings):
         default=".ai_review/project.md",
         description="Path to project context file (relative to repository root)",
     )
+    team_context_file: str | None = Field(
+        default=None,
+        description="Team/organization context file (local path or URL, higher priority than project context)",
+    )
     include_mr_summary: bool = Field(
         default=True,
         description="Include MR Summary section in reviews (disable for shorter, code-focused reviews)",
@@ -518,6 +522,26 @@ class Config(BaseSettings):
         if v.upper() not in valid_levels:
             raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
         return v.upper()
+
+    @field_validator("team_context_file")
+    @classmethod
+    def validate_team_context_file(cls, v: str | None) -> str | None:
+        """Validate team context file path or URL."""
+        if v is None:
+            return None
+
+        if not v.strip():
+            return None
+
+        # If it's a URL, validate format
+        if v.startswith(("http://", "https://")):
+            url_pattern = r"^https?://[^\s/$.?#].[^\s]*$"
+            if not re.match(url_pattern, v):
+                raise ValueError(f"Invalid team context URL format: {v}")
+            return v.strip()
+
+        # If it's a local path, don't validate existence (file might not exist yet)
+        return v.strip()
 
     @field_validator("gitlab_token")
     @classmethod
@@ -1068,6 +1092,7 @@ class Config(BaseSettings):
             # Project context mappings
             "project_context": "enable_project_context",
             "context_file": "project_context_file",
+            "team_context": "team_context_file",
             "no_mr_summary": "_no_mr_summary_flag",  # Special handling below
             # URL mappings
             "gitlab_url": "gitlab_url",
