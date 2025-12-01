@@ -15,12 +15,14 @@
 - **Architecture Pattern:** Asynchronous, src-based layout
 
 ### Key Dependencies (for Context7 & API Understanding)
-- **langchain>=0.2.0** - Core dependency for building applications with Large Language Models (LLMs). Reviewers must understand LangChain concepts like chains, agents, and model integrations (Google GenAI, Anthropic, Ollama are also present).
-- **click>=8.1.0** - Defines the application's Command-Line Interface structure. Code changes will often involve creating or modifying `@click.command()` or `@click.option()` decorators.
-- **aiohttp>=3.9.0** - Used for making asynchronous HTTP requests. Reviewers should focus on correct `async/await` patterns, client session management, and handling of network errors.
-- **python-gitlab>=4.0.0** & **pygithub>=2.1.0** - Indicates direct interaction with GitLab and GitHub APIs. Code review should verify correct API usage, authentication, and handling of platform-specific data structures.
-- **pydantic>=2.5.0** - Used for data validation and settings management. Reviewers should check for well-defined data models, proper type enforcement, and validation logic.
-- **structlog>=23.2.0** - Implements structured logging. Reviewers should ensure logs are consistent, contain relevant context, and avoid leaking sensitive information.
+- **langchain>=0.2.0** - Core dependency for building applications with Large Language Models (LLMs). Used for chains, model integrations, and prompt management across multiple AI providers (Gemini, Anthropic, Ollama).
+- **click>=8.1.0** - Command-Line Interface framework. Defines CLI structure with `@click.command()` and `@click.option()` decorators.
+- **httpx>=0.28.1** - Primary HTTP client library for both synchronous and asynchronous requests. Used for health checks, remote file fetching, and SSL certificate downloads.
+- **aiohttp>=3.9.0** - Asynchronous HTTP client used in platform API integrations. Handles async requests to GitLab/GitHub APIs with proper session management.
+- **python-gitlab>=4.0.0** & **pygithub>=2.1.0** - Platform-specific API libraries for GitLab and GitHub integration. Handle authentication, MR/PR data fetching, and comment posting.
+- **pydantic>=2.11.0** - Data validation and settings management. Used for configuration models, API data structures, and type enforcement throughout the application.
+- **structlog>=23.2.0** - Structured logging framework. Provides consistent, context-rich logging with proper sensitive data handling.
+- **aiofiles>=23.2.0** - Asynchronous file I/O operations for non-blocking file access in async contexts.
 
 ### Development Tools & CI/CD
 - **Testing:** `pytest>=7.4.0` with `pytest-asyncio` for testing asynchronous code and `pytest-cov` for coverage reporting.
@@ -32,55 +34,30 @@
 
 ### Project Organization
 ```
-.
-├── .ai_review/
-│   └── project.md
-├── docs/
-│   ├── context-generator.md
-│   ├── developer-guide.md
-│   └── user-guide.md
-├── src/
-│   ├── ai_code_review/
-│   │   ├── core/
-│   │   ├── models/
-│   │   ├── providers/
-│   │   ├── utils/
-│   │   ├── __init__.py
-│   │   └── cli.py
-│   └── context_generator/
-│       ├── core/
-│       ├── sections/
-│       ├── templates/
-│       ├── utils/
-│       ├── __init__.py
-│       ├── cli.py
-│       ├── constants.py
-│       └── models.py
-├── tests/
-│   ├── integration/
-│   │   ├── __init__.py
-│   │   └── test_context_generator_simple.py
-│   ├── unit/
-│   │   ├── test_anthropic_provider.py
-│   │   ├── test_base_provider.py
-│   │   ├── test_cli.py
-│   │   ├── test_cli_ci.py
-│   │   ├── test_config.py
-│   │   ├── test_config_file_loading.py
-│   │   ├── test_context_generator_base.py
-│   │   ├── test_context_generator_cli.py
-│   │   ├── test_context_generator_code_extractor.py
-│   │   ├── test_context_generator_constants.py
-│   │   ├── test_context_generator_context_builder.py
-│   │   └── test_context_generator_facts_extractor.py
-│   ├── __init__.py
-│   └── conftest.py
-├── .gitignore
-├── .gitlab-ci.yml
-├── .pre-commit-config.yaml
-├── Containerfile
-├── README.md
-└── pyproject.toml
+src/ai_code_review/
+├── cli.py                  # Main entry point
+├── core/
+│   ├── review_engine.py    # Orchestration logic
+│   ├── gitlab_client.py    # GitLab API integration
+│   ├── github_client.py    # GitHub API integration
+│   └── local_git_client.py # Direct Git analysis
+├── models/
+│   ├── config.py           # Configuration (CRITICAL)
+│   ├── platform.py         # Platform data models
+│   └── review.py           # Review result models
+├── providers/
+│   ├── base.py             # AI provider interface
+│   ├── anthropic.py        # Claude integration
+│   ├── gemini.py           # Gemini integration
+│   └── ollama.py           # Ollama integration
+└── utils/
+    ├── prompts.py          # LangChain prompt templates
+    ├── constants.py        # Constants and defaults
+    └── exceptions.py       # Custom exceptions
+
+tests/
+├── unit/                   # Component unit tests
+└── integration/            # End-to-end tests
 ```
 
 ### Architecture Patterns
@@ -92,9 +69,27 @@
 **Entry Points:** The application is a command-line tool. The main entry point is defined in `src/ai_code_review/cli.py` using the `click` library. It parses arguments, loads the `Config` object, and instantiates and runs the `ReviewEngine`.
 
 ### Important Files for Review Context
-- **`src/ai_code_review/cli.py`** - This is the main entry point. Understanding this file is crucial for seeing how user inputs are processed, how configuration is loaded, and how the core `ReviewEngine` is invoked.
-- **`src/ai_code_review/models/config.py`** - Defines all application settings using Pydantic. Nearly all components depend on this configuration. Reviewers must be familiar with this file to understand how features are enabled/disabled and how the application is configured.
-- **`src/ai_code_review/core/review_engine.py`** - Contains the primary business logic. It connects the platform client (e.g., GitLab) to the AI provider. Changes here directly impact the core functionality of generating and posting code reviews.
+- **`src/ai_code_review/cli.py`** - Main entry point. Processes user inputs, loads configuration, and invokes `ReviewEngine`. Review exit code handling for different error types.
+- **`src/ai_code_review/models/config.py`** - **CRITICAL FILE**. Defines all application settings using Pydantic with layered configuration system. Changes here affect every component. Reviewers must verify:
+  - Interdependent fields use None + getter pattern (never `default_factory`)
+  - Field validators don't break config priority (CLI > Env > File > Defaults)
+  - New settings have proper type hints and validation
+  - Environment variable mapping works via `BaseSettings`
+- **`src/ai_code_review/core/review_engine.py`** - Primary orchestration logic. Contains:
+  - Two-phase review system (synthesis + main review)
+  - Platform client and AI provider factory methods
+  - Context loading hierarchy (team > project > commits)
+  - Adaptive context window sizing
+  - Skip review logic
+  Changes here directly impact core review functionality.
+- **`src/ai_code_review/utils/prompts.py`** - LangChain prompt templates and chain construction. v1.15.0+ includes synthesis chain for comment preprocessing. Critical for review quality.
+- **`src/ai_code_review/models/platform.py`** - Platform data models including `PullRequestData`, `Review`, `ReviewComment`. Extended in v1.15.0 for comment synthesis support.
+- **`src/ai_code_review/providers/base.py`** - Base provider interface. All AI providers must implement this. Includes adaptive context window methods.
+- **Platform Clients**:
+  - `src/ai_code_review/core/gitlab_client.py` - GitLab API integration via `python-gitlab`
+  - `src/ai_code_review/core/github_client.py` - GitHub API integration via `PyGithub`
+  - `src/ai_code_review/core/local_git_client.py` - Direct Git diff analysis without platform APIs
+  All implement `PlatformClientInterface` and support comment/review fetching (v1.15.0+)
 
 ### Development Conventions
 - **Naming:** Classes use `PascalCase` (e.g., `ReviewEngine`, `ContextResult`). Functions, methods, and variables use `snake_case` (e.g., `_resolve_project_params`). Internal helper functions are prefixed with a single underscore (`_get_enum_value`). Constants are `UPPER_SNAKE_CASE` (e.g., `AUTO_BIG_DIFFS_THRESHOLD_CHARS`).
@@ -104,101 +99,267 @@
 
 ## Code Review Focus Areas
 
-- **[Asynchronous API Integration]** - The project uses `aiohttp` and `httpx` for platform interactions. Review for correct `async`/`await` usage in platform clients (e.g., `GitLabClient`, `GitHubClient`). Ensure I/O-bound calls to external APIs are non-blocking and that `ClientSession` objects are managed properly to avoid resource leaks.
+### Critical Review Areas
 
-- **[Provider Abstraction and Factory Pattern]** - The `ReviewEngine` uses factory methods (`_create_platform_client`, `_create_ai_provider`) to instantiate clients based on an interface (`PlatformClientInterface`). When a new provider is added, verify that it correctly implements the required interface and that the factory logic in `ReviewEngine` is updated. Ensure no provider-specific logic leaks into the main orchestration loop.
+- **[Configuration Layer System]** - The project uses a strict layered config system: CLI > Env > File > Defaults. When reviewing changes to `models/config.py`:
+  - **Never approve `default_factory` usage with field references** - this breaks the layered system
+  - Verify interdependent fields use the None + getter pattern (like `ai_model` → `get_ai_model()`)
+  - Ensure all code uses getter methods (`get_ai_model()`) not direct field access
+  - Check that field validators don't reference other fields that haven't been initialized yet
+  - Test with `Config(ai_provider=X)` to ensure defaults resolve correctly
 
-- **[LangChain Prompt and Chain Management]** - The core AI logic is encapsulated in LangChain chains (e.g., `create_review_chain`). Scrutinize changes to prompt templates in `utils/prompts.py`. Verify that the chain construction correctly handles context formatting, model parameters, and output parsing, especially for different AI providers which may have unique requirements.
+- **[HTTP Client Consistency]** - The project standardizes on `httpx` for HTTP operations:
+  - **Do not suggest converting httpx to aiohttp** unless there's a specific performance need
+  - Synchronous `httpx` operations are acceptable for initialization-time I/O (context loading, health checks)
+  - Only suggest async conversion for hot-path operations (inside loops, repeated calls)
+  - `aiohttp` usage is limited to legacy code (`ssl_utils.py`) - new code should use `httpx`
 
-- **[Pydantic Configuration and Validation]** - Configuration is managed via `pydantic` and `pydantic-settings` with custom validators (`field_validator`, `model_validator`). When new settings are added to `models/config.py`, check that they have strict type hints and robust validation logic to prevent misconfiguration. Ensure environment variable overrides and default values are handled as expected.
+- **[Asynchronous API Integration]** - Platform clients use async I/O for API calls:
+  - Review `async`/`await` usage in `GitLabClient`, `GitHubClient`, `LocalGitClient`
+  - Verify blocking operations are wrapped with `asyncio.to_thread()` when necessary
+  - Check that `ClientSession` objects are managed in async context managers
+  - Ensure platform-specific API calls follow provider patterns (GitLab uses `python-gitlab`, GitHub uses `PyGithub`)
 
-- **[Custom Exception Handling and Exit Codes]** - The application defines specific exceptions like `ReviewSkippedError` and `PlatformAPIError` which map to exit codes in `cli.py`. Review changes to ensure that these custom exceptions are raised in the correct business logic paths (e.g., when a diff is too large) and are caught at the entry point to provide clear user feedback and the correct exit code.
+- **[Provider Abstraction and Factory Pattern]** - The `ReviewEngine` uses factory methods for dependency injection:
+  - Verify new providers implement `PlatformClientInterface` or `BaseAIProvider`
+  - Check factory logic in `_create_platform_client()` and `_create_ai_provider()`
+  - Ensure provider-specific logic stays in provider classes, not in `ReviewEngine`
+  - Review model override support (e.g., `_create_ai_provider(model_override="...")` for synthesis)
 
-## Library Documentation & Best Practices
+- **[LangChain Prompt and Chain Management]** - Review synthesis and main review chains:
+  - Scrutinize changes to prompt templates in `utils/prompts.py`
+  - Verify chain construction: `prompt | model | output_parser`
+  - Check context formatting for review synthesis phase (filters bot comments, author prioritization)
+  - Ensure model parameters (temperature, max_tokens, num_ctx) are passed correctly
+  - Review output handling - synthesis produces string, main review produces structured markdown
 
-### 1. API Usage Patterns
+- **[Context Loading Hierarchy]** - Team context > Project context > Commit history:
+  - Verify `team_context_file` is loaded before `project_context_file`
+  - Check URL validation for remote context files (must be http:// or https://)
+  - Ensure local file paths are handled with `os.path.isfile()` checks
+  - Remote loading uses `httpx` (synchronous is acceptable - happens once at startup)
+  - Error handling must log warnings but not fail the review if context unavailable
 
-*   **aiohttp (Client):** HTTP requests must be made using an `aiohttp.ClientSession` instance, preferably within an `async with` block to ensure proper connection pooling and resource cleanup. Use `session.get()` for GET and `session.post()` for POST requests, awaiting the response methods like `resp.text()`.
-    ```python
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url, params=params) as resp:
-            content = await resp.text()
-    ```
-*   **aiohttp (Server):** Applications should be defined by creating a `web.Application` instance, adding routes via `app.add_routes([...])`, and running the server with `web.run_app(app)`. For finer control over the application lifecycle, use `web.AppRunner` and `web.TCPSite`.
-*   **langchain:**
-    *   **Chaining:** The primary pattern for building logic is the LangChain Expression Language (LCEL) using the pipe (`|`) operator. Chains should be composed of `PromptTemplate`, a model object, and an `OutputParser`.
-        ```python
-        chain = prompt | model | output_parser
-        ```
-    *   **Model Invocation:** Use `.ainvoke()` and `.astream()` for non-blocking calls within an `aiohttp` server.
-    *   **RAG:** The standard pattern is to load documents, split them with a `TextSplitter`, create embeddings, store them in a vector store, and use `vectorstore.as_retriever()` to fetch context.
-    *   **Agents & Tools:** Tools should be defined as functions with the `@tool` decorator or as Pydantic `BaseModel` classes. These are then passed to an agent created with `create_tool_calling_agent`.
-*   **pydantic:** Data structures should be defined by inheriting from `pydantic.BaseModel`. This is the standard for data validation, serialization, and defining structured outputs for LangChain.
-*   **aiofiles:** All file I/O must be performed using `aiofiles.open` within an `async with` block. File operations like `read` and `write` are coroutines and must be awaited. Asynchronous filesystem operations (e.g., `rename`, `remove`) should use the `aiofiles.os` module.
-    ```python
-    async with aiofiles.open('filename', mode='r') as f:
-        contents = await f.read()
-    ```
-*   **httpx:** The provided documentation is for a Go-based command-line tool for web reconnaissance, not the Python `httpx` library. It is not applicable for a Python package making HTTP requests. The project should use `aiohttp` for this purpose as per its documentation.
+- **[Pydantic Configuration and Validation]** - Strict validation prevents misconfiguration:
+  - All new settings in `models/config.py` must have type hints and validators
+  - Use `field_validator` for single-field validation, `model_validator` for cross-field
+  - Test with invalid inputs to ensure proper error messages
+  - Verify environment variable mapping works via `BaseSettings`
+  - Check that None/empty string values are handled correctly (use `.strip()`)
 
-### 2. Best Practices
+- **[Custom Exception Handling and Exit Codes]** - Exceptions map to specific exit codes:
+  - `ReviewSkippedError` → exit 0 (intentional skip, not an error)
+  - `PlatformAPIError` → exit 1 (API failure)
+  - `AIProviderError` → exit 1 (LLM failure)
+  - Review that exceptions are raised in correct business logic (not in platform clients)
+  - Ensure exceptions are caught in `cli.py` and converted to appropriate exit codes
+  - Verify error messages are user-friendly and actionable
 
-*   **Asynchronous Operations:** In `aiohttp` handlers, always use the `async` versions of library calls to avoid blocking the event loop. This includes `langchain`'s `.ainvoke()` and `.astream()` methods and all `aiofiles` functions. Standard synchronous file I/O (`open()`) or network calls must be avoided.
-*   **Resource Management:** Use `async with` statements for `aiohttp.ClientSession` and `aiofiles.open` to ensure resources like connection pools and file handles are managed automatically and safely.
-*   **API Key Management:** LangChain API keys should be loaded from environment variables (`os.environ.get(...)`) and never hardcoded in the source code.
-*   **Data Validation:** Use Pydantic models to define and validate the structure of API request bodies and responses in the `aiohttp` application. This ensures type safety and clear API contracts.
-*   **Testing:**
-    *   `aiohttp` endpoints should be tested using `aiohttp.test_utils.TestClient`.
-    *   Code using `aiofiles` should be tested by mocking `aiofiles.threadpool.sync_open` as demonstrated in the documentation.
-*   **LangChain Caching:** To improve performance and reduce costs, enable LLM caching using `langchain.globals.set_llm_cache` with either `InMemoryCache` or a persistent `SQLiteCache`.
+### Secondary Review Areas
 
-### 3. Common Pitfalls
+- **[Review Synthesis Logic]** - Two-phase review system (v1.15.0+):
+  - Phase 1 fetches and synthesizes previous comments with fast model
+  - Verify bot comment filtering (`get_authenticated_username()` comparison)
+  - Check synthesis is skipped when no comments exist
+  - Ensure synthesis output is displayed for transparency
+  - Review token limits for synthesis (default 2000 tokens max)
 
-*   **Blocking I/O:** Using standard `open()`, `requests`, or synchronous LangChain methods (`.invoke()`) inside an `async def` function in `aiohttp`. This will block the entire server's event loop and severely degrade performance.
-*   **Improper `ClientSession` Usage:** Creating a new `aiohttp.ClientSession` for each request is inefficient. A single session should be created and reused across multiple requests.
-*   **Missing `await`:** Forgetting to `await` coroutines from `aiohttp`, `langchain`, or `aiofiles` will lead to runtime errors or incorrect behavior.
-*   **Hardcoded Secrets:** Embedding API keys directly in the code instead of using environment variables is a major security risk.
-*   **Ignoring Structured Output:** Manually parsing JSON or string outputs from LLMs is error-prone. Use LangChain's `PydanticOutputParser` or `model.with_structured_output()` for reliable, validated data structures.
+- **[Adaptive Context Windows]** - Dynamic sizing based on content:
+  - Review `get_adaptive_context_size()` logic in providers
+  - Verify auto-activation of big-diffs mode (>60K chars)
+  - Check manual `--big-diffs` flag is respected
+  - Ensure context window sizes are appropriate per model
+  - Review token estimation calculations (chars to tokens ratio)
 
-### 4. Integration Recommendations
+- **[Skip Review Logic]** - Multiple skip conditions:
+  - Keyword matching in title/description (`[skip ai-review]`, etc.)
+  - Bot author detection (renovate, dependabot, etc.)
+  - Dependency update patterns (regex matching)
+  - Documentation-only changes (file extension/path checks)
+  - Draft PR/MR detection
+  - Review that all skip reasons return proper exit code 0
 
-*   **API Layer (`aiohttp` + `pydantic`):** `aiohttp` should serve the web API. Request handlers should use Pydantic models to parse and validate incoming JSON bodies. Pydantic models should also be used to serialize response data, creating a well-defined API.
-*   **Core Logic (`langchain`):** The `aiohttp` handlers will call LangChain components (chains, agents) to execute the core business logic. All calls into LangChain from the API layer must use async methods (e.g., `chain.ainvoke(...)`).
-*   **Filesystem (`aiofiles`):** If an API endpoint needs to read from or write to a file (e.g., processing an upload, logging to a file), it must use `aiofiles` to prevent blocking.
-*   **Tools (`langchain` + `pydantic`):** When building LangChain agents, Pydantic models are the recommended way to define the schema for tools. This provides robust input validation for tool calls initiated by the agent.
+## Common Pitfalls & Anti-Patterns
 
-### 5. Configuration Guidelines
+*   **❌ Using `default_factory` with field references** (commit `8fbf91b`):
+    *   **Problem**: `default_factory` executes at field definition, not instance creation
+    *   **Impact**: Breaks layered config - provider/model mismatches
+    *   **Solution**: Use `None` default + getter method pattern
+    *   **Example**: `ai_model: str | None = None` with `def get_ai_model(self) -> str`
 
-*   **Development Environment:** The `aiohttp-debugtoolbar` can be enabled during development for easier debugging via `aiohttp_debugtoolbar.setup(app)`. This should not be enabled in production.
-*   **Type Checking:** To ensure correct static analysis of Pydantic models, the Mypy plugin must be enabled in `pyproject.toml` or `mypy.ini`:
-    ```toml
-    [tool.mypy]
-    plugins = ["pydantic.mypy"]
-    ```
-*   **Tracing and Debugging:** For observability into LangChain executions, configure LangSmith by setting the `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, and `LANGSMITH_PROJECT` environment variables.
-*   **Installation:** The project should install specific versions of libraries. For Pydantic, if a specific major version is required (e.g., V1 for compatibility), it should be pinned as `"pydantic==1.*"`. Otherwise, `pydantic` will install V2.
+*   **❌ Converting httpx to aiohttp unnecessarily**:
+    *   **Problem**: Adds complexity and dual dependencies for minimal benefit
+    *   **Impact**: More code to maintain, test complexity increases
+    *   **When it matters**: Only in hot paths (loops, repeated calls)
+    *   **When it doesn't**: Initialization operations (context loading, health checks)
+
+*   **❌ Blocking I/O in async hot paths**:
+    *   Using synchronous `open()`, `requests`, or `.invoke()` in async handlers degrades performance
+    *   **Acceptable**: Startup/initialization operations (config loading, one-time health checks)
+    *   **Not acceptable**: Inside async loops, repeated API calls, request handlers
+    *   Wrap blocking operations with `asyncio.to_thread()` if necessary
+
+*   **❌ Improper `ClientSession` usage**:
+    *   Creating new `aiohttp.ClientSession` or `httpx.AsyncClient` for each request wastes resources
+    *   **Correct**: Reuse session across multiple requests within async context manager
+    *   Platform clients should create session once and reuse
+
+*   **❌ Missing `await` keywords**:
+    *   Forgetting to `await` coroutines leads to runtime warnings or incorrect behavior
+    *   Pay attention to `await` in: `aiohttp` requests, `langchain` `.ainvoke()`, `aiofiles` operations
+    *   Test async code with `@pytest.mark.asyncio`
+
+*   **❌ Hardcoded secrets**:
+    *   API keys embedded in code are security risks
+    *   **Correct**: Use environment variables via `pydantic-settings.BaseSettings`
+    *   Never log sensitive data - use structured logging with field filtering
+
+*   **❌ Breaking configuration priority**:
+    *   Validators that set defaults bypass CLI/env overrides
+    *   **Correct**: Validators should only validate, not set values
+    *   Test with: `Config(field=value)` to ensure value is respected
+
+*   **❌ Ignoring structured output**:
+    *   Manually parsing LLM JSON/string outputs is error-prone
+    *   **Correct**: Use LangChain's `PydanticOutputParser` or `model.with_structured_output()`
+    *   For this project: Most output is markdown (free-form), synthesis produces strings
 
 ---
 <!-- MANUAL SECTIONS - DO NOT MODIFY THIS LINE -->
 
-### Business Logic & Implementation Decisions
+## Architecture & Design Decisions
 
-- Long-running LLM calls are acceptable and expected in this domain - response times of 30+ seconds are normal
-- Retry logic in `review_engine.py` handles API provider failures and rate limiting
-- The `dry_run` mode throughout the codebase is intentional for cost-free testing during development
-- Multiple AI provider support allows fallback when one service is unavailable
+### HTTP Client Library: httpx vs aiohttp
 
-### Domain-Specific Context
+**Decision**: Use `httpx` as the standard HTTP client library (both sync and async operations)
 
-- **GitLab Integration**: Supports both GitLab.com and self-hosted GitLab instances via custom base URLs
-- **AI Provider APIs**: Each provider (Anthropic, Gemini, Ollama) has different authentication and rate limiting patterns
-- **Token Management**: Cost optimization through adaptive context windows - longer contexts are acceptable for better review quality
+**Rationale**:
+- **Single dependency**: `httpx` provides both synchronous (`httpx.get()`) and asynchronous (`httpx.AsyncClient()`) APIs
+- **Simplicity**: More intuitive API compared to aiohttp for simple HTTP operations
+- **Used in**: Ollama provider health checks, team context loading, SSL certificate downloads
+- **Performance impact**: Minimal - HTTP operations are infrequent and typically happen at initialization
+
+**When NOT to refactor**:
+- Do not convert synchronous `httpx` calls to `aiohttp` for "consistency"
+- Initialization-time I/O (loading context files, health checks) does NOT need to be async
+- Only convert to async if the operation is in a hot path (called repeatedly in loops)
+
+**Example locations**:
+- `src/ai_code_review/providers/ollama.py`: Health checks using `httpx.get()` and `httpx.AsyncClient()`
+- `src/ai_code_review/utils/ssl_utils.py`: SSL certificate downloads using `aiohttp` (legacy)
+
+### Configuration System: Layered Priority
+
+**Priority Order**: `CLI args > Environment variables > Config file > Field defaults`
+
+**Critical Pattern for Interdependent Fields** (see commit `8fbf91b`):
+
+❌ **NEVER use `default_factory` with field references**:
+```python
+# WRONG - breaks layered config
+ai_model: str = Field(
+    default_factory=lambda: get_default_model_for_provider(DEFAULT_AI_PROVIDER)
+)
+```
+
+✅ **Use None + getter pattern**:
+```python
+# CORRECT - resolves at access time
+ai_model: str | None = Field(default=None)
+
+def get_ai_model(self) -> str:
+    if self.ai_model:
+        return self.ai_model
+    return get_default_model_for_provider(self.ai_provider)
+```
+
+**Why**: `default_factory` executes at field definition time, NOT at instance creation. It cannot access other field values dynamically.
+
+**Application**: All code must use `config.get_ai_model()` instead of `config.ai_model` to respect the computed default.
+
+### Review Context System (v1.15.0+)
+
+**Two-Phase Review with Comment Synthesis**:
+
+1. **Phase 1 (Synthesis)**: 
+   - Fetches up to 30 recent comments/reviews from platform API
+   - Uses fast model (Gemini Flash, Claude Haiku) to synthesize key insights
+   - Filters bot comments and system notes
+   - Generates concise summary (~2000 tokens max)
+
+2. **Phase 2 (Main Review)**:
+   - Receives synthesis as additional context
+   - Generates review aware of previous discussions
+   - Automatically skips synthesis when no comments exist
+
+**Configuration**:
+- `enable_review_context`: Enable fetching previous reviews (default: true)
+- `enable_review_synthesis`: Enable LLM synthesis preprocessing (default: true)
+- `synthesis_model`: Fast model for synthesis (auto-selected if None)
+- `max_comments_to_fetch`: Limit for API calls (default: 30)
+
+### Team/Organization Context (v1.15.0+)
+
+**Hierarchical Context Loading**:
+
+Priority: `team_context_file > project_context_file > commit_history`
+
+**Features**:
+- Supports local file paths and HTTP/HTTPS URLs
+- Remote URLs fetch content at runtime (no caching)
+- Configuration via CLI (`--team-context`), env var (`TEAM_CONTEXT_FILE`), or YAML config
+- Used for organization-wide coding standards shared across projects
+
+**Implementation**: Synchronous `httpx` for remote loading is acceptable - this happens once at startup and is not performance-critical.
+
+## Business Logic & Implementation Decisions
+
+- **Long-running LLM calls**: Response times of 30+ seconds are normal and expected in this domain
+- **Retry logic**: `review_engine.py` handles API provider failures and rate limiting automatically
+- **Dry-run mode**: Intentional throughout codebase for cost-free testing during development
+- **Multiple AI providers**: Enables fallback when one service is unavailable
+- **Adaptive context windows**: Automatically adjusts based on diff size (see `get_adaptive_context_size()`)
+- **Blocking I/O at startup**: Acceptable for initialization operations (config loading, health checks)
+- **Model selection**: Gemini 3 Pro Preview (v1.15.0+) for main reviews, Flash/Haiku for synthesis
+
+## Recent Major Features (since v1.12.0)
+
+### v1.15.0 - Review Context & Gemini 3
+- Intelligent review context with comment synthesis (two-phase system)
+- Upgraded to Gemini 3 Pro Preview as default model
+- Team/organization context support with remote URL loading
+- Synthesis model auto-selection per provider
+
+### v1.13.0 - Context Generator Enhancements  
+- CI/CD documentation integration for context files
+- Context7 library integration for external documentation
+- Improved symlink handling in project structure
+- Better library selection and separation from CI docs
+
+### v1.12.1 - Configuration & Packaging
+- Fixed layered configuration with None + getter pattern (commit `8fbf91b`)
+- Dry-run mode improvements for context generator
+- Package renamed to `ai-code-review-cli` on PyPI
+- Container support for local Git reviews
+
+## Domain-Specific Context
+
+- **GitLab Integration**: Supports both GitLab.com and self-hosted instances via custom base URLs
+- **GitHub Integration**: Full PR support with API v3 integration
+- **Local Git Mode**: Direct diff analysis without platform APIs (requires Git in container)
+- **AI Provider APIs**: Each provider (Anthropic, Gemini, Ollama) has different auth and rate limiting patterns
+- **Token Management**: Cost optimization through adaptive context windows - longer contexts acceptable for better review quality
 - **Review Formats**: Output must be markdown-compatible for GitLab/GitHub display
+- **Comment Synthesis**: Uses fast models to reduce token costs while maintaining context awareness
 
-### Special Cases & Edge Handling
+## Special Cases & Edge Handling
 
-- SSL verification can be disabled for self-hosted GitLab instances (`--disable-ssl-verify`)
-- `GITLAB_TOKEN` and other API keys should never appear in logs (use `mask_sensitive_data()`)
-- Empty commits and draft MRs are intentionally skipped without error
-- The `.ai_review/` directory structure must be preserved for context file functionality
-- Configuration layering: CLI args > Environment variables > Config files > Defaults
+- **SSL verification**: Can be disabled for self-hosted GitLab instances (`--disable-ssl-verify`)
+- **API key security**: `GITLAB_TOKEN` and other API keys should never appear in logs (use `mask_sensitive_data()`)
+- **Empty commits**: Draft MRs and empty commits are intentionally skipped without error
+- **Directory structure**: The `.ai_review/` directory must be preserved for context file functionality
+- **Configuration priority**: CLI args > Environment variables > Config files > Field defaults
+- **Interdependent fields**: Never use `default_factory` - use None + getter pattern instead
+- **HTTP operations**: Use `httpx` for both sync and async HTTP - don't mix httpx and aiohttp without reason
+- **Context loading**: Remote URL fetching happens at startup (not cached) - synchronous is acceptable
+- **Comment filtering**: System notes, bot comments, and non-author responses filtered from synthesis

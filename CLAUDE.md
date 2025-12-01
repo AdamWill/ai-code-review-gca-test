@@ -2,27 +2,76 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚠️ Critical Design Decisions (READ FIRST)
+
+### 1. Configuration System: Never Use default_factory with Field References
+**Problem** (commit `8fbf91b`): `default_factory` executes at field definition time, breaking the layered config system (CLI > Env > File > Defaults).
+
+❌ **WRONG**:
+```python
+ai_model: str = Field(default_factory=lambda: get_default_model_for_provider(DEFAULT_AI_PROVIDER))
+```
+
+✅ **CORRECT**:
+```python
+ai_model: str | None = Field(default=None)
+
+def get_ai_model(self) -> str:
+    return self.ai_model or get_default_model_for_provider(self.ai_provider)
+```
+
+**Rule**: All code must use `config.get_ai_model()`, never `config.ai_model`.
+
+### 2. HTTP Client: Use httpx, Not aiohttp
+**Decision**: `httpx` is the standard HTTP client (both sync and async).
+
+**Why**:
+- Single dependency for sync + async operations
+- Used in: Ollama health checks, team context loading, SSL downloads
+- Synchronous `httpx.get()` is acceptable for initialization operations
+
+**Do NOT**:
+- Suggest converting `httpx` to `aiohttp` for "consistency"
+- Make initialization I/O async unnecessarily
+- Add dual HTTP dependencies without strong justification
+
+### 3. Async vs Sync I/O
+**Rule**: Only use async for hot-path operations (inside loops, repeated calls).
+
+**Acceptable Synchronous**:
+- Configuration loading at startup
+- Health checks (once per execution)
+- Context file loading (once per review)
+
+**Require Asynchronous**:
+- Platform API calls (GitLab/GitHub)
+- LLM invocations (`.ainvoke()`)
+- Operations inside loops
+
 ## Essential Commands
 
 ### Development Setup
 
+**Install Dependencies:**
 ```bash
-# Install dependencies (includes GitPython for local Git support)
-uv sync --dev
-
-# Install pre-commit hooks
-uv run pre-commit install
-
-# Setup environment (choose based on workflow)
-cp env.example .env
-# Or use YAML configuration for team consistency (v1.7.0+)
-mkdir -p .ai_review && cp .ai_review/config.yml.example .ai_review/config.yml
-# Edit .env/.ai_review/config.yml and set tokens based on your use case:
-# - GITLAB_TOKEN: For GitLab MRs (not needed for --local)
-# - GITHUB_TOKEN: For GitHub PRs (not needed for --local)
-# - AI_API_KEY: For cloud providers (not needed for --provider ollama)
-# - LOCAL workflow: Only needs Git repository (no tokens required)
+uv sync --dev                    # Install all dependencies including GitPython
+uv run pre-commit install        # Setup quality checks
 ```
+
+**Configure Environment** (choose based on workflow):
+```bash
+# Option 1: Environment variables
+cp env.example .env
+
+# Option 2: YAML configuration (team-shareable, v1.7.0+)
+mkdir -p .ai_review && cp .ai_review/config.yml.example .ai_review/config.yml
+```
+
+**Required Tokens** (edit .env or config.yml):
+- `GITLAB_TOKEN`: For GitLab MRs (not needed for `--local`)
+- `GITHUB_TOKEN`: For GitHub PRs (not needed for `--local`)
+- `AI_API_KEY`: For cloud providers (not needed for `--provider ollama`)
+- **LOCAL workflow**: Only needs Git repository (no tokens required)
 
 ### Code Quality & Testing
 
@@ -61,6 +110,11 @@ ai-code-review --owner user --repo project --pr-number 456 --dry-run   # GitHub 
 ai-code-review --post                                    # GitLab or GitHub CI
 AI_API_KEY=your_key ai-code-review --post                # With cloud provider
 
+# NEW v1.15.0: Team context and synthesis options
+ai-code-review group/project 123 --team-context https://company.com/standards.md
+ai-code-review --local --team-context ../org-standards.md
+ENABLE_REVIEW_SYNTHESIS=false ai-code-review --post      # Skip comment synthesis
+
 # FORMAT OPTIONS
 ai-code-review group/project 123 --no-mr-summary         # Compact format
 ai-code-review --local --provider gemini                 # Local with cloud AI
@@ -80,37 +134,35 @@ ai-code-review --local --provider gemini               # Reviews automatically u
 
 ### System Overview
 
-This is an **AI-powered CLI tool** that generates automated code reviews for **GitLab Merge Requests**, **GitHub Pull Requests**, and **Local Git changes**. It includes a companion **AI context generator** for intelligent project documentation. The system supports **three primary workflows**:
+An **AI-powered CLI tool** for automated code reviews supporting:
+- **GitLab Merge Requests** & **GitHub Pull Requests**
+- **Local Git changes** (offline-capable)
+- **Three workflows**: Local development, Remote analysis, CI/CD automation
 
-1. **Local Code Review**: Analyze uncommitted/unpushed changes in your Git repository (`--local`)
-2. **Remote Code Review**: Analyze existing MRs/PRs from terminal with optional posting
-3. **CI/CD Integration**: Automated reviews in GitLab CI/GitHub Actions pipelines
-
-The tool provides both **local development support** (Ollama, no API keys) and **production cloud deployment** capabilities (Gemini, Anthropic).
+**Key Features (v1.15.0)**:
+- **Two-Phase Review**: Comment synthesis (fast model) + main review (quality model)
+- **Team Context**: Organization-wide standards via local files or remote URLs
+- **Adaptive Context**: Auto-expands window size based on diff size (16K → 24K)
+- **Multiple Providers**: Ollama (local), Gemini (default cloud), Anthropic (quality)
 
 ### Core Design Principles
 
-#### Multi-Modal AI Strategy
+**1. Multi-Modal AI Strategy**:
+- Local Dev: Ollama + `qwen2.5-coder:7b` (free, no API keys)
+- Production/CI: Gemini `gemini-3-pro-preview` (default)
+- Synthesis: Fast models (Gemini Flash, Claude Haiku) for comment preprocessing
+- Quality: Claude Sonnet 4 for critical reviews
 
-- **Local Development**: Ollama with `qwen2.5-coder:7b` (cost-free, no API keys required)
-- **Production/CI**: Google Gemini `gemini-3-pro-preview` (default cloud provider)
-- **High-Quality Alternative**: Anthropic Claude `claude-sonnet-4-20250514`
-- **Extensible**: LangChain abstraction supports multiple providers
+**2. Intelligent Context Management**:
+- Hierarchy: team_context > project_context > commit_history
+- Smart sizing: 16K standard, auto-expands to 24K for large diffs
+- File filtering: Auto-excludes lockfiles, build artifacts, minified files
+- Review synthesis: Preprocesses previous comments to avoid repetition
 
-#### Adaptive Context Management
-
-- **Smart Sizing**: 16K context for standard MRs (≤60K chars), auto-expands to 24K for large MRs
-- **File Filtering**: Automatically excludes lockfiles, build artifacts, minified files to reduce noise
-- **No Truncation**: Intelligent filtering replaces traditional diff truncation
-
-#### Unified Review Generation
-
-- **Single LLM Call**: Combines detailed review + executive summary in one efficient request
-- **Multi-Format Output**:
-  - **Full**: Collapsible sections with MR summaries (remote/CI workflows)
-  - **Compact**: Same as Full but without MR summary (`--no-mr-summary`)
-  - **Local**: Terminal-friendly simplified markdown (`--local` workflow)
-- **Business + Technical**: Serves both developer and stakeholder audiences
+**3. Unified Output Generation**:
+- Single LLM call for efficiency
+- Format adapts to workflow: Full (remote/CI), Compact, Local (terminal)
+- Markdown-compatible for platform display
 
 ### Architecture Flow
 
@@ -133,88 +185,61 @@ Arguments    Environment         ├─ GitHub Client ─┤  Context Prep   Lan
 
 ### Key Components
 
-**Configuration System (`models/config.py`)**:
-- **Pydantic-based**: Type-safe configuration with automatic validation
-- **Priority Order**: CLI args → Environment vars → CI/CD vars → Defaults
-- **Smart Validation**: Provider-model compatibility, token format validation, helpful error messages
-- **Cloud Provider Detection**: Automatic API key requirement validation
+**1. Configuration System (`models/config.py`)** ⭐:
+- Pydantic-based with layered priority
+- Smart validation with helpful error messages
+- **Critical**: Must use None + getter pattern for interdependent fields
 
-**Review Engine (`core/review_engine.py`)**:
-- **Multi-Platform Orchestrator**: Coordinates GitLab/GitHub/Local Git + AI provider interactions
-- **Factory Pattern**: Creates appropriate platform client based on configuration/CLI args
-- **Context Builder**: Formats diffs, adds commit history, applies file filtering across all platforms
-- **Format Selection**: Chooses output format (Full/Compact/Local) based on workflow
-- **Adaptive Processing**: Dynamic context window sizing based on diff size
-- **Error Recovery**: Comprehensive error handling with specific exit codes (0-5)
+**2. Review Engine (`core/review_engine.py`)** ⭐:
+- Two-phase review: synthesis + main review (v1.15.0+)
+- Factory pattern for platform/provider creation
+- Context hierarchy: team > project > commits
+- Adaptive context windows, intelligent skip logic
 
-**AI Provider Abstraction (`providers/`)**:
-- **LangChain Foundation**: Unified interface across Ollama, Gemini, future providers
-- **Provider-Specific Logic**: Ollama health checks, Gemini API handling, model validation
-- **Adaptive Context**: Each provider reports optimal context window sizes
-- **Async Operations**: Non-blocking AI API calls with proper timeout handling
+**3. AI Providers (`providers/`)** ⭐:
+- LangChain-based abstraction (Ollama, Gemini, Anthropic)
+- Model override support for synthesis vs main review
+- Health checks use `httpx` (sync/async OK)
 
-**Platform Integration (`core/` clients)**:
+**4. Platform Clients (`core/`)** ⭐:
+- GitLab: python-gitlab, SSL support, discussion threads
+- GitHub: PyGithub, Actions integration, PR comments
+- Local: GitPython, offline-capable, terminal output
 
-**GitLab Client (`core/gitlab_client.py`)**:
-- **Multi-Instance Support**: Works with GitLab.com and self-hosted instances
-- **CI/CD Optimized**: Automatic detection of GitLab CI environment variables
-- **Project ID Flexibility**: Handles both numeric IDs and path-based IDs (`group/project`)
-- **SSL Certificate Support**: Custom certificates for internal GitLab instances
-- **Discussion Threads**: Posts reviews as collapsible discussion threads
-
-**GitHub Client (`core/github_client.py`)**:
-- **GitHub.com + Enterprise**: Full API support for both hosting types
-- **Actions Integration**: Automatic detection of GitHub Actions environment
-- **Repository Flexibility**: Handles owner/repo format for PR identification
-- **PR Comments**: Posts reviews as standard PR comments
-
-**Local Git Client (`core/local_git_client.py`)**:
-- **GitPython Integration**: Direct Git repository analysis without external APIs
-- **Smart Merge Base**: Calculates diffs against target branch using Git algorithms
-- **Branch Validation**: Warns when local target branch is behind remote origin
-- **Terminal Format**: Generates simplified markdown optimized for terminal viewing
-
-**Prompt Management (`utils/prompts.py`)**:
-- **Structured Templates**: LangChain prompt templates with strict output format enforcement
-- **Context Injection**: Dynamic inclusion of project context, language hints, library docs
-- **Format Validation**: Ensures AI follows exact markdown structure requirements
-- **Chain Architecture**: Input transformation → Prompt → LLM → Parser pipeline
+**5. Prompt Management (`utils/prompts.py`)**:
+- LangChain templates with LCEL (prompt | model)
+- Two chains: synthesis (fast) + review (main)
+- Dynamic context injection
 
 ### Configuration Architecture
 
-**Environment Priority System:**
-1. **CLI Arguments** (highest): `--provider gemini --model gemini-3-pro-preview`
-2. **Environment Variables**: `AI_PROVIDER=gemini AI_MODEL=gemini-3-pro-preview`
-3. **CI/CD Variables**: `CI_PROJECT_PATH`, `CI_MERGE_REQUEST_IID` (auto-detected)
-4. **Defaults** (lowest): Gemini production, Ollama local development
+**Priority Order**: `CLI args > Environment vars > Config file > Defaults`
 
-**Provider Configuration Patterns:**
+**Configuration Methods** (choose one or combine):
+1. CLI arguments: `--provider gemini --model gemini-3-pro-preview`
+2. Environment variables: `AI_PROVIDER=gemini AI_MODEL=gemini-3-pro-preview`
+3. YAML config file: `.ai_review/config.yml` (team-shareable)
+4. Defaults: Auto-selected per provider
+
+**Common Configurations**:
 
 ```bash
-# Local Git Reviews (no tokens needed, works offline)
-AI_PROVIDER=ollama
-AI_MODEL=qwen2.5-coder:7b
-OLLAMA_BASE_URL=http://localhost:11434
-# Usage: ai-code-review --local
+# Local Git + Ollama (no tokens, works offline)
+ai-code-review --local --provider ollama
 
-# Remote Reviews with Local AI (GitLab/GitHub tokens needed)
-AI_PROVIDER=ollama
-GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx
-GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-# Usage: ai-code-review group/project 123
+# Remote + Cloud AI (tokens required)
+GITLAB_TOKEN=glpat_xxx AI_API_KEY=your_key ai-code-review group/project 123
 
-# Production CI/CD (API key required)
+# CI/CD with synthesis and team context (v1.15.0)
 AI_PROVIDER=gemini
-AI_MODEL=gemini-3-pro-preview
-AI_API_KEY=your_gemini_api_key_here
-GITLAB_TOKEN=glpat_xxxxxxxxxxxxxxxxxxxx  # Or GITHUB_TOKEN for GitHub
-# Usage: ai-code-review --post (in CI)
+AI_API_KEY=your_key
+TEAM_CONTEXT_FILE=https://company.com/standards.md
+ENABLE_REVIEW_SYNTHESIS=true
+# In .gitlab-ci.yml or GitHub Actions:
+ai-code-review --post
 
-# Enhanced Context with Context7 (optional)
-AI_PROVIDER=gemini
-AI_API_KEY=your_gemini_api_key_here
-CONTEXT7_API_KEY=ctx7_xxxxxxxxxxxxxxxxxxxx
-# Usage: ai-generate-context --enable-context7
+# Context generation with Context7
+CONTEXT7_API_KEY=ctx7_xxx ai-generate-context --enable-context7
 ```
 
 ### Error Handling Strategy
@@ -233,90 +258,153 @@ CONTEXT7_API_KEY=ctx7_xxxxxxxxxxxxxxxxxxxx
 - **Network Issues**: Timeout handling with configurable limits
 - **CI/CD Integration**: Graceful failure without blocking pipelines (`allow_failure: true`)
 
-### Development Patterns
+### Development Workflow
 
-**Testing Strategy:**
-- **Unit Tests**: Mock all external dependencies (GitLab/GitHub APIs, AI APIs, GitPython in CI)
-- **Integration Tests**: Real Ollama testing locally, cloud provider testing in CI, local Git testing
-- **CI Compatibility**: GitPython mocking strategy for tests in environments without git binary
-- **Dry-Run Mode**: Full pipeline testing without API costs across all 3 workflows
-- **Health Checks**: Connectivity verification before processing for all providers
+**Testing**: Mock external dependencies, 75% coverage minimum, `@pytest.mark.asyncio` for async code  
+**Quality Checks**: Pre-commit hooks (ruff, mypy, pytest), strict type annotations  
+**Tools**: uv (packages), ruff (lint/format), pytest (testing)  
+**Config**: YAML-based via `.ai_review/config.yml`
 
-**Code Organization:**
-- **models/**: Pydantic models for configuration, platform-agnostic data structures, review models
-  - `config.py`: Multi-platform configuration with auto-detection
-  - `platform.py`: Unified data models (PullRequestData, PlatformClientInterface)
-  - `review.py`: Review and summary structures
-- **core/**: Multi-platform business logic
-  - `review_engine.py`: Orchestrates all 3 workflows with factory pattern
-  - `gitlab_client.py`: GitLab API integration with SSL support
-  - `github_client.py`: GitHub API integration
-  - `local_git_client.py`: Local Git operations with GitPython
-  - `base_platform_client.py`: Abstract interface for platform clients
-- **providers/**: AI provider implementations with LangChain integration
-  - `ollama.py`, `gemini.py`, `anthropic.py`: Provider-specific implementations
-- **utils/**: Shared utilities
-  - `prompts.py`: Multi-format prompt templates (Full/Compact/Local)
-  - `exceptions.py`, `platform_exceptions.py`: Comprehensive error handling
-  - `ssl_utils.py`: SSL certificate management for internal GitLab
+## Common Review Issues & Solutions
 
-**Development Workflow:**
-- **Pre-commit Hooks**: Automatic code quality checks on commit (ruff, mypy, pytest, pymarkdown)
-- **Coverage Requirements**: 75% minimum test coverage enforced in CI and pre-commit
-- **Type Safety**: Strict mypy configuration with full annotation coverage
-- **Modern Tooling**: uv for package management, ruff for linting/formatting
-- **Structured Logging**: contextual logging for debugging and monitoring
-- **YAML Configuration**: Team-shareable configuration via `.ai_review/config.yml`
+### ❌ Configuration Pitfalls
 
-### Local Git Workflow Details
+**Issue 1: Using `default_factory` with field references** (commit `8fbf91b`)
+```python
+# NEVER DO THIS
+ai_model: str = Field(default_factory=lambda: get_default(...))
 
-**Key Dependencies:**
-- **GitPython**: Core library for Git repository operations (requires Git binary)
-- **pathlib**: Cross-platform path handling for repository URLs
-- **asyncio**: Async Git operations to prevent blocking
+# ALWAYS DO THIS
+ai_model: str | None = Field(default=None)
+def get_ai_model(self) -> str:
+    return self.ai_model or get_default_model_for_provider(self.ai_provider)
+```
+**Why**: Breaks layered config - causes provider/model mismatches.
 
-**Local Review Process:**
-1. **Repository Detection**: Auto-finds Git repo from current directory (searches parent dirs)
-2. **Branch Analysis**: Gets current branch, handles detached HEAD states
-3. **Merge Base Calculation**: Finds common ancestor with target branch (`origin/main` preferred)
-4. **Branch Freshness Check**: Warns if local target branch is behind remote
-5. **Diff Generation**: Creates diffs between current state and merge base
-6. **Commit History**: Includes local commits for context
-7. **Terminal Output**: Simplified markdown format optimized for terminal/file viewing
+**Issue 2: Validators that set values**
+- Validators should only validate, not set defaults
+- Setting values in validators bypasses CLI/env overrides
+- Test with direct `Config(field=value)` instantiation
 
-**Local-Specific Features:**
-- No external API dependencies (works offline)
-- Terminal-friendly output (no collapsible sections)
-- File-based URLs for project context
-- Smart handling of Git edge cases (detached HEAD, missing remotes)
-- Integration with existing file filtering and AI provider selection
+### ❌ HTTP Client Confusion
 
-### Context Generator Tool Details
+**Issue**: Suggesting httpx → aiohttp conversion for "consistency"
 
-**AI Context Generator (`ai-generate-context`)**:
-- **Intelligent Analysis**: Uses AI to understand codebase structure and purpose
-- **Automatic Documentation**: Generates comprehensive project context files
-- **Multi-Provider Support**: Works with Ollama, Gemini, Anthropic providers
-- **Customizable Output**: Configurable output paths and formats
-- **Integration Ready**: Outputs `.ai_review/context.md` for automatic inclusion in reviews
+**Correct Approach**:
+- Use `httpx` as standard (sync + async in one library)
+- Keep existing `aiohttp` where it exists (platform clients)
+- Don't convert unless there's a performance need
+- Sync `httpx.get()` acceptable for initialization
 
-**Context Generation Process:**
-1. **Repository Scanning**: Analyzes project structure, dependencies, and configuration
-2. **AI Understanding**: Uses LLM to understand project purpose and architecture
-3. **Context Synthesis**: Generates comprehensive documentation in markdown format
-4. **Integration**: Context automatically included in subsequent code reviews
+**Where httpx is used**: Ollama health checks, team context loading, SSL downloads
 
-### Context7 Integration
+### ❌ Unnecessary Async Conversion
 
-**Context7 Service Integration** (v1.11.0+):
-- **Official Library Documentation**: Fetches authoritative documentation from Context7 API
-- **Intelligent Library Detection**: Auto-detects dependencies from project files and configuration
-- **Enhanced Code Reviews**: Includes official documentation context in AI prompts for better accuracy
-- **Configurable Priorities**: Specify important libraries for your project type (FastAPI, Django, etc.)
-- **Smart Caching**: Session-based caching to minimize API calls during context generation
+**Not everything needs to be async**:
+- Config loading at startup → OK to be sync
+- Health checks (once per execution) → OK to be sync
+- Context file loading (once per review) → OK to be sync
 
-**Context7 Configuration**:
-- **API Key Required**: Set `CONTEXT7_API_KEY` environment variable
-- **Service URL**: https://context7.com (sign up for API access)
-- **Integration Points**: Both `ai-generate-context` and `ai-code-review` tools support Context7
-- **YAML Configuration**: Configure via `.ai_review/config.yml` with library priorities and settings
+**Must be async**:
+- Platform API calls (GitLab/GitHub)
+- LLM invocations (`.ainvoke()`)
+- Operations inside loops
+
+### ❌ Test Mocking Issues
+
+**When updating to async**:
+- Remember to update ALL tests that call the method
+- Use `@pytest.mark.asyncio` decorator
+- Mock with `AsyncMock` for async operations
+- Properly configure async context managers:
+  ```python
+  mock_cm = Mock()
+  mock_cm.__aenter__ = AsyncMock(return_value=mock_obj)
+  mock_cm.__aexit__ = AsyncMock(return_value=None)
+  ```
+
+### Local Git Workflow (Offline Mode)
+
+**Key Points**:
+- Uses GitPython (requires Git binary)
+- Works offline (no platform tokens needed)
+- Compares current changes vs target branch (default: main)
+- Terminal-friendly output format
+
+**Process**: Auto-detect repo → Calculate merge base → Generate diffs → Format for terminal
+
+## New Features (v1.15.0)
+
+### 1. Intelligent Review Context with Comment Synthesis
+
+**Problem Solved**: Avoid repeating suggestions already discussed in previous reviews.
+
+**How It Works**:
+- Fetches up to 30 recent comments/reviews from platform API
+- Filters bot comments and system notes
+- Fast model synthesizes key insights (~2000 tokens)
+- Main review uses synthesis as context
+- Skips automatically when no comments exist
+
+**Configuration**:
+```bash
+ENABLE_REVIEW_CONTEXT=true          # Fetch previous comments (default)
+ENABLE_REVIEW_SYNTHESIS=true        # LLM synthesis (default)
+SYNTHESIS_MODEL=gemini-2.5-flash    # Fast model override (optional)
+MAX_COMMENTS_TO_FETCH=30            # API limit (default)
+```
+
+**Models Used**:
+- Synthesis: Gemini Flash, Claude Haiku, same as main for Ollama
+- Main: Gemini 3 Pro Preview, Claude Sonnet 4, Qwen 2.5 Coder
+
+### 2. Team/Organization Context Support
+
+**Problem Solved**: Share coding standards across multiple projects.
+
+**How It Works**:
+- Priority: team_context > project_context > commit_history
+- Supports local file paths and HTTP/HTTPS URLs
+- Remote URLs fetched at startup (no caching)
+- Synchronous loading acceptable (happens once)
+
+**Configuration**:
+```bash
+# CLI option
+ai-code-review group/project 123 --team-context https://company.com/standards.md
+
+# Environment variable
+TEAM_CONTEXT_FILE=https://company.com/review-guidelines.md
+
+# YAML config (.ai_review/config.yml)
+team_context_file: ../shared/team-standards.md
+```
+
+**Use Cases**:
+- Organization-wide coding standards
+- Shared security guidelines
+- Common architectural patterns
+- Language-specific best practices
+
+### Context Generator Tool
+
+Generates intelligent project documentation for better AI code reviews.
+
+**Usage**:
+```bash
+ai-generate-context                              # Creates .ai_review/context.md
+ai-generate-context --enable-context7            # With official library docs
+ai-generate-context --provider ollama            # Use local AI
+```
+
+**Features**:
+- Analyzes project structure, dependencies, and configuration
+- Uses AI to understand project purpose and architecture
+- Generates comprehensive markdown documentation
+- Auto-included in subsequent reviews via `project_context_file`
+
+**Context7 Integration** (v1.13.0+):
+- Fetches official library documentation from Context7 API
+- Requires `CONTEXT7_API_KEY` environment variable
+- Auto-detects dependencies from project files
+- Enhances review accuracy with authoritative docs
