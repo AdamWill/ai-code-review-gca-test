@@ -92,6 +92,8 @@ class TestGeminiProvider:
             google_api_key="test_api_key",
             temperature=0.1,
             max_tokens=8000,
+            timeout=test_config.llm_timeout,
+            max_retries=test_config.llm_max_retries,
         )
         mock_logger_instance.info.assert_called_once()
 

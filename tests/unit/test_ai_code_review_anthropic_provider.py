@@ -93,31 +93,25 @@ class TestAnthropicProvider:
             api_key=SecretStr("test_api_key"),
             temperature=0.1,
             max_tokens_to_sample=8000,
-            timeout=30.0,  # Should use Anthropic's minimum timeout
+            timeout=test_config.llm_timeout,
+            max_retries=test_config.llm_max_retries,
             stop=None,
         )
         mock_logger_instance.info.assert_called_once()
 
-    def test_default_timeout_constant(self, test_config: Config) -> None:
-        """Test that DEFAULT_TIMEOUT constant is properly set."""
-        provider = AnthropicProvider(test_config)
-
-        # Should have the expected timeout constant
-        assert provider.DEFAULT_TIMEOUT == 30.0
-
     @patch("ai_code_review.providers.anthropic.ChatAnthropic")
-    def test_timeout_uses_max_of_config_and_default(
+    def test_timeout_uses_config_value(
         self, mock_chat: MagicMock, test_config: Config
     ) -> None:
-        """Test that timeout uses max of config and DEFAULT_TIMEOUT."""
-        # Test with config timeout higher than default
-        test_config.http_timeout = 60.0
+        """Test that timeout uses configured llm_timeout value."""
+        # Test with custom timeout
+        test_config.llm_timeout = 60.0
         provider = AnthropicProvider(test_config)
 
         mock_chat.return_value = MagicMock()
         provider._create_client()
 
-        # Should use the higher value (60.0)
+        # Should use the configured value (60.0)
         call_args = mock_chat.call_args[1]
         assert call_args["timeout"] == 60.0
 

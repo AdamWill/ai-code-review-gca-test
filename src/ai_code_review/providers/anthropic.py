@@ -17,9 +17,6 @@ from ai_code_review.utils.exceptions import AIProviderError
 class AnthropicProvider(BaseAIProvider):
     """Anthropic Claude AI provider implementation."""
 
-    # Claude needs more time for processing than other providers
-    DEFAULT_TIMEOUT = 30.0  # Increased for Claude Sonnet 4 reliability
-
     def __init__(self, config: Config) -> None:
         """Initialize Anthropic provider."""
         super().__init__(config)
@@ -52,6 +49,8 @@ class AnthropicProvider(BaseAIProvider):
                 model=self.model_name,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
+                timeout=self.config.llm_timeout,
+                max_retries=self.config.llm_max_retries,
             )
 
             return ChatAnthropic(
@@ -59,7 +58,8 @@ class AnthropicProvider(BaseAIProvider):
                 api_key=SecretStr(self.config.ai_api_key or ""),
                 temperature=self.config.temperature,
                 max_tokens_to_sample=self.config.max_tokens,
-                timeout=max(self.config.http_timeout, self.DEFAULT_TIMEOUT),
+                timeout=self.config.llm_timeout,
+                max_retries=self.config.llm_max_retries,
                 stop=None,
             )
         except Exception as e:

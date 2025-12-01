@@ -544,6 +544,154 @@ EXCLUDE_PATTERNS="*.lock,*.min.js,node_modules/**,dist/**"
 LOG_LEVEL=INFO                # DEBUG, INFO, WARNING, ERROR, CRITICAL
 ```
 
+### ⏱️ Timeout and Retry Configuration
+
+For CI/CD environments, timeout and retry settings are designed to **fail fast** rather than blocking pipelines:
+
+#### Default Settings (Optimized for CI/CD)
+
+```bash
+LLM_TIMEOUT=60         # Default: 60 seconds (1 minute)
+LLM_MAX_RETRIES=2      # Default: 2 retries
+```
+
+These defaults mean:
+- **First attempt**: 60 seconds max
+- **Retry 1**: 60 seconds max (if first fails)
+- **Retry 2**: 60 seconds max (if retry 1 fails)
+- **Total maximum wait**: ~3 minutes (60s × 3 attempts)
+
+#### Why These Defaults?
+
+⚡ **Fast failures**: Jobs fail quickly on server issues (1-3 minutes max)
+- Prevents 20+ minute waits on server timeouts (like 504 errors)
+- CI/CD pipelines don't get blocked indefinitely
+- 60s is 2x the minimum needed for Claude (30s)
+
+🔄 **Retry friendly**: Failed jobs can be manually retried
+- Lower retry counts mean faster failure detection
+- Manual retry in GitLab/GitHub is fast and easy
+
+🚫 **No blocking**: Prevents pipeline delays
+- `allow_failure: true` in CI config means reviews don't block merges
+- Failed review jobs can be investigated separately
+
+#### Example: Handling Server Errors
+
+**Scenario**: Gemini API returns 504 timeout errors
+
+❌ **Without timeout configuration** (old behavior):
+```
+14:00:00 → Start
+14:10:00 → Retry 1 (after 10 min wait)
+14:20:00 → Retry 2 (after 10 min wait)
+14:30:00 → Finally completes or fails
+Total: 30+ minutes blocking the pipeline
+```
+
+✅ **With default timeout configuration** (new behavior):
+```
+14:00:00 → Start
+14:01:00 → Retry 1 (after 1 min timeout)
+14:02:00 → Retry 2 (after 1 min timeout)
+14:03:00 → Fails fast and exits
+Total: ~3 minutes, job can be retried manually
+```
+
+#### Custom Configuration
+
+##### For Slow Networks or Large Diffs
+
+```bash
+# Environment variables
+LLM_TIMEOUT=120        # 2 minutes per attempt
+LLM_MAX_RETRIES=3      # 3 retries (total: ~8 min max)
+
+# Config file (.ai_review/config.yml)
+llm_timeout: 120
+llm_max_retries: 3
+```
+
+##### For Ultra-Fast Failure (Aggressive CI/CD)
+
+```bash
+# Environment variables
+LLM_TIMEOUT=30         # 30 seconds per attempt
+LLM_MAX_RETRIES=1      # Only 1 retry (total: ~1 min max)
+
+# Config file (.ai_review/config.yml)
+llm_timeout: 30
+llm_max_retries: 1
+```
+
+##### For Local Development (More Patient)
+
+```bash
+# Environment variables
+LLM_TIMEOUT=180        # 3 minutes per attempt
+LLM_MAX_RETRIES=5      # 5 retries (total: ~18 min max)
+
+# Config file (.ai_review/config.yml)
+llm_timeout: 180
+llm_max_retries: 5
+```
+
+#### Configuration Methods
+
+##### Method 1: Environment Variables (Recommended for CI/CD)
+
+```yaml
+# .gitlab-ci.yml
+ai-review:
+  variables:
+    LLM_TIMEOUT: "60"
+    LLM_MAX_RETRIES: "2"
+```
+
+```yaml
+# .github/workflows/ai-review.yml
+- name: Run AI Review
+  env:
+    LLM_TIMEOUT: 60
+    LLM_MAX_RETRIES: 2
+```
+
+##### Method 2: Config File (Recommended for Project Defaults)
+
+```yaml
+# .ai_review/config.yml
+llm_timeout: 60
+llm_max_retries: 2
+```
+
+##### Method 3: .env File (Local Development)
+
+```bash
+# .env
+LLM_TIMEOUT=120
+LLM_MAX_RETRIES=3
+```
+
+#### Best Practices
+
+1. **CI/CD Environments**:
+   - Use default values (60s timeout, 2 retries)
+   - Set `allow_failure: true` in CI config
+   - Enable manual retry for failed jobs
+
+2. **Local Development**:
+   - Increase timeout for complex reviews (120-180s)
+   - Increase retries for unreliable networks (3-5)
+
+3. **Production/Critical Reviews**:
+   - Monitor for frequent timeouts
+   - Investigate server-side issues (API status pages)
+   - Consider switching AI providers if timeouts persist
+
+4. **Cost Optimization**:
+   - Lower timeouts reduce wasted API call time
+   - Fewer retries reduce duplicate API calls on permanent failures
+
 ### 🚀 Smart Skip Review
 
 The **Skip Review mechanism** automatically detects and skips unnecessary AI reviews to reduce noise, save API costs, and speed up CI/CD pipelines.

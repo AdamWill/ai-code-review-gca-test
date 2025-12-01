@@ -33,6 +33,8 @@ class GeminiProvider(BaseAIProvider):
                 model=self.model_name,
                 max_tokens=self.config.max_tokens,
                 temperature=self.config.temperature,
+                timeout=self.config.llm_timeout,
+                max_retries=self.config.llm_max_retries,
             )
 
             return ChatGoogleGenerativeAI(
@@ -40,6 +42,8 @@ class GeminiProvider(BaseAIProvider):
                 google_api_key=self.config.ai_api_key,
                 temperature=self.config.temperature,
                 max_tokens=self.config.max_tokens,
+                timeout=self.config.llm_timeout,
+                max_retries=self.config.llm_max_retries,
             )
         except Exception as e:
             raise AIProviderError(

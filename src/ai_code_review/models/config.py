@@ -291,6 +291,18 @@ class Config(BaseSettings):
         gt=0.0,
     )
 
+    # LLM API timeout and retry configuration
+    llm_timeout: float = Field(
+        default=60.0,
+        description="Timeout in seconds for LLM API calls (cloud providers). Lower values fail faster in CI/CD.",
+        gt=0.0,
+    )
+    llm_max_retries: int = Field(
+        default=2,
+        description="Maximum number of retries for LLM API calls. Lower values fail faster in CI/CD.",
+        ge=0,
+    )
+
     # AI model parameters
     temperature: float = Field(
         default=0.1,
