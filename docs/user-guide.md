@@ -1027,52 +1027,52 @@ mkdir -p .ai_review
 **Customize** `.ai_review/project.md` with your project information:
 
 ```markdown
-    # Project Context for AI Code Review
+# Project Context for AI Code Review
 
-    ## Project Overview
-    Web API for user management built with FastAPI and PostgreSQL.
+## Project Overview
+Web API for user management built with FastAPI and PostgreSQL.
 
-    ## Technology Stack
-    - **Language:** Python 3.12+
-    - **Framework:** FastAPI + SQLAlchemy
-    - **Database:** PostgreSQL
-    - **Testing:** pytest + httpx
-    - **Deployment:** Docker + Kubernetes
+## Technology Stack
+- **Language:** Python 3.12+
+- **Framework:** FastAPI + SQLAlchemy
+- **Database:** PostgreSQL
+- **Testing:** pytest + httpx
+- **Deployment:** Docker + Kubernetes
 
-    ## Code Style & Guidelines
-    - **Style:** PEP 8 + Black formatting
-    - **Type Hints:** Mandatory with mypy validation
-    - **Async:** Use async/await for all I/O operations
-    - **Error Handling:** Custom exception classes with detailed messages
+## Code Style & Guidelines
+- **Style:** PEP 8 + Black formatting
+- **Type Hints:** Mandatory with mypy validation
+- **Async:** Use async/await for all I/O operations
+- **Error Handling:** Custom exception classes with detailed messages
 
-    ## Review Focus Areas
-     - **Security:** Validate all input parameters and SQL injection prevention
-     - **Performance:** Check for N+1 queries and proper async usage
-     - **API Design:** RESTful conventions and OpenAPI documentation
-     - **Testing:** Verify test coverage for new endpoints
+## Review Focus Areas
+- **Security:** Validate all input parameters and SQL injection prevention
+- **Performance:** Check for N+1 queries and proper async usage
+- **API Design:** RESTful conventions and OpenAPI documentation
+- **Testing:** Verify test coverage for new endpoints
 
-    ## Common Issues & Gotchas
-     - **Intentional Patterns:** `# noqa` comments are legitimate for SQLAlchemy models
-     - **External Dependencies:** Redis client is injected via dependency injection container
-     - **Domain Logic:** Complex VAT calculations are required by EU regulations
-     - **Performance:** Deliberate caching in user service for authentication speed
-    ```
+## Common Issues & Gotchas
+- **Intentional Patterns:** `# noqa` comments are legitimate for SQLAlchemy models
+- **External Dependencies:** Redis client is injected via dependency injection container
+- **Domain Logic:** Complex VAT calculations are required by EU regulations
+- **Performance:** Deliberate caching in user service for authentication speed
+```
 
 1. **Control the feature** via environment variable or CLI flag:
 
-    ```bash
-    # Environment variable (default: enabled if file exists)
-    ENABLE_PROJECT_CONTEXT=true/false
+```bash
+# Environment variable (default: enabled if file exists)
+ENABLE_PROJECT_CONTEXT=true/false
 
-    # CLI flags
-    ai-code-review --project-context project/123     # Enable explicitly
-    ai-code-review --no-project-context project/123  # Disable explicitly
-    ai-code-review --context-file docs/ai-context.md project/123  # Custom file path
+# CLI flags
+ai-code-review --project-context project/123     # Enable explicitly
+ai-code-review --no-project-context project/123  # Disable explicitly
+ai-code-review --context-file docs/ai-context.md project/123  # Custom file path
 
-    # Output options
-    ai-code-review project/123 -o review.md          # Save to file
-    ai-code-review project/123 --output-file reports/review-$(date +%Y%m%d).md  # Timestamped file
-    ```
+# Output options
+ai-code-review project/123 -o review.md          # Save to file
+ai-code-review project/123 --output-file reports/review-$(date +%Y%m%d).md  # Timestamped file
+```
 
 #### Best Practices
 
