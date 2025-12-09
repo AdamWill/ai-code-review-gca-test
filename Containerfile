@@ -1,9 +1,11 @@
-# Build a binary distributable out of ia-code-review
+# Build a binary distributable out of ai-code-review
 FROM quay.io/automotive-toolchain/python3-uv:latest as builder
 WORKDIR /code
 COPY pyproject.toml uv.lock README.md ./
 COPY src src
-RUN uv build --no-cache
+# Build wheel and export exact dependency versions from lockfile
+RUN uv build --no-cache && \
+    uv export --frozen --no-hashes --no-dev -o requirements.txt
 
 # Use the binary distributable in the system Python environment
 # so it's accessible globally in containers
@@ -14,4 +16,11 @@ RUN dnf install -y \
                 git-core \
  && dnf clean all -y
 COPY --from=builder /code/dist/*.whl /tmp/
-RUN pip3.12 install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
+COPY --from=builder /code/requirements.txt /tmp/
+COPY --from=builder /code/pyproject.toml /tmp/
+COPY --from=builder /code/README.md /tmp/
+# Install exact versions from lockfile, then the wheel
+RUN cd /tmp && \
+    pip3.12 install --no-cache-dir -r requirements.txt && \
+    pip3.12 install --no-cache-dir --no-deps *.whl && \
+    rm *.whl requirements.txt pyproject.toml README.md
