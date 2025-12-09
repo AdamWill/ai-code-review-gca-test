@@ -178,7 +178,7 @@ class GitLabClient(BasePlatformClient):
                 description=merge_request.description,
                 source_branch=merge_request.source_branch,
                 target_branch=merge_request.target_branch,
-                author=merge_request.author["name"],
+                author=merge_request.author["username"],
                 state=merge_request.state,
                 web_url=merge_request.web_url,
                 draft=getattr(merge_request, "draft", False),  # GitLab draft status
