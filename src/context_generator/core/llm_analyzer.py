@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -11,6 +13,10 @@ from ai_code_review.providers.gemini import GeminiProvider
 from ai_code_review.providers.ollama import OllamaProvider
 
 logger = structlog.get_logger(__name__)
+
+# Type alias for LangChain AIMessage.content
+# See: https://api.python.langchain.com/en/latest/messages/langchain_core.messages.ai.AIMessage.html
+MessageContent = str | list[str | dict[str, Any]]
 
 
 class SpecializedLLMAnalyzer:
@@ -48,12 +54,8 @@ class SpecializedLLMAnalyzer:
             ]
 
             response = await self._provider.client.ainvoke(messages)
-            # Handle different response content types
-            if isinstance(response.content, str):
-                content = self._clean_response(response.content)
-            else:
-                # Handle list or other complex types by converting to string
-                content = self._clean_response(str(response.content))
+            # Handle different response content types from various LLM providers
+            content = self._extract_content_from_response(response.content)
 
             logger.debug(
                 "LLM call completed successfully",
@@ -90,6 +92,49 @@ CRITICAL RULES:
 7. Prioritize information that affects code review quality
 
 Your output will be used by AI systems reviewing code changes, so accuracy and relevance are essential."""
+
+    def _extract_content_from_response(self, content: MessageContent) -> str:
+        """Extract text content from various LLM response formats.
+
+        Different LLM providers and versions return content in different formats:
+        - Simple string: "text content"
+        - List of content blocks: [{'type': 'text', 'text': '...', 'extras': {...}}]
+        - List of strings: ['part1', 'part2']
+
+        This method normalizes all formats to a clean string.
+
+        Args:
+            content: Raw content from LLM AIMessage.content (str or list)
+
+        Returns:
+            Extracted and cleaned text content
+        """
+        # Most common case: simple string response
+        if isinstance(content, str):
+            return self._clean_response(content)
+
+        # Handle list of content blocks (e.g., from newer langchain-google-genai)
+        # content is list[str | dict[str, Any]] at this point
+        text_parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                text_parts.append(block)
+            else:
+                # block is dict[str, Any] - extract text field (Gemini format)
+                if "text" in block:
+                    text_parts.append(str(block["text"]))
+                # Fallback: try to get 'content' field
+                elif "content" in block:
+                    text_parts.append(str(block["content"]))
+                else:
+                    # Unknown dict format, skip extras/metadata
+                    logger.debug(
+                        "Skipping unknown dict block",
+                        keys=list(block.keys()),
+                    )
+
+        combined_text = "\n".join(text_parts)
+        return self._clean_response(combined_text)
 
     def _clean_response(self, content: str) -> str:
         """Clean LLM response of unwanted conversational text."""
