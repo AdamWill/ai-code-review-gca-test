@@ -78,8 +78,8 @@ CONTEXT7_API_KEY=your_context7_api_key_here
 
 #### Supported AI Providers
 
-- **Anthropic Claude**: `anthropic` (requires `ANTHROPIC_API_KEY`)
-- **Google Gemini**: `gemini` (requires `GEMINI_API_KEY`)
+- **Anthropic Claude**: `anthropic` (requires `AI_API_KEY`)
+- **Google Gemini**: `gemini` (requires `AI_API_KEY`)
 - **Ollama**: `ollama` (local models, no API key needed)
 
 ## Usage
