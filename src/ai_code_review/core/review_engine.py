@@ -1025,7 +1025,7 @@ class ReviewEngine:
         platform_name = self.platform_client.get_platform_name().title()
         footer_parts = [
             "---",
-            "🤖 **AI Code Review** | Generated with ai-code-review",
+            "🤖 **AI Code Review** | Generated with [ai-code-review](https://gitlab.com/redhat/edge/ci-cd/ai-code-review)",
             f"**Platform:** {platform_name} | **AI Provider:** {self.config.ai_provider.value} | **Model:** {self.config.get_ai_model()}",
         ]
 
