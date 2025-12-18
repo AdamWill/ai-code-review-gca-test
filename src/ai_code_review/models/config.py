@@ -562,32 +562,13 @@ class Config(BaseSettings):
         if v is None:
             return None
 
-        if not v.strip():
+        if not (v := v.strip()):
             raise ValueError(
                 "GitLab Personal Access Token cannot be empty. "
                 "Get one at: https://gitlab.com/-/profile/personal_access_tokens "
                 "with scopes: api, read_user, read_repository. "
                 "Set it as GITLAB_TOKEN environment variable or in .env file."
             )
-
-        v = v.strip()
-
-        # Allow test tokens (common patterns used in testing)
-        test_patterns = ("test", "mock", "fake", "dummy", "example")
-        if any(pattern in v.lower() for pattern in test_patterns):
-            return v
-
-        # Validate format only for tokens that appear to be real GitLab tokens
-        # (longer than 20 chars and don't contain obvious test words)
-        if len(v) > 20 and not any(pattern in v.lower() for pattern in test_patterns):
-            if not v.startswith(("glpat-", "gldt-", "glrt-", "gloas-", "glcpat-")):
-                raise ValueError(
-                    f"GitLab token format appears invalid: '{v[:12]}...'. "
-                    "GitLab tokens typically start with: glpat- (personal), "
-                    "gldt- (deploy), glrt- (runner), gloas- (OAuth app), "
-                    "or glcpat- (project access). "
-                    "Get a valid token at: https://gitlab.com/-/profile/personal_access_tokens"
-                )
 
         return v
 
