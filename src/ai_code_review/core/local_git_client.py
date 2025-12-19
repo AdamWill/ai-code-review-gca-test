@@ -213,8 +213,36 @@ class LocalGitClient(BasePlatformClient):
             logger.debug("Could not check target branch status", error=str(e))
 
     def _get_diff_content(self, diff_item: Any) -> str:
-        """Get diff content as string."""
-        return str(diff_item)
+        """Get diff content as unified diff string.
+
+        GitPython's diff_item.diff property returns the actual unified diff content.
+        str(diff_item) only returns file metadata (name and blob SHAs), not the diff.
+        """
+        # Get the actual diff content (not just metadata)
+        diff_bytes = diff_item.diff
+
+        # Handle None case explicitly (e.g., binary files, empty diffs)
+        if diff_bytes is None:
+            return ""
+
+        # Convert bytes to string if necessary
+        if isinstance(diff_bytes, bytes):
+            diff_str = diff_bytes.decode("utf-8", errors="replace")
+        else:
+            diff_str = str(diff_bytes) if diff_bytes else ""
+
+        # Log first diff for debugging (only once)
+        if not hasattr(self, "_logged_first_diff"):
+            self._logged_first_diff = True
+            logger.debug(
+                "Sample diff content from GitPython",
+                file_path=diff_item.b_path or diff_item.a_path,
+                diff_length=len(diff_str),
+                first_200_chars=diff_str[:200] if diff_str else "(empty)",
+                is_bytes=isinstance(diff_bytes, bytes),
+            )
+
+        return diff_str
 
     async def _get_current_user(self) -> str:
         """Get current git user name."""

@@ -234,13 +234,16 @@ class TestLocalGitClient:
         assert user == "Test User"
 
     def test_get_diff_content(self, local_client: LocalGitClient) -> None:
-        """Test getting diff content."""
+        """Test getting diff content from GitPython diff object."""
         mock_diff = Mock()
         mock_diff.b_path = "test.py"
-        mock_diff.__str__ = Mock(return_value="diff content")
+        # Mock the .diff property which returns bytes in GitPython
+        mock_diff.diff = b"diff --git a/test.py b/test.py\n@@ -1 +1 @@\n-old\n+new"
 
         content = local_client._get_diff_content(mock_diff)
-        assert content == "diff content"
+        assert "diff --git a/test.py b/test.py" in content
+        assert "+new" in content
+        assert "-old" in content
 
     def test_create_mock_pr_data(self, local_client: LocalGitClient) -> None:
         """Test creating mock PR data."""
