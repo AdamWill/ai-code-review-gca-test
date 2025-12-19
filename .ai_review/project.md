@@ -17,8 +17,8 @@
 ### Key Dependencies (for Context7 & API Understanding)
 - **langchain>=0.2.0** - Core dependency for building applications with Large Language Models (LLMs). Used for chains, model integrations, and prompt management across multiple AI providers (Gemini, Anthropic, Ollama).
 - **click>=8.1.0** - Command-Line Interface framework. Defines CLI structure with `@click.command()` and `@click.option()` decorators.
-- **httpx>=0.28.1** - Primary HTTP client library for both synchronous and asynchronous requests. Used for health checks, remote file fetching, and SSL certificate downloads.
-- **aiohttp>=3.9.0** - Asynchronous HTTP client used in platform API integrations. Handles async requests to GitLab/GitHub APIs with proper session management.
+- **httpx>=0.28.1** - Primary HTTP client library for both synchronous and asynchronous requests. Used for health checks, remote file fetching, SSL certificate downloads, and complete diff downloads.
+- **unidiff>=0.7.0** - Unified diff parser for robust diff parsing. Handles binary file detection via content patterns and supports various diff format variations.
 - **python-gitlab>=4.0.0** & **pygithub>=2.1.0** - Platform-specific API libraries for GitLab and GitHub integration. Handle authentication, MR/PR data fetching, and comment posting.
 - **pydantic>=2.11.0** - Data validation and settings management. Used for configuration models, API data structures, and type enforcement throughout the application.
 - **structlog>=23.2.0** - Structured logging framework. Provides consistent, context-rich logging with proper sensitive data handling.
@@ -86,9 +86,9 @@ tests/
 - **`src/ai_code_review/models/platform.py`** - Platform data models including `PullRequestData`, `Review`, `ReviewComment`. Extended in v1.15.0 for comment synthesis support.
 - **`src/ai_code_review/providers/base.py`** - Base provider interface. All AI providers must implement this. Includes adaptive context window methods.
 - **Platform Clients**:
-  - `src/ai_code_review/core/gitlab_client.py` - GitLab API integration via `python-gitlab`
-  - `src/ai_code_review/core/github_client.py` - GitHub API integration via `PyGithub`
-  - `src/ai_code_review/core/local_git_client.py` - Direct Git diff analysis without platform APIs
+  - `src/ai_code_review/core/gitlab_client.py` - GitLab API integration via `python-gitlab`. Includes complete diff fetching via HTTP `.diff` endpoints using `unidiff` library.
+  - `src/ai_code_review/core/github_client.py` - GitHub API integration via `PyGithub`. Includes complete diff fetching with GitHub.com vs Enterprise support using `unidiff` library.
+  - `src/ai_code_review/core/local_git_client.py` - Direct Git diff analysis without platform APIs. Filters excluded patterns before reading diff content.
   All implement `PlatformClientInterface` and support comment/review fetching (v1.15.0+)
 
 ### Development Conventions
@@ -109,10 +109,11 @@ tests/
   - Test with `Config(ai_provider=X)` to ensure defaults resolve correctly
 
 - **[HTTP Client Consistency]** - The project standardizes on `httpx` for HTTP operations:
-  - **Do not suggest converting httpx to aiohttp** unless there's a specific performance need
+  - `httpx` is used for both sync and async HTTP requests throughout the codebase
   - Synchronous `httpx` operations are acceptable for initialization-time I/O (context loading, health checks)
-  - Only suggest async conversion for hot-path operations (inside loops, repeated calls)
-  - `aiohttp` usage is limited to legacy code (`ssl_utils.py`) - new code should use `httpx`
+  - Async `httpx.AsyncClient` is used for hot-path operations (streaming diff downloads, repeated API calls)
+  - **Exception**: `ssl_utils.py` still uses `aiohttp` for SSL certificate downloads (legacy code)
+  - **Do not introduce aiohttp in new code** - `httpx` handles all our HTTP needs (sync, async, streaming)
 
 - **[Asynchronous API Integration]** - Platform clients use async I/O for API calls:
   - Review `async`/`await` usage in `GitLabClient`, `GitHubClient`, `LocalGitClient`
@@ -157,6 +158,14 @@ tests/
 
 ### Secondary Review Areas
 
+- **[Complete Diff Fetching System]** - HTTP diff download with `unidiff` parsing:
+  - Uses `pull_request.diff_url` / `merge_request.web_url + ".diff"` directly
+  - Parsing via `unidiff.PatchSet(response.text)` - handles binary detection via content
+  - Applies user exclude patterns after parsing
+  - Automatic fallback to API methods if HTTP fetch fails
+  - Fast timeout (10s default) suitable for typical diff sizes (<200KB)
+  - SSL context handling for self-hosted GitLab instances
+
 - **[Review Synthesis Logic]** - Two-phase review system (v1.15.0+):
   - Phase 1 fetches and synthesizes previous comments with fast model
   - Verify bot comment filtering (`get_authenticated_username()` comparison)
@@ -187,11 +196,11 @@ tests/
     *   **Solution**: Use `None` default + getter method pattern
     *   **Example**: `ai_model: str | None = None` with `def get_ai_model(self) -> str`
 
-*   **❌ Converting httpx to aiohttp unnecessarily**:
-    *   **Problem**: Adds complexity and dual dependencies for minimal benefit
-    *   **Impact**: More code to maintain, test complexity increases
-    *   **When it matters**: Only in hot paths (loops, repeated calls)
-    *   **When it doesn't**: Initialization operations (context loading, health checks)
+*   **❌ Introducing aiohttp when httpx is sufficient**:
+    *   **Problem**: Adds unnecessary dependency and inconsistency
+    *   **Impact**: More code to maintain, test complexity increases, dual HTTP libraries
+    *   **Solution**: Use `httpx` for both sync and async HTTP operations
+    *   **httpx capabilities**: Sync requests, async requests, streaming, SSL contexts, timeouts
 
 *   **❌ Blocking I/O in async hot paths**:
     *   Using synchronous `open()`, `requests`, or `.invoke()` in async handlers degrades performance
@@ -199,14 +208,14 @@ tests/
     *   **Not acceptable**: Inside async loops, repeated API calls, request handlers
     *   Wrap blocking operations with `asyncio.to_thread()` if necessary
 
-*   **❌ Improper `ClientSession` usage**:
-    *   Creating new `aiohttp.ClientSession` or `httpx.AsyncClient` for each request wastes resources
-    *   **Correct**: Reuse session across multiple requests within async context manager
-    *   Platform clients should create session once and reuse
+*   **❌ Improper `httpx.AsyncClient` usage**:
+    *   Creating new `httpx.AsyncClient` for each request wastes resources
+    *   **Correct**: Reuse client across multiple requests within async context manager
+    *   For streaming: Create client with timeout, use `client.stream()` method
 
 *   **❌ Missing `await` keywords**:
     *   Forgetting to `await` coroutines leads to runtime warnings or incorrect behavior
-    *   Pay attention to `await` in: `aiohttp` requests, `langchain` `.ainvoke()`, `aiofiles` operations
+    *   Pay attention to `await` in: `httpx` async requests, `langchain` `.ainvoke()`, `aiofiles` operations
     *   Test async code with `@pytest.mark.asyncio`
 
 *   **❌ Hardcoded secrets**:
@@ -229,24 +238,29 @@ tests/
 
 ## Architecture & Design Decisions
 
-### HTTP Client Library: httpx vs aiohttp
+### HTTP Client Library: httpx (Standard)
 
 **Decision**: Use `httpx` as the standard HTTP client library (both sync and async operations)
 
 **Rationale**:
 - **Single dependency**: `httpx` provides both synchronous (`httpx.get()`) and asynchronous (`httpx.AsyncClient()`) APIs
-- **Simplicity**: More intuitive API compared to aiohttp for simple HTTP operations
-- **Used in**: Ollama provider health checks, team context loading, SSL certificate downloads
-- **Performance impact**: Minimal - HTTP operations are infrequent and typically happen at initialization
+- **Simplicity**: Intuitive API for both simple and complex HTTP operations
+- **SSL context support**: Accepts `ssl.SSLContext` objects via `verify` parameter
+- **Used throughout**: Health checks, context loading, diff downloads
 
-**When NOT to refactor**:
-- Do not convert synchronous `httpx` calls to `aiohttp` for "consistency"
-- Initialization-time I/O (loading context files, health checks) does NOT need to be async
-- Only convert to async if the operation is in a hot path (called repeatedly in loops)
+**Capabilities**:
+- ✅ Synchronous requests: `httpx.get()`, `httpx.post()`
+- ✅ Async requests: `httpx.AsyncClient().get()`
+- ✅ SSL contexts: `AsyncClient(verify=ssl_context)`
+- ✅ Timeouts: `AsyncClient(timeout=httpx.Timeout(seconds))`
 
 **Example locations**:
 - `src/ai_code_review/providers/ollama.py`: Health checks using `httpx.get()` and `httpx.AsyncClient()`
-- `src/ai_code_review/utils/ssl_utils.py`: SSL certificate downloads using `aiohttp` (legacy)
+- `src/ai_code_review/core/github_client.py`: Complete diff downloads with `httpx.AsyncClient`
+- `src/ai_code_review/core/gitlab_client.py`: Complete diff downloads with SSL context support
+
+**Legacy Exception**:
+- `src/ai_code_review/utils/ssl_utils.py`: SSL certificate downloads using `aiohttp` (legacy code, not migrated due to specific error handling dependencies)
 
 ### Configuration System: Layered Priority
 
@@ -324,6 +338,14 @@ Priority: `team_context_file > project_context_file > commit_history`
 
 ## Recent Major Features (since v1.12.0)
 
+### v1.17.0 - Complete Diff Fetching System  
+- HTTP `.diff` endpoint fetching for GitLab and GitHub (all files included)
+- Robust parsing using `unidiff` library with content-based binary detection
+- Automatic transparent fallback to platform API if HTTP method fails
+- Simplified implementation: uses native diff URLs from PR/MR objects
+- Fast timeout (10s default) suitable for typical diff sizes
+- Pattern-based file filtering after parsing
+
 ### v1.15.0 - Review Context & Gemini 3
 - Intelligent review context with comment synthesis (two-phase system)
 - Upgraded to Gemini 3 Pro Preview as default model
@@ -360,6 +382,6 @@ Priority: `team_context_file > project_context_file > commit_history`
 - **Directory structure**: The `.ai_review/` directory must be preserved for context file functionality
 - **Configuration priority**: CLI args > Environment variables > Config files > Field defaults
 - **Interdependent fields**: Never use `default_factory` - use None + getter pattern instead
-- **HTTP operations**: Use `httpx` for both sync and async HTTP - don't mix httpx and aiohttp without reason
+- **HTTP operations**: Use `httpx` exclusively for all HTTP operations (sync and async) - no aiohttp
 - **Context loading**: Remote URL fetching happens at startup (not cached) - synchronous is acceptable
 - **Comment filtering**: System notes, bot comments, and non-author responses filtered from synthesis

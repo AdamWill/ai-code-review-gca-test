@@ -2,23 +2,30 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from github import GithubException
 
 from ai_code_review.core.github_client import GitHubClient
 from ai_code_review.models.config import AIProvider, Config, PlatformProvider
-from ai_code_review.models.platform import PullRequestData
+from ai_code_review.models.platform import PullRequestData, PullRequestDiff
 from ai_code_review.utils.platform_exceptions import GitHubAPIError
 
 
 @pytest.fixture
-def test_config() -> Config:
-    """Test configuration for GitHub."""
+def test_config(monkeypatch) -> Config:
+    """Test configuration for GitHub isolated from environment variables."""
+    # Clear CI environment variables that might interfere
+    monkeypatch.delenv("CI_SERVER_URL", raising=False)
+    monkeypatch.delenv("GITHUB_SERVER_URL", raising=False)
+    monkeypatch.delenv("CI_PROJECT_PATH", raising=False)
+    monkeypatch.delenv("CI_MERGE_REQUEST_IID", raising=False)
+
     return Config(
         platform_provider=PlatformProvider.GITHUB,
         github_token="ghp_test_token",
+        github_url="https://api.github.com",
         ai_provider=AIProvider.OLLAMA,  # Use Ollama to avoid API key requirement
         ai_model="qwen2.5-coder:7b",
         dry_run=False,
@@ -411,3 +418,146 @@ class TestGitHubClient:
             await client._fetch_pull_request_diffs(mock_pr)
 
         assert "Failed to fetch diffs" in str(exc_info.value)
+
+
+class TestGitHubClientAuthentication:
+    """Test authentication-related methods."""
+
+    @pytest.mark.asyncio
+    async def test_get_authenticated_username_cached(self, test_config: Config) -> None:
+        """Test that authenticated username is cached."""
+        client = GitHubClient(test_config)
+        client._authenticated_username = "cached-user"
+
+        username = await client.get_authenticated_username()
+
+        assert username == "cached-user"
+
+    @pytest.mark.asyncio
+    async def test_get_authenticated_username_dry_run(
+        self, test_config: Config
+    ) -> None:
+        """Test authenticated username in dry-run mode."""
+        test_config.dry_run = True
+        client = GitHubClient(test_config)
+
+        username = await client.get_authenticated_username()
+
+        assert username == "ai-code-review-bot-dry-run"
+        assert client._authenticated_username == "ai-code-review-bot-dry-run"
+
+    @pytest.mark.asyncio
+    async def test_get_authenticated_username_from_api(
+        self, test_config: Config
+    ) -> None:
+        """Test getting authenticated username from GitHub API."""
+        test_config.dry_run = False
+        client = GitHubClient(test_config)
+
+        # Mock GitHub user
+        mock_user = MagicMock()
+        mock_user.login = "github-user"
+        client.github_client.get_user = MagicMock(return_value=mock_user)
+
+        username = await client.get_authenticated_username()
+
+        assert username == "github-user"
+        assert client._authenticated_username == "github-user"
+
+    @pytest.mark.asyncio
+    async def test_get_authenticated_username_api_error(
+        self, test_config: Config
+    ) -> None:
+        """Test handling of GitHub API error when getting username."""
+        from ai_code_review.utils.platform_exceptions import GitHubAPIError
+
+        test_config.dry_run = False
+        client = GitHubClient(test_config)
+
+        # Mock GitHub API error
+        client.github_client.get_user = MagicMock(
+            side_effect=GithubException(401, "Unauthorized")
+        )
+
+        with pytest.raises(GitHubAPIError, match="Failed to get authenticated user"):
+            await client.get_authenticated_username()
+
+
+class TestGitHubClientHTTPDiffFetching:
+    """Test HTTP .diff URL fetching functionality."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_pull_request_diffs_uses_http_first(
+        self, test_config: Config
+    ) -> None:
+        """Test that _fetch_pull_request_diffs tries HTTP method first."""
+        client = GitHubClient(test_config)
+
+        # Mock pull request
+        mock_pr = MagicMock()
+        mock_pr.base.repo.full_name = "owner/repo"
+        mock_pr.number = 123
+        mock_pr.diff_url = "https://github.com/owner/repo/pull/123.diff"
+
+        # Mock successful HTTP fetch with unidiff
+        diff_content = """diff --git a/file.py b/file.py
+index abc123..def456 100644
+--- a/file.py
++++ b/file.py
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_response = AsyncMock()
+            mock_response.status_code = 200
+            mock_response.text = diff_content
+            mock_client.return_value.__aenter__.return_value.get = AsyncMock(
+                return_value=mock_response
+            )
+
+            diffs = await client._fetch_pull_request_diffs(mock_pr)
+
+            # Should have fetched via HTTP
+            assert len(diffs) >= 1
+            mock_client.return_value.__aenter__.return_value.get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_fetch_pull_request_diffs_fallback_to_api(
+        self, test_config: Config
+    ) -> None:
+        """Test fallback to API when HTTP fails."""
+        client = GitHubClient(test_config)
+
+        # Mock pull request
+        mock_pr = MagicMock()
+        mock_pr.base.repo.full_name = "owner/repo"
+        mock_pr.number = 123
+        mock_pr.diff_url = "https://github.com/owner/repo/pull/123.diff"
+
+        # Mock HTTP failure
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.get.side_effect = (
+                Exception("HTTP error")
+            )
+
+            # Mock the API fallback method
+            with patch.object(
+                client,
+                "_fetch_pull_request_diffs_via_api",
+                new_callable=AsyncMock,
+            ) as mock_api:
+                mock_api.return_value = [
+                    PullRequestDiff(
+                        file_path="test.py",
+                        new_file=False,
+                        renamed_file=False,
+                        deleted_file=False,
+                        diff="test diff from API",
+                    )
+                ]
+
+                diffs = await client._fetch_pull_request_diffs(mock_pr)
+
+                assert len(diffs) == 1
+                mock_api.assert_called_once()

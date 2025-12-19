@@ -12,6 +12,13 @@ Guide for developers who want to understand, modify, or extend the AI Code Revie
 - [🛠️ Technology Stack](#️-technology-stack)
   - [Core Dependencies](#core-dependencies)
   - [Development Tools](#development-tools)
+- [🚀 Complete Diff Fetching System](#-complete-diff-fetching-system)
+  - [Overview](#overview)
+  - [Architecture](#architecture)
+  - [Key Components](#key-components)
+  - [Performance Optimizations](#performance-optimizations)
+  - [Testing Strategy](#testing-strategy-1)
+  - [Extending the System](#extending-the-system)
 - [🔧 Common Modification Scenarios](#-common-modification-scenarios)
   - [1. Adding a New Platform](#1-adding-a-new-platform-eg-bitbucket)
   - [2. Modifying AI Prompts](#2-modifying-ai-prompts)
@@ -166,7 +173,7 @@ src/ai_code_review/
 ```python
 # CLI and HTTP
 click>=8.1.0           # Modern CLI framework
-aiohttp>=3.9.0         # Async HTTP client
+httpx>=0.28.1          # HTTP client (sync & async, with streaming)
 httpx>=0.28.1          # Sync HTTP client (for Ollama)
 python-gitlab>=4.0.0   # GitLab API client
 pygithub>=2.1.0        # GitHub API client
@@ -205,6 +212,37 @@ pytest-cov>=6.2.1       # Coverage reporting
 pre-commit>=4.3.0  # Git hooks
 uv                  # Package management
 ```
+
+## 🚀 Complete Diff Fetching
+
+### Overview
+
+GitLab and GitHub APIs may omit large files from diff responses. To ensure complete coverage, the platform clients fetch diffs via HTTP `.diff` endpoints with automatic fallback to the API if needed.
+
+### Implementation
+
+**URL Format:**
+- GitHub: `https://github.com/owner/repo/pull/123.diff`
+- GitHub Enterprise: `https://github.company.com/owner/repo/pull/123.diff`
+- GitLab: `https://gitlab.com/project/-/merge_requests/123.diff`
+
+**Parsing:**
+- Uses [`unidiff`](https://github.com/matiasb/python-unidiff) library for robust diff parsing
+- Automatically detects binary files via diff content patterns (e.g., "Binary files differ")
+- Applies user exclusion patterns after parsing
+- Respects `max_files` configuration limit
+
+**Fallback Strategy:**
+1. Try HTTP `.diff` endpoint
+2. On failure (timeout, error, or no results): fall back to platform API
+3. Transparent to users - always get best available data
+
+**Configuration:**
+```yaml
+diff_download_timeout: 30  # Timeout for HTTP diff download (seconds, default: 30)
+```
+
+**Note**: Platform APIs filter binary content from `.diff` endpoints, so large diffs are typically small text-only content.
 
 ## 🔧 Common Modification Scenarios
 

@@ -140,7 +140,47 @@ class GitHubClient(BasePlatformClient):
     async def _fetch_pull_request_diffs(
         self, pull_request: PullRequest
     ) -> list[PullRequestDiff]:
-        """Fetch diffs for a pull request."""
+        """Fetch diffs for a pull request.
+
+        Attempts to fetch complete diff via .diff URL first for maximum
+        coverage (includes large files), with automatic fallback to API
+        method if HTTP fetch fails.
+
+        Args:
+            pull_request: GitHub pull request object
+
+        Returns:
+            List of diffs for the pull request
+        """
+        # Try HTTP .diff URL first (complete, includes large files)
+        diffs = await self._fetch_diff_via_http(
+            diff_url=pull_request.diff_url,
+            headers={
+                "Authorization": f"token {self.config.get_platform_token()}",
+                "Accept": "text/plain",
+            },
+        )
+
+        # Fallback to API method if HTTP fetch failed
+        if diffs is None:
+            return await self._fetch_pull_request_diffs_via_api(pull_request)
+
+        return diffs
+
+    async def _fetch_pull_request_diffs_via_api(
+        self, pull_request: PullRequest
+    ) -> list[PullRequestDiff]:
+        """Fetch diffs for a pull request via GitHub API.
+
+        This is the original implementation, kept as a fallback method
+        when HTTP .diff URL fetching fails.
+
+        Args:
+            pull_request: GitHub pull request object
+
+        Returns:
+            List of diffs from API
+        """
         diffs: list[PullRequestDiff] = []
         excluded_files: list[str] = []
         excluded_chars = 0

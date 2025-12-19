@@ -75,6 +75,12 @@ ssl_verify: true
 
 max_files: 100          # Max files to process per review
 
+# Diff download timeout (for GitLab/GitHub complete diff fetching)
+# Allows for slower networks and self-hosted instances with proxies/VPNs
+# Industry standard is 30s for API requests
+# Default: 30 seconds
+diff_download_timeout: 30
+
 # File filtering (glob patterns)
 exclude_patterns:
   - "*.lock"              # All lock files
