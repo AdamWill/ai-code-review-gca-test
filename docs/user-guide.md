@@ -31,6 +31,10 @@ Simple guide to get AI-powered code reviews with **3 powerful workflows**:
   - [👥 Team/Organization Context](#-teamorganization-context)
   - [🧠 Intelligent Review Context (Two-Phase Synthesis)](#-intelligent-review-context-two-phase-synthesis)
   - [📝 Review Format Configuration](#-review-format-configuration)
+- [🔧 Timeout Configuration](#-timeout-configuration)
+  - [How It Works](#how-it-works)
+  - [Benefits](#benefits)
+  - [Advanced Configuration](#advanced-configuration-1)
 - [🔧 Troubleshooting](#-troubleshooting)
   - [Common Issues](#common-issues)
   - [SSL Certificate Errors](#ssl-certificate-errors)
@@ -136,10 +140,10 @@ ai-code-review group/project 123 --no-mr-summary
 
 ```bash
 # GitLab MR - post review
-AI_API_KEY=your_key ai-code-review group/project 123 --post-review
+AI_API_KEY=your_key ai-code-review group/project 123 --post
 
 # GitHub PR - post review
-AI_API_KEY=your_key ai-code-review --platform github owner/repo 456 --post-review
+AI_API_KEY=your_key ai-code-review --platform github owner/repo 456 --post
 ```
 
 ## 🤖 CI Integration
@@ -1436,7 +1440,7 @@ ai-code-review group/project 123 --dry-run
 ai-code-review group/project 123
 
 # 4. Post review if helpful
-ai-code-review group/project 123 --post-review
+ai-code-review group/project 123 --post
 ```
 
 #### 3. Custom GitLab Instance
@@ -1537,6 +1541,52 @@ ai-code-review group/project 123 2>logs.txt
 # Everything to separate files
 ai-code-review group/project 123 -o review.md 2>logs.txt
 ```
+
+## 🔧 Timeout Configuration
+
+### Diff Download Timeout
+
+When reviewing changes from GitLab or GitHub, the tool downloads the complete diff to ensure all files are included. For very large repositories or slow networks, you may need to adjust the timeout:
+
+```bash
+# Environment variable
+export AI_CODE_REVIEW_DIFF_DOWNLOAD_TIMEOUT=180  # 3 minutes (default: 120)
+```
+
+```yaml
+# In .ai-code-review.yaml
+diff_download_timeout: 180  # seconds
+```
+
+**When you might need this:**
+- Very large repositories (1000+ files changed)
+- Slow network connections
+- Self-hosted instances with rate limiting
+
+**Default timeout (120 seconds) is sufficient for most cases.**
+
+**Local Git Client:**
+The local Git client also benefits from pre-filtering improvements:
+- Binary files detected by extension before reading
+- Excluded patterns filtered before reading from disk
+- More efficient processing of local changes
+
+### Technical Details
+
+**Pre-filtering Logic:**
+
+1. **Binary Detection**: Files with extensions like `.png`, `.pdf`, `.zip`, etc. are skipped
+2. **Pattern Matching**: Files matching `exclude_patterns` are skipped
+3. **Streaming Parser**: Only relevant files are parsed and stored in memory
+
+**Memory Usage Comparison:**
+
+| Scenario | Without Pre-filtering | With Pre-filtering |
+|----------|----------------------|-------------------|
+| 100 files, 30 lockfiles | ~50MB peak | ~20MB peak |
+| 500 files, 200 binaries | ~200MB peak | ~50MB peak |
+
+**This is completely automatic - no user action required.**
 
 ## 🔧 Troubleshooting
 

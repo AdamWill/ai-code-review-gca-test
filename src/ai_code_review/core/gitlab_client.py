@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
+import time
 from datetime import datetime
 from typing import Any
 
 import gitlab
+import httpx
 import structlog
 from gitlab.v4.objects import Project, ProjectMergeRequest
 
@@ -21,6 +24,7 @@ from ai_code_review.models.platform import (
     Review,
     ReviewComment,
 )
+from ai_code_review.utils.diff_parser import FilteringStreamingDiffParser
 from ai_code_review.utils.platform_exceptions import GitLabAPIError
 from ai_code_review.utils.ssl_utils import SSLCertificateManager
 
@@ -206,10 +210,204 @@ class GitLabClient(BasePlatformClient):
         except Exception as e:
             raise GitLabAPIError(f"Unexpected error: {e}") from e
 
+    def _build_auth_headers(self) -> dict[str, str]:
+        """Build authentication headers for HTTP requests.
+
+        Returns:
+            Dictionary with authentication headers
+        """
+        return {
+            "PRIVATE-TOKEN": self.config.get_platform_token(),
+        }
+
+    def _get_ssl_context(self) -> ssl.SSLContext | bool:
+        """Get SSL context for HTTP requests.
+
+        Returns:
+            SSL context if certificate is configured, bool otherwise
+        """
+        ssl_verify: bool | str = self.config.ssl_verify
+
+        # Use cached certificate path from async download if available
+        if self._ssl_cert_path:
+            ssl_verify = self._ssl_cert_path
+        elif self.config.ssl_cert_path:
+            ssl_verify = self.config.ssl_cert_path
+
+        # Create SSL context
+        if isinstance(ssl_verify, str):
+            ssl_context = ssl.create_default_context()
+            ssl_context.load_verify_locations(ssl_verify)
+            return ssl_context
+        elif not ssl_verify:
+            return False
+        else:
+            return True
+
+    async def _fetch_and_parse_diff_with_prefiltering(
+        self,
+        diff_url: str,
+        headers: dict[str, str],
+        ssl_context: ssl.SSLContext | bool,
+    ) -> list[PullRequestDiff]:
+        """Fetch and parse diff with pre-filtering to minimize memory usage.
+
+        This method downloads the diff in chunks and pre-filters files
+        based on exclude patterns and binary detection, avoiding parsing
+        content that will be discarded.
+
+        Args:
+            diff_url: URL to download diff from
+            headers: HTTP headers for authentication
+            ssl_context: SSL context for HTTPS
+
+        Returns:
+            List of PullRequestDiff objects for included files
+        """
+        diffs: list[PullRequestDiff] = []
+        start_time = time.time()
+
+        try:
+            timeout = httpx.Timeout(self.config.diff_download_timeout)
+            async with httpx.AsyncClient(verify=ssl_context, timeout=timeout) as client:
+                async with client.stream("GET", diff_url, headers=headers) as response:
+                    if response.status_code != 200:
+                        logger.warning(
+                            "Failed to fetch complete diff via HTTP",
+                            status=response.status_code,
+                            url=diff_url,
+                        )
+                        return []
+
+                    # Create parser with exclusion filter
+                    parser = FilteringStreamingDiffParser(
+                        should_exclude=self._should_exclude_file
+                    )
+
+                    # Process in 16KB chunks using aiter_text for proper multi-byte handling
+                    async for chunk_text in response.aiter_text(chunk_size=16384):
+                        # Parse chunk and get any complete file diffs
+                        for diff in parser.feed(chunk_text):
+                            diffs.append(diff)
+
+                            # Stop early if we hit file limit
+                            if len(diffs) >= self.config.max_files:
+                                logger.info(
+                                    "Reached max_files limit during streaming",
+                                    max_files=self.config.max_files,
+                                )
+                                # Get stats before returning
+                                stats = parser.get_statistics()
+                                self._log_filtering_stats(
+                                    stats, time.time() - start_time
+                                )
+                                return self._apply_content_limits(diffs)
+
+                    # Flush any remaining content
+                    for diff in parser.finalize():
+                        diffs.append(diff)
+                        if len(diffs) >= self.config.max_files:
+                            break
+
+                    # Log detailed statistics
+                    stats = parser.get_statistics()
+                    self._log_filtering_stats(stats, time.time() - start_time)
+
+                    return self._apply_content_limits(diffs)
+
+        except (TimeoutError, httpx.TimeoutException):
+            logger.warning(
+                "Timeout fetching complete diff via HTTP",
+                url=diff_url,
+                timeout=self.config.diff_download_timeout,
+            )
+            return []
+        except Exception as e:
+            logger.warning(
+                "Error fetching complete diff via HTTP, will fallback to API",
+                error=str(e),
+                url=diff_url,
+            )
+            return []
+
+    def _log_filtering_stats(
+        self, stats: dict[str, int | float], processing_time: float
+    ) -> None:
+        """Log detailed filtering statistics.
+
+        Args:
+            stats: Statistics dictionary from parser
+            processing_time: Time taken to process in seconds
+        """
+        logger.info(
+            "Diff streaming with pre-filtering completed",
+            total_files=stats["total_files"],
+            included_files=stats["included_files"],
+            filtered_files=stats["filtered_files"],
+            binary_files=stats["binary_files"],
+            mb_processed=round(stats.get("mb_processed", 0), 2),
+            mb_skipped=round(stats.get("mb_skipped", 0), 2),
+            filter_ratio=f"{stats.get('filter_ratio', 0) * 100:.1f}%",
+            processing_time_sec=round(processing_time, 2),
+        )
+
     async def _fetch_merge_request_diffs(
         self, merge_request: ProjectMergeRequest
     ) -> list[PullRequestDiff]:
-        """Fetch diffs for a merge request."""
+        """Fetch diffs for a merge request.
+
+        Attempts to fetch complete diff via .diff URL first for maximum
+        coverage (includes large files), with automatic fallback to API
+        method if HTTP fetch fails.
+
+        Args:
+            merge_request: GitLab merge request object
+
+        Returns:
+            List of diffs for the merge request
+        """
+        # Try HTTP .diff URL with streaming pre-filter (includes large files)
+        try:
+            # Use web_url from MR object to avoid blocking API call
+            diff_url = f"{merge_request.web_url}.diff"
+            headers = self._build_auth_headers()
+            ssl_context = self._get_ssl_context()
+
+            diffs = await self._fetch_and_parse_diff_with_prefiltering(
+                diff_url, headers, ssl_context
+            )
+
+            if diffs:
+                logger.info(
+                    "Successfully fetched diffs via HTTP .diff URL",
+                    files=len(diffs),
+                    method="http",
+                )
+                return diffs
+        except Exception as e:
+            logger.info(
+                "HTTP diff fetch failed, falling back to API",
+                error=str(e),
+            )
+
+        # Fallback to API method
+        logger.info("Using API method for diff fetching", method="api")
+        return await self._fetch_merge_request_diffs_via_api(merge_request)
+
+    async def _fetch_merge_request_diffs_via_api(
+        self, merge_request: ProjectMergeRequest
+    ) -> list[PullRequestDiff]:
+        """Fetch diffs for a merge request via GitLab API.
+
+        This is the original implementation, kept as a fallback method
+        when HTTP .diff URL fetching fails.
+
+        Args:
+            merge_request: GitLab merge request object
+
+        Returns:
+            List of diffs from API
+        """
         diffs: list[PullRequestDiff] = []
         excluded_files: list[str] = []
         excluded_chars = 0

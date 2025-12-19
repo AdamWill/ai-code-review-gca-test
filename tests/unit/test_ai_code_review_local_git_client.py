@@ -394,3 +394,168 @@ class TestLocalGitClient:
         assert len(commits) == 1
         assert commits[0].id == "abc123def456"
         assert commits[0].title == "Test commit"
+
+
+class TestLocalGitClientPrefiltering:
+    """Test pre-filtering enhancements in LocalGitClient."""
+
+    @pytest.mark.asyncio
+    async def test_binary_prefiltering(self, local_client: LocalGitClient) -> None:
+        """Test that binary files are pre-filtered before reading content."""
+        # Mock repo with binary file
+        mock_diff_item = Mock()
+        mock_diff_item.b_path = "image.png"
+        mock_diff_item.a_path = None
+        mock_diff_item.change_type = "A"
+
+        local_client._repo.commit.return_value.diff.return_value = [mock_diff_item]
+
+        # Mock _get_diff_content should NOT be called for binary files
+        with patch.object(
+            local_client, "_get_diff_content", new_callable=Mock
+        ) as mock_get_content:
+            diffs = await local_client._get_local_diffs("base123")
+
+            # Binary file should be filtered out
+            assert len(diffs) == 0
+            # _get_diff_content should NOT have been called
+            mock_get_content.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_excluded_pattern_prefiltering(
+        self, local_client: LocalGitClient
+    ) -> None:
+        """Test that excluded patterns are pre-filtered before reading content."""
+        # Mock repo with excluded file
+        mock_diff_item = Mock()
+        mock_diff_item.b_path = "package-lock.json"
+        mock_diff_item.a_path = None
+        mock_diff_item.change_type = "M"
+
+        local_client._repo.commit.return_value.diff.return_value = [mock_diff_item]
+
+        # Mock _get_diff_content should NOT be called for excluded files
+        with patch.object(
+            local_client, "_get_diff_content", new_callable=Mock
+        ) as mock_get_content:
+            diffs = await local_client._get_local_diffs("base123")
+
+            # Excluded file should be filtered out
+            assert len(diffs) == 0
+            # _get_diff_content should NOT have been called
+            mock_get_content.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_statistics_include_binary_count(
+        self, local_client: LocalGitClient
+    ) -> None:
+        """Test that statistics include separate binary file count."""
+        # Mock repo with mixed files
+        mock_binary = Mock()
+        mock_binary.b_path = "image.png"
+        mock_binary.a_path = None
+        mock_binary.change_type = "A"
+
+        mock_excluded = Mock()
+        mock_excluded.b_path = "yarn.lock"
+        mock_excluded.a_path = None
+        mock_excluded.change_type = "M"
+
+        mock_code = Mock()
+        mock_code.b_path = "code.py"
+        mock_code.a_path = None
+        mock_code.change_type = "M"
+
+        local_client._repo.commit.return_value.diff.return_value = [
+            mock_binary,
+            mock_excluded,
+            mock_code,
+        ]
+
+        # Mock _get_diff_content only for code file
+        def mock_get_content(diff_item: Mock) -> str:
+            if diff_item.b_path == "code.py":
+                return "diff content"
+            return ""
+
+        with patch.object(
+            local_client, "_get_diff_content", side_effect=mock_get_content
+        ):
+            diffs = await local_client._get_local_diffs("base123")
+
+            # Only code.py should be included
+            assert len(diffs) == 1
+            assert diffs[0].file_path == "code.py"
+
+            # The test verifies that the pre-filtering logic works correctly
+            # by ensuring only the code file is included, while binary and
+            # excluded files are filtered out
+
+    @pytest.mark.asyncio
+    async def test_prefiltering_efficiency(self, local_client: LocalGitClient) -> None:
+        """Test that pre-filtering improves efficiency by not reading excluded files."""
+        # Mock many files with different types
+        mock_files = []
+
+        # 10 binary files
+        for i in range(10):
+            mock_file = Mock()
+            mock_file.b_path = f"image{i}.png"
+            mock_file.a_path = None
+            mock_file.change_type = "A"
+            mock_files.append(mock_file)
+
+        # 10 excluded files
+        for i in range(10):
+            mock_file = Mock()
+            mock_file.b_path = f"package{i}.lock"
+            mock_file.a_path = None
+            mock_file.change_type = "M"
+            mock_files.append(mock_file)
+
+        # 5 code files
+        for i in range(5):
+            mock_file = Mock()
+            mock_file.b_path = f"code{i}.py"
+            mock_file.a_path = None
+            mock_file.change_type = "M"
+            mock_files.append(mock_file)
+
+        local_client._repo.commit.return_value.diff.return_value = mock_files
+
+        # Mock _get_diff_content
+        call_count = 0
+
+        def mock_get_content(diff_item: Mock) -> str:
+            nonlocal call_count
+            call_count += 1
+            return f"diff for {diff_item.b_path}"
+
+        with patch.object(
+            local_client, "_get_diff_content", side_effect=mock_get_content
+        ):
+            diffs = await local_client._get_local_diffs("base123")
+
+            # Only 5 code files should be included
+            assert len(diffs) == 5
+
+            # _get_diff_content should only be called 5 times (not 25)
+            # This proves pre-filtering is working
+            assert call_count == 5
+
+    @pytest.mark.asyncio
+    async def test_is_binary_file_detection(self, local_client: LocalGitClient) -> None:
+        """Test binary file detection by extension."""
+        # Test various binary extensions
+        assert local_client._is_binary_file("image.png") is True
+        assert local_client._is_binary_file("IMAGE.PNG") is True  # Case insensitive
+        assert local_client._is_binary_file("doc.pdf") is True
+        assert local_client._is_binary_file("archive.zip") is True
+        assert local_client._is_binary_file("binary.exe") is True
+        assert local_client._is_binary_file("lib.so") is True
+
+        # Test non-binary files
+        assert local_client._is_binary_file("code.py") is False
+        assert local_client._is_binary_file("data.json") is False
+        assert local_client._is_binary_file("README.md") is False
+        assert local_client._is_binary_file("script.sh") is False

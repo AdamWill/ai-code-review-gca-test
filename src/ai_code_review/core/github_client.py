@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import time
 
+import httpx
 import structlog
 from github import Auth, Github, GithubException
 from github.PullRequest import PullRequest
@@ -20,6 +22,7 @@ from ai_code_review.models.platform import (
     Review,
     ReviewComment,
 )
+from ai_code_review.utils.diff_parser import FilteringStreamingDiffParser
 from ai_code_review.utils.platform_exceptions import GitHubAPIError
 
 logger = structlog.get_logger(__name__)
@@ -137,10 +140,208 @@ class GitHubClient(BasePlatformClient):
             # Catch any other unexpected errors (should be rare)
             raise GitHubAPIError(f"Unexpected error fetching PR data: {e}") from e
 
+    def _build_diff_url(self, project_id: str, pr_number: int) -> str:
+        """Build URL for complete diff download.
+
+        Args:
+            project_id: GitHub repository path (owner/repo)
+            pr_number: Pull request number
+
+        Returns:
+            URL to download complete diff
+        """
+        base_url = self.config.get_effective_server_url()
+
+        # Handle GitHub Enterprise vs GitHub.com
+        # Check for exact github.com or api.github.com (not subdomains like github.company.com)
+        is_github_com = (
+            base_url.startswith("https://github.com/")
+            or base_url.startswith("https://api.github.com/")
+            or base_url == "https://github.com"
+            or base_url == "https://api.github.com"
+        )
+
+        if is_github_com:
+            # GitHub.com: use public URL
+            return f"https://github.com/{project_id}/pull/{pr_number}.diff"
+        else:
+            # GitHub Enterprise: extract base domain from API URL
+            # API URL format: https://github.company.com/api/v3
+            api_base = base_url.replace("/api/v3", "").replace("/api", "")
+            return f"{api_base}/{project_id}/pull/{pr_number}.diff"
+
+    def _build_auth_headers(self) -> dict[str, str]:
+        """Build authentication headers for HTTP requests.
+
+        Returns:
+            Dictionary with authentication headers
+        """
+        return {
+            "Authorization": f"token {self.config.get_platform_token()}",
+            "Accept": "text/plain",
+        }
+
+    async def _fetch_and_parse_diff_with_prefiltering(
+        self, diff_url: str, headers: dict[str, str]
+    ) -> list[PullRequestDiff]:
+        """Fetch and parse diff with pre-filtering to minimize memory usage.
+
+        This method downloads the diff in chunks and pre-filters files
+        based on exclude patterns and binary detection, avoiding parsing
+        content that will be discarded.
+
+        Args:
+            diff_url: URL to download diff from
+            headers: HTTP headers for authentication
+
+        Returns:
+            List of PullRequestDiff objects for included files
+        """
+        diffs: list[PullRequestDiff] = []
+        start_time = time.time()
+
+        try:
+            timeout = httpx.Timeout(self.config.diff_download_timeout)
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream("GET", diff_url, headers=headers) as response:
+                    if response.status_code != 200:
+                        logger.warning(
+                            "Failed to fetch complete diff via HTTP",
+                            status=response.status_code,
+                            url=diff_url,
+                        )
+                        return []
+
+                    # Create parser with exclusion filter
+                    parser = FilteringStreamingDiffParser(
+                        should_exclude=self._should_exclude_file
+                    )
+
+                    # Use aiter_text for proper multi-byte character handling
+                    async for chunk_text in response.aiter_text(chunk_size=16384):
+                        # Parse chunk and get any complete file diffs
+                        for diff in parser.feed(chunk_text):
+                            diffs.append(diff)
+
+                            # Stop early if we hit file limit
+                            if len(diffs) >= self.config.max_files:
+                                logger.info(
+                                    "Reached max_files limit during streaming",
+                                    max_files=self.config.max_files,
+                                )
+                                # Get stats before returning
+                                stats = parser.get_statistics()
+                                self._log_filtering_stats(
+                                    stats, time.time() - start_time
+                                )
+                                return self._apply_content_limits(diffs)
+
+                    # Flush any remaining content
+                    for diff in parser.finalize():
+                        diffs.append(diff)
+                        if len(diffs) >= self.config.max_files:
+                            break
+
+                    # Log detailed statistics
+                    stats = parser.get_statistics()
+                    self._log_filtering_stats(stats, time.time() - start_time)
+
+                    return self._apply_content_limits(diffs)
+
+        except (TimeoutError, httpx.TimeoutException):
+            logger.warning(
+                "Timeout fetching complete diff via HTTP",
+                url=diff_url,
+                timeout=self.config.diff_download_timeout,
+            )
+            return []
+        except Exception as e:
+            logger.warning(
+                "Error fetching complete diff via HTTP, will fallback to API",
+                error=str(e),
+                url=diff_url,
+            )
+            return []
+
+    def _log_filtering_stats(
+        self, stats: dict[str, int | float], processing_time: float
+    ) -> None:
+        """Log detailed filtering statistics.
+
+        Args:
+            stats: Statistics dictionary from parser
+            processing_time: Time taken to process in seconds
+        """
+        logger.info(
+            "Diff streaming with pre-filtering completed",
+            total_files=stats["total_files"],
+            included_files=stats["included_files"],
+            filtered_files=stats["filtered_files"],
+            binary_files=stats["binary_files"],
+            mb_processed=round(stats.get("mb_processed", 0), 2),
+            mb_skipped=round(stats.get("mb_skipped", 0), 2),
+            filter_ratio=f"{stats.get('filter_ratio', 0) * 100:.1f}%",
+            processing_time_sec=round(processing_time, 2),
+        )
+
     async def _fetch_pull_request_diffs(
         self, pull_request: PullRequest
     ) -> list[PullRequestDiff]:
-        """Fetch diffs for a pull request."""
+        """Fetch diffs for a pull request.
+
+        Attempts to fetch complete diff via .diff URL first for maximum
+        coverage (includes large files), with automatic fallback to API
+        method if HTTP fetch fails.
+
+        Args:
+            pull_request: GitHub pull request object
+
+        Returns:
+            List of diffs for the pull request
+        """
+        # Extract owner/repo from PR
+        project_id = pull_request.base.repo.full_name
+
+        # Try HTTP .diff URL with streaming pre-filter (includes large files)
+        try:
+            diff_url = self._build_diff_url(project_id, pull_request.number)
+            headers = self._build_auth_headers()
+
+            diffs = await self._fetch_and_parse_diff_with_prefiltering(
+                diff_url, headers
+            )
+
+            if diffs:
+                logger.info(
+                    "Successfully fetched diffs via HTTP .diff URL",
+                    files=len(diffs),
+                    method="http",
+                )
+                return diffs
+        except Exception as e:
+            logger.info(
+                "HTTP diff fetch failed, falling back to API",
+                error=str(e),
+            )
+
+        # Fallback to API method
+        logger.info("Using API method for diff fetching", method="api")
+        return await self._fetch_pull_request_diffs_via_api(pull_request)
+
+    async def _fetch_pull_request_diffs_via_api(
+        self, pull_request: PullRequest
+    ) -> list[PullRequestDiff]:
+        """Fetch diffs for a pull request via GitHub API.
+
+        This is the original implementation, kept as a fallback method
+        when HTTP .diff URL fetching fails.
+
+        Args:
+            pull_request: GitHub pull request object
+
+        Returns:
+            List of diffs from API
+        """
         diffs: list[PullRequestDiff] = []
         excluded_files: list[str] = []
         excluded_chars = 0

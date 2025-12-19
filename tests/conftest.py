@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
-from unittest.mock import Mock
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
@@ -191,3 +193,51 @@ def github_config() -> Config:
         ai_provider="ollama",
         dry_run=True,
     )
+
+
+# ===== HTTP Mocking Helpers =====
+
+
+@contextmanager
+def mock_httpx_client(diff_content: str, status: int = 200) -> Any:  # type: ignore[misc]
+    """Create a mocked httpx client for testing HTTP diff fetching.
+
+    This helper centralizes the complex mocking pattern needed for httpx's
+    async context managers and streaming responses.
+
+    Args:
+        diff_content: The diff content to return from the mocked response
+        status: HTTP status code to return (default: 200)
+
+    Yields:
+        The mocked client class (already patched via context manager)
+
+    Example:
+        with mock_httpx_client(diff_content="diff content"):
+            diffs = await client._fetch_and_parse_diff_with_prefiltering(
+                url, headers
+            )
+    """
+
+    # Create async iterators for aiter_bytes and aiter_text
+    async def async_chunks() -> Any:  # type: ignore[misc]
+        yield diff_content.encode("utf-8")
+
+    async def async_text_chunks() -> Any:  # type: ignore[misc]
+        yield diff_content
+
+    mock_response = MagicMock()
+    mock_response.status_code = status
+    mock_response.aiter_bytes = MagicMock(return_value=async_chunks())
+    mock_response.aiter_text = MagicMock(return_value=async_text_chunks())
+    mock_response.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_response.__aexit__ = AsyncMock(return_value=None)
+
+    mock_client = MagicMock()
+    mock_client.stream = MagicMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient") as mock_client_class:
+        mock_client_class.return_value = mock_client
+        yield mock_client_class

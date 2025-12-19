@@ -432,6 +432,12 @@ class Config(BaseSettings):
         description="Glob patterns for files to exclude from AI review",
     )
 
+    # Complete diff fetching timeout (advanced option)
+    diff_download_timeout: int = Field(
+        default=120,
+        description="Timeout for downloading complete diffs via HTTP (seconds)",
+    )
+
     # Configuration file options
     no_config_file: bool = Field(
         default=False,

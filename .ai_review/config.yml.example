@@ -66,6 +66,11 @@ ssl_verify: true
 max_chars: 100000       # Max characters from diff
 max_files: 100          # Max files to process per review
 
+# Diff download timeout (for GitLab/GitHub complete diff fetching)
+# Adjust for very large repositories or slow networks
+# Default: 120 seconds (2 minutes)
+diff_download_timeout: 120
+
 # File filtering (glob patterns)
 exclude_patterns:
   - "*.lock"              # All lock files

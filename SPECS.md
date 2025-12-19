@@ -23,6 +23,7 @@
   - [FR-013: Local Git Integration](#fr-013-local-git-integration-new-feature---implemented)
   - [FR-014: AI Context Generator](#fr-014-ai-context-generator-implemented)
   - [FR-015: Smart Skip Review](#fr-015-smart-skip-review-implemented)
+  - [FR-016: Complete Diff Fetching System](#fr-016-complete-diff-fetching-system-implemented)
 - [🔧 Non-Functional Requirements](#-non-functional-requirements)
   - [Performance](#performance)
   - [Reliability](#reliability)
@@ -380,6 +381,39 @@ Full multi-platform support for GitLab, GitHub, and Local Git repositories.
 - ✅ **WIP Branches**: Skip reviews for branches with "wip" prefix
 - ✅ **Empty Changes**: Skip reviews when no meaningful changes detected
 - ✅ **Configurable Patterns**: Custom skip patterns via configuration
+
+### FR-016: Complete Diff Fetching System (Implemented)
+
+**Core Functionality:**
+- ✅ **Complete Coverage**: Fetch all files from PRs/MRs, including large files that platform APIs omit
+- ✅ **HTTP Diff Endpoint**: Primary method using `.diff` URL endpoints for complete file lists
+- ✅ **Automatic Fallback**: Transparent fallback to platform API if HTTP method fails
+- ✅ **Streaming Parser**: Process diffs in 16KB chunks without loading entire content into memory
+- ✅ **Pre-filtering**: Skip binary files and excluded patterns before parsing content
+
+**Advanced Features:**
+- ✅ **Binary Detection**: Identify and skip 50+ binary file extensions (images, archives, binaries)
+- ✅ **Intelligent Pre-filtering**: Filter excluded patterns during download, not after
+- ✅ **Early Stopping**: Stop processing when `max_files` limit is reached
+- ✅ **Statistics Logging**: Detailed metrics on filtered files, bytes processed/skipped, and processing time
+- ✅ **Platform-Specific URL Building**: Correct URL construction for GitHub.com, GitHub Enterprise, GitLab.com, and self-hosted GitLab
+
+**Performance Optimizations:**
+- ✅ **Streaming Download**: 16KB chunks for memory efficiency
+- ✅ **Skip Before Parse**: Pre-filter excludes files without parsing their content
+- ✅ **Configurable Timeout**: Adjustable download timeout for large repositories (default: 120s)
+- ✅ **Filter Ratio Tracking**: Monitor efficiency of pre-filtering (MB skipped vs processed)
+
+**Compatibility:**
+- ✅ **GitLab**: Both web-style and API-style diff URLs with SSL support
+- ✅ **GitHub**: Correct handling of GitHub.com vs GitHub Enterprise instances
+- ✅ **Local Git**: Enhanced with binary and excluded pattern pre-filtering
+- ✅ **Transparent Operation**: No user configuration required, works automatically
+
+**Configuration Options:**
+- ✅ **Timeout Adjustment**: `diff_download_timeout` for slow networks or large repos (default: 120s)
+- ✅ **Uses Existing Patterns**: Respects `exclude_patterns` configuration
+- ✅ **No Feature Flags**: Always attempts HTTP method first with transparent fallback
 
 ## 🔧 Non-Functional Requirements
 
@@ -1056,6 +1090,7 @@ ai-code-review --owner "$GITHUB_REPOSITORY_OWNER" --repo "$GITHUB_REPOSITORY_NAM
 - ✅ **Multi-Language Support**: Support for 6+ programming languages with framework detection
 - ✅ **Enhanced Reviews**: Context-aware reviews with project-specific insights
 - ✅ **Smart Skip Review**: Automatic detection and skipping of draft/WIP reviews
+- ✅ **Complete Diff Fetching**: All files included in reviews, with streaming and pre-filtering optimizations
 
 ### Quality
 

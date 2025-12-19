@@ -12,6 +12,13 @@ Guide for developers who want to understand, modify, or extend the AI Code Revie
 - [🛠️ Technology Stack](#️-technology-stack)
   - [Core Dependencies](#core-dependencies)
   - [Development Tools](#development-tools)
+- [🚀 Complete Diff Fetching System](#-complete-diff-fetching-system)
+  - [Overview](#overview)
+  - [Architecture](#architecture)
+  - [Key Components](#key-components)
+  - [Performance Optimizations](#performance-optimizations)
+  - [Testing Strategy](#testing-strategy-1)
+  - [Extending the System](#extending-the-system)
 - [🔧 Common Modification Scenarios](#-common-modification-scenarios)
   - [1. Adding a New Platform](#1-adding-a-new-platform-eg-bitbucket)
   - [2. Modifying AI Prompts](#2-modifying-ai-prompts)
@@ -166,7 +173,7 @@ src/ai_code_review/
 ```python
 # CLI and HTTP
 click>=8.1.0           # Modern CLI framework
-aiohttp>=3.9.0         # Async HTTP client
+httpx>=0.28.1          # HTTP client (sync & async, with streaming)
 httpx>=0.28.1          # Sync HTTP client (for Ollama)
 python-gitlab>=4.0.0   # GitLab API client
 pygithub>=2.1.0        # GitHub API client
@@ -205,6 +212,329 @@ pytest-cov>=6.2.1       # Coverage reporting
 pre-commit>=4.3.0  # Git hooks
 uv                  # Package management
 ```
+
+## 🚀 Complete Diff Fetching System
+
+### Overview
+
+The project implements an advanced diff fetching system for GitLab and GitHub that ensures **all files are included** in code reviews, even large files that platform APIs might omit.
+
+### The Problem
+
+Platform APIs (GitLab and GitHub) have limitations:
+- **File omission**: Large files (>1MB typically) are excluded from API responses
+- **No control**: Users don't know which files were omitted
+- **Incomplete reviews**: AI might miss critical changes in large files
+
+### The Solution
+
+**Two-tier approach with automatic fallback:**
+
+1. **Primary: HTTP `.diff` endpoint** (complete, always includes all files)
+2. **Fallback: Standard API** (if HTTP method fails for any reason)
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  _fetch_pull_request_diffs() / _fetch_merge_request_diffs()│
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ├─► Try HTTP .diff endpoint
+                     │   │
+                     │   ├─► Build URL (platform-specific)
+                     │   │   - GitHub: https://github.com/owner/repo/pull/123.diff
+                     │   │   - GitLab: https://gitlab.com/group/project/-/merge_requests/123.diff
+                     │   │
+                     │   ├─► Download with streaming (16KB chunks)
+                     │   │   │
+                     │   │   └─► FilteringStreamingDiffParser
+                     │   │       │
+                     │   │       ├─► Pre-filter binary files (by extension)
+                     │   │       ├─► Pre-filter excluded patterns
+                     │   │       ├─► Parse only relevant files
+                     │   │       └─► Early stop at max_files limit
+                     │   │
+                     │   └─► Return parsed diffs ✓
+                     │
+                     └─► On failure: Automatic fallback to API
+                         └─► Return API diffs (may be incomplete)
+```
+
+### Key Components
+
+#### 1. FilteringStreamingDiffParser
+
+**Location**: `src/ai_code_review/utils/diff_parser.py`
+
+**Purpose**: Parse unified diff format incrementally with intelligent pre-filtering.
+
+**Features**:
+- **Streaming**: Processes diffs in chunks without loading entire file into memory
+- **Pre-filtering**: Skips unwanted files BEFORE parsing their content
+- **Binary detection**: Identifies binary files by extension
+- **Statistics**: Tracks what was filtered and why
+
+**Example Usage**:
+```python
+parser = FilteringStreamingDiffParser(
+    should_exclude=lambda path: path.endswith('.lock')
+)
+
+async for chunk in response.content.iter_chunked(16384):
+    for diff in parser.parse_chunk(chunk):
+        # Process each relevant diff as it's parsed
+        diffs.append(diff)
+
+# Get final diffs from buffer
+for diff in parser.finalize():
+    diffs.append(diff)
+
+# Check statistics
+stats = parser.get_statistics()
+# {'total_files': 100, 'filtered_files': 30, 'binary_files': 10, ...}
+```
+
+#### 2. Platform Client Implementation
+
+**GitHub Client** (`src/ai_code_review/core/github_client.py`):
+
+```python
+async def _fetch_pull_request_diffs(
+    self, pull_request: PullRequest.PullRequest
+) -> list[PullRequestDiff]:
+    """Fetch PR diffs with automatic fallback."""
+    
+    # 1. Try HTTP .diff method first
+    diff_url = self._build_diff_url(
+        pull_request.base.repo.full_name,
+        pull_request.number
+    )
+    
+    diffs = await self._fetch_and_parse_diff_with_prefiltering(
+        diff_url,
+        self._build_auth_headers()
+    )
+    
+    if diffs:
+        return self._apply_content_limits(diffs)
+    
+    # 2. Automatic fallback to API
+    logger.info("Falling back to GitHub API for diffs")
+    return await self._fetch_pull_request_diffs_via_api(pull_request)
+```
+
+**GitLab Client** (`src/ai_code_review/core/gitlab_client.py`):
+
+Similar implementation with platform-specific URL building and SSL handling.
+
+#### 3. URL Building (Platform-Specific)
+
+**GitHub**:
+```python
+def _build_diff_url(self, project_id: str, pr_number: int) -> str:
+    base_url = self.config.github_url
+    
+    if base_url == "https://github.com" or base_url == "https://api.github.com":
+        # GitHub.com: use public URL
+        return f"https://github.com/{project_id}/pull/{pr_number}.diff"
+    else:
+        # GitHub Enterprise: extract base from API URL
+        api_base = base_url.replace("/api/v3", "").replace("/api", "")
+        return f"{api_base}/{project_id}/pull/{pr_number}.diff"
+```
+
+**GitLab**:
+```python
+def _build_diff_url(
+    self, 
+    project_id: str, 
+    mr_number: int,
+    use_api_path: bool = False
+) -> str:
+    if use_api_path:
+        # API-style path with project ID
+        encoded_id = urllib.parse.quote(project_id, safe="")
+        return f"{base_url}/projects/{encoded_id}/merge_requests/{mr_number}.diff"
+    else:
+        # Web-style path (preferred)
+        return f"{base_url}/{project_id}/-/merge_requests/{mr_number}.diff"
+```
+
+### Performance Optimizations
+
+#### 1. Pre-filtering (Before Parsing)
+
+**Binary Files**:
+```python
+BINARY_EXTENSIONS = {
+    '.png', '.jpg', '.jpeg', '.gif', '.ico', '.pdf',
+    '.zip', '.tar', '.gz', '.whl', '.pyc', '.so',
+    # ... 50+ extensions
+}
+
+def is_binary_file(path: str) -> bool:
+    return Path(path).suffix.lower() in BINARY_EXTENSIONS
+```
+
+**Excluded Patterns**:
+```python
+def should_exclude(path: str) -> bool:
+    # Check against user's exclude_patterns
+    for pattern in self.config.exclude_patterns:
+        if PurePath(path).match(pattern):
+            return True
+    return False
+```
+
+#### 2. Early Stopping
+
+```python
+# Stop downloading/parsing when max_files is reached
+if len(diffs) >= self.config.max_files:
+    logger.info("Reached max_files limit during streaming")
+    break
+```
+
+#### 3. Streaming Download
+
+```python
+# Download in 16KB chunks (balance between memory and speed)
+async for chunk in response.content.iter_chunked(16384):
+    # Process chunk immediately, don't accumulate in memory
+    for diff in parser.parse_chunk(chunk):
+        yield diff
+```
+
+### Statistics and Monitoring
+
+The system logs detailed statistics after processing:
+
+```python
+{
+    'total_files': 100,          # Total files encountered
+    'filtered_files': 30,        # Files excluded by patterns
+    'binary_files': 10,          # Binary files detected
+    'included_files': 60,        # Files actually parsed
+    'bytes_skipped': 47_185_920, # ~45MB not parsed
+    'bytes_processed': 5_242_880, # ~5MB parsed
+    'filter_ratio': 40.0,        # 40% filtered out
+    'mb_skipped': 45.0,
+    'mb_processed': 5.0,
+}
+```
+
+### Error Handling
+
+**Transparent Fallback**:
+```python
+try:
+    # Try HTTP .diff method
+    diffs = await fetch_via_http()
+    if diffs:
+        return diffs
+except Exception as e:
+    logger.warning(f"HTTP diff fetch failed: {e}")
+
+# Always fall back to API (never fail)
+return await fetch_via_api()
+```
+
+**Timeout Handling**:
+```python
+timeout = httpx.Timeout(self.config.diff_download_timeout)
+async with httpx.AsyncClient(verify=ssl_context, timeout=timeout) as client:
+    async with client.stream("GET", url, headers=headers) as response:
+        # ... process response
+```
+
+### Configuration
+
+**User-facing configuration** (in `Config` model):
+```python
+diff_download_timeout: int = Field(
+    default=120,
+    description="Timeout for downloading complete diffs (seconds)"
+)
+```
+
+**No user action needed** for the feature itself - it's automatic with transparent fallback.
+
+### Testing Strategy
+
+**Unit Tests**:
+- `test_ai_code_review_diff_parser.py`: Parser logic
+- `test_ai_code_review_github_client.py`: GitHub-specific HTTP fetching
+- `test_ai_code_review_gitlab_client.py`: GitLab-specific HTTP fetching
+
+**Test Coverage**:
+- URL building for different platforms
+- Successful HTTP fetch and parsing
+- Non-200 HTTP responses (fallback)
+- Pre-filtering (binary files, excluded patterns)
+- Early stopping at max_files limit
+- Statistics calculation
+- Timeout handling
+
+**Mock Pattern** (centralized in `conftest.py`):
+```python
+@contextmanager
+def mock_httpx_client(diff_content: str, status: int = 200):
+    """Fixture to mock httpx.AsyncClient for HTTP diff fetching tests."""
+    
+    # Create async iterator for aiter_bytes
+    async def async_chunks():
+        yield diff_content.encode("utf-8")
+    
+    mock_response = MagicMock()
+    mock_response.status_code = status
+    mock_response.aiter_bytes = MagicMock(return_value=async_chunks())
+    # ... (See conftest.py for full implementation)
+    
+    with patch("httpx.AsyncClient") as mock_client_class:
+        yield mock_client_class
+```
+
+### Extending the System
+
+#### Adding a New Platform
+
+1. Implement `_build_diff_url()` method
+2. Implement `_build_auth_headers()` method
+3. Implement `_fetch_and_parse_diff_with_prefiltering()` method
+4. Implement fallback to platform API
+5. Add platform-specific tests
+
+**Example**: Adding Bitbucket support would require:
+- Determining if Bitbucket has a `.diff` endpoint
+- Implementing URL building for Bitbucket's URL structure
+- Handling Bitbucket's authentication headers
+
+#### Modifying Pre-filtering Logic
+
+To add new file types to filter:
+
+1. Update `BINARY_EXTENSIONS` in `diff_parser.py`
+2. Or modify `should_exclude` logic in `BasePlatformClient`
+
+#### Adjusting Performance Parameters
+
+```python
+# Chunk size for streaming download
+CHUNK_SIZE = 16384  # 16KB (can be tuned)
+
+# Minimum remaining space for truncation
+MIN_REMAINING_CHARS = 20  # In _apply_content_limits()
+```
+
+### Future Improvements
+
+**Potential Enhancements**:
+- [ ] Compression support (Accept-Encoding: gzip)
+- [ ] Parallel download of multiple MR/PR diffs
+- [ ] Caching of diff downloads
+- [ ] Progressive diff rendering for very large MRs
+- [ ] Support for patch format (`.patch` endpoints)
 
 ## 🔧 Common Modification Scenarios
 

@@ -3,23 +3,31 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import gitlab
 import pytest
 
 from ai_code_review.core.gitlab_client import GitLabClient
-from ai_code_review.models.config import Config
+from ai_code_review.models.config import Config, PlatformProvider
 from ai_code_review.models.platform import PullRequestData, PullRequestDiff
 from ai_code_review.utils.platform_exceptions import GitLabAPIError
+from tests.conftest import mock_httpx_client
 
 
 @pytest.fixture
-def test_config() -> Config:
-    """Test configuration."""
+def test_config(monkeypatch) -> Config:
+    """Test configuration isolated from environment variables."""
     from ai_code_review.models.config import AIProvider
 
+    # Clear CI environment variables that might interfere
+    monkeypatch.delenv("CI_SERVER_URL", raising=False)
+    monkeypatch.delenv("GITHUB_SERVER_URL", raising=False)
+    monkeypatch.delenv("CI_PROJECT_PATH", raising=False)
+    monkeypatch.delenv("CI_MERGE_REQUEST_IID", raising=False)
+
     return Config(
+        platform_provider=PlatformProvider.GITLAB,
         gitlab_token="test_token",
         gitlab_url="https://test-gitlab.com",
         ai_provider=AIProvider.OLLAMA,
@@ -994,3 +1002,280 @@ class TestGitLabClient:
 
         with pytest.raises(GitLabAPIError, match="Failed to get authenticated user"):
             await client.get_authenticated_username()
+
+
+class TestGitLabClientHTTPDiffFetching:
+    """Test HTTP .diff URL fetching functionality."""
+
+    def test_build_auth_headers(self, test_config: Config) -> None:
+        """Test building authentication headers."""
+        client = GitLabClient(test_config)
+
+        headers = client._build_auth_headers()
+
+        assert "PRIVATE-TOKEN" in headers
+        assert headers["PRIVATE-TOKEN"] == "test_token"
+
+    @pytest.mark.asyncio
+    async def test_fetch_complete_diff_via_http_success(
+        self, test_config: Config
+    ) -> None:
+        """Test successful HTTP diff fetching."""
+        client = GitLabClient(test_config)
+
+        # Mock diff content
+        diff_content = """diff --git a/file.py b/file.py
+index abc123..def456 100644
+--- a/file.py
++++ b/file.py
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+
+        # Mock httpx response
+        with mock_httpx_client(diff_content, status=200):
+            diffs = await client._fetch_and_parse_diff_with_prefiltering(
+                "https://test-gitlab.com/group/project/-/merge_requests/1.diff",
+                {"PRIVATE-TOKEN": "test_token"},
+                True,
+            )
+
+        assert len(diffs) == 1
+        assert diffs[0].file_path == "file.py"
+
+    @pytest.mark.asyncio
+    async def test_fetch_complete_diff_via_http_failure(
+        self, test_config: Config
+    ) -> None:
+        """Test HTTP diff fetching with failure (404 status)."""
+        from tests.conftest import mock_httpx_client
+
+        client = GitLabClient(test_config)
+
+        # Mock failed response with 404 status
+        with mock_httpx_client(diff_content="", status=404):
+            diffs = await client._fetch_and_parse_diff_with_prefiltering(
+                "https://test-gitlab.com/group/project/-/merge_requests/1.diff",
+                {"PRIVATE-TOKEN": "test_token"},
+                True,
+            )
+
+        assert len(diffs) == 0
+
+    @pytest.mark.asyncio
+    async def test_fetch_diff_reaches_max_files_in_finalize(
+        self, test_config: Config
+    ) -> None:
+        """Test that max_files limit is respected in finalize step."""
+        # Set low max_files limit
+        test_config.max_files = 2
+
+        client = GitLabClient(test_config)
+
+        # Mock diff with 3 small files (will be processed in finalize)
+        diff_content = """diff --git a/a.py b/a.py
+index 1..2 100644
+--- a/a.py
++++ b/a.py
+@@ -1 +1 @@
+-a
++b
+diff --git a/b.py b/b.py
+index 3..4 100644
+--- a/b.py
++++ b/b.py
+@@ -1 +1 @@
+-c
++d
+diff --git a/c.py b/c.py
+index 5..6 100644
+--- a/c.py
++++ b/c.py
+@@ -1 +1 @@
+-e
++f
+"""
+
+        with mock_httpx_client(diff_content):
+            diffs = await client._fetch_and_parse_diff_with_prefiltering(
+                "https://test-gitlab.com/group/project/-/merge_requests/1.diff",
+                {"PRIVATE-TOKEN": "test_token"},
+                True,
+            )
+
+        # Should stop at max_files=2
+        assert len(diffs) == 2
+
+    @pytest.mark.asyncio
+    async def test_prefiltering_excludes_files(self, test_config: Config) -> None:
+        """Test that pre-filtering excludes files correctly."""
+        client = GitLabClient(test_config)
+
+        # Mock diff with excluded file
+        diff_content = """diff --git a/package-lock.json b/package-lock.json
+index abc123..def456 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -1,1 +1,1 @@
+-old
++new
+diff --git a/code.py b/code.py
+index ghi789..jkl012 100644
+--- a/code.py
++++ b/code.py
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+
+        # Mock aiohttp response
+        with mock_httpx_client(diff_content):
+            diffs = await client._fetch_and_parse_diff_with_prefiltering(
+                "https://test-gitlab.com/group/project/-/merge_requests/1.diff",
+                {"PRIVATE-TOKEN": "test_token"},
+                True,
+            )
+
+        # Only code.py should be included (package-lock.json is in default excludes)
+        assert len(diffs) == 1
+        assert diffs[0].file_path == "code.py"
+
+    @pytest.mark.asyncio
+    async def test_early_stop_at_max_files(self, test_config: Config) -> None:
+        """Test that fetching stops early when max_files is reached."""
+        # Set low max_files limit
+        test_config.max_files = 2
+
+        client = GitLabClient(test_config)
+
+        # Mock diff with 3 files
+        diff_content = """diff --git a/file1.py b/file1.py
+index abc..def 100644
+--- a/file1.py
++++ b/file1.py
+@@ -1,1 +1,1 @@
+-old
++new
+diff --git a/file2.py b/file2.py
+index ghi..jkl 100644
+--- a/file2.py
++++ b/file2.py
+@@ -1,1 +1,1 @@
+-old
++new
+diff --git a/file3.py b/file3.py
+index mno..pqr 100644
+--- a/file3.py
++++ b/file3.py
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+
+        # Mock aiohttp response
+        with mock_httpx_client(diff_content):
+            diffs = await client._fetch_and_parse_diff_with_prefiltering(
+                "https://test-gitlab.com/group/project/-/merge_requests/1.diff",
+                {"PRIVATE-TOKEN": "test_token"},
+                True,
+            )
+
+            # Should stop at 2 files
+            assert len(diffs) == 2
+
+    @pytest.mark.asyncio
+    async def test_http_timeout_fallback(self, test_config: Config) -> None:
+        """Test that timeout triggers fallback."""
+        client = GitLabClient(test_config)
+
+        # Mock timeout
+        mock_session = AsyncMock()
+        mock_session.get = AsyncMock(side_effect=TimeoutError())
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", return_value=mock_session):
+            diffs = await client._fetch_and_parse_diff_with_prefiltering(
+                "https://test-gitlab.com/group/project/-/merge_requests/1.diff",
+                {"PRIVATE-TOKEN": "test_token"},
+                True,
+            )
+
+        # Should return empty list (triggering fallback)
+        assert len(diffs) == 0
+
+    @pytest.mark.asyncio
+    async def test_fetch_merge_request_diffs_uses_http_first(
+        self, test_config: Config
+    ) -> None:
+        """Test that _fetch_merge_request_diffs tries HTTP method first."""
+        client = GitLabClient(test_config)
+
+        # Mock merge request
+        mock_mr = MagicMock()
+        mock_mr.project_id = "group/project"
+        mock_mr.iid = 123
+
+        # Mock successful HTTP fetch
+        with patch.object(
+            client,
+            "_fetch_and_parse_diff_with_prefiltering",
+            new_callable=AsyncMock,
+        ) as mock_http:
+            mock_http.return_value = [
+                PullRequestDiff(
+                    file_path="test.py",
+                    new_file=False,
+                    renamed_file=False,
+                    deleted_file=False,
+                    diff="test diff",
+                )
+            ]
+
+            diffs = await client._fetch_merge_request_diffs(mock_mr)
+
+            assert len(diffs) == 1
+            mock_http.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_fetch_merge_request_diffs_fallback_to_api(
+        self, test_config: Config
+    ) -> None:
+        """Test fallback to API when HTTP fails."""
+        client = GitLabClient(test_config)
+
+        # Mock merge request
+        mock_mr = MagicMock()
+        mock_mr.project_id = "group/project"
+        mock_mr.iid = 123
+
+        # Mock failed HTTP fetch
+        with patch.object(
+            client,
+            "_fetch_and_parse_diff_with_prefiltering",
+            new_callable=AsyncMock,
+        ) as mock_http:
+            mock_http.return_value = []  # Empty = failed
+
+            # Mock API fallback
+            with patch.object(
+                client,
+                "_fetch_merge_request_diffs_via_api",
+                new_callable=AsyncMock,
+            ) as mock_api:
+                mock_api.return_value = [
+                    PullRequestDiff(
+                        file_path="test.py",
+                        new_file=False,
+                        renamed_file=False,
+                        deleted_file=False,
+                        diff="test diff from API",
+                    )
+                ]
+
+                diffs = await client._fetch_merge_request_diffs(mock_mr)
+
+                assert len(diffs) == 1
+                mock_http.assert_called_once()
+                mock_api.assert_called_once()

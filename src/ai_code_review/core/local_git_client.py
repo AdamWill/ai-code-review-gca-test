@@ -18,6 +18,7 @@ from ai_code_review.models.platform import (
     PullRequestDiff,
     PullRequestInfo,
 )
+from ai_code_review.utils.diff_parser import BINARY_EXTENSIONS
 from ai_code_review.utils.platform_exceptions import GitLocalError
 
 logger = structlog.get_logger(__name__)
@@ -227,11 +228,35 @@ class LocalGitClient(BasePlatformClient):
         except Exception:
             return "local-user"
 
+    def _is_binary_file(self, file_path: str) -> bool:
+        """Check if file is binary based on extension.
+
+        Args:
+            file_path: Path of the file to check
+
+        Returns:
+            True if file appears to be binary
+        """
+        file_path_lower = file_path.lower()
+        # BINARY_EXTENSIONS is already a tuple for efficient checking
+        return file_path_lower.endswith(BINARY_EXTENSIONS)
+
     async def _get_local_diffs(self, base_commit: str) -> list[PullRequestDiff]:
-        """Get diffs between base commit and current HEAD."""
+        """Get diffs between base commit and current HEAD with pre-filtering.
+
+        Pre-filters binary files and excluded patterns before reading diff
+        content from disk, improving efficiency.
+
+        Args:
+            base_commit: Base commit SHA to compare against
+
+        Returns:
+            List of diffs for files that pass filters
+        """
         diffs: list[PullRequestDiff] = []
         excluded_files: list[str] = []
         excluded_chars = 0
+        binary_files: list[str] = []
 
         try:
             # Get the diff between base and current HEAD
@@ -247,21 +272,30 @@ class LocalGitClient(BasePlatformClient):
                 if not file_path:
                     continue
 
-                # Get the actual diff content
+                # PRE-FILTER: Skip binary files before reading content
+                if self._is_binary_file(file_path):
+                    binary_files.append(file_path)
+                    continue
+
+                # PRE-FILTER: Skip excluded patterns before reading content
+                if self._should_exclude_file(file_path):
+                    excluded_files.append(file_path)
+                    continue
+
+                # NOW read the actual diff content (only for files we'll use)
                 diff_content = await asyncio.to_thread(
                     self._get_diff_content, diff_item
                 )
 
-                # Skip binary files or files without diffs
+                # Skip files without diffs
                 if not diff_content or diff_content.strip() == "":
                     skipped_no_diff.append(file_path)
                     continue
 
-                # Check if file should be excluded from AI review
-                if self._should_exclude_file(file_path):
-                    excluded_files.append(file_path)
-                    excluded_chars += len(diff_content)
-                    continue
+                # Track excluded chars for statistics
+                excluded_chars += (
+                    len(diff_content) if file_path in excluded_files else 0
+                )
 
                 # Create diff object
                 diff = PullRequestDiff(
@@ -288,11 +322,19 @@ class LocalGitClient(BasePlatformClient):
                     examples=excluded_files[:3],
                 )
 
+            if binary_files:
+                logger.info(
+                    "Binary files skipped",
+                    binary_files=len(binary_files),
+                    reason="Binary files detected by extension",
+                    examples=binary_files[:3],
+                )
+
             if skipped_no_diff:
                 logger.info(
                     "Files skipped - no diff content",
                     skipped_files=len(skipped_no_diff),
-                    reason="Binary files or files with no changes",
+                    reason="Files with no changes",
                     examples=skipped_no_diff[:3],
                 )
 
