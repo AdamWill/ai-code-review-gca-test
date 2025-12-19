@@ -320,7 +320,9 @@ class LocalGitClient(BasePlatformClient):
         try:
             # Get the diff between base and current HEAD
             diff_index = await asyncio.to_thread(
-                self.repo.commit(base_commit).diff, self.repo.head.commit
+                self.repo.commit(base_commit).diff,
+                self.repo.head.commit,
+                create_patch=True,
             )
 
             skipped_no_diff = []
