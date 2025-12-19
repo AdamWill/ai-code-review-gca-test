@@ -23,6 +23,7 @@
   - [FR-013: Local Git Integration](#fr-013-local-git-integration-new-feature---implemented)
   - [FR-014: AI Context Generator](#fr-014-ai-context-generator-implemented)
   - [FR-015: Smart Skip Review](#fr-015-smart-skip-review-implemented)
+  - [FR-016: Complete Diff Fetching System](#fr-016-complete-diff-fetching-system-implemented)
 - [🔧 Non-Functional Requirements](#-non-functional-requirements)
   - [Performance](#performance)
   - [Reliability](#reliability)
@@ -380,6 +381,31 @@ Full multi-platform support for GitLab, GitHub, and Local Git repositories.
 - ✅ **WIP Branches**: Skip reviews for branches with "wip" prefix
 - ✅ **Empty Changes**: Skip reviews when no meaningful changes detected
 - ✅ **Configurable Patterns**: Custom skip patterns via configuration
+
+### FR-016: Complete Diff Fetching System (Implemented)
+
+**Core Functionality:**
+- ✅ **Complete Coverage**: Fetch all files from PRs/MRs, including large files that platform APIs omit
+- ✅ **HTTP Diff Endpoint**: Primary method using `.diff` URL endpoints for complete file lists
+- ✅ **Automatic Fallback**: Transparent fallback to platform API if HTTP method fails
+- ✅ **Robust Parsing**: Uses `unidiff` library for reliable diff parsing with content-based binary detection
+
+**Features:**
+- ✅ **Binary Detection**: Automatically detects binary files from diff content (e.g., "Binary files differ")
+- ✅ **Pattern Filtering**: Respects user-defined exclude patterns after parsing
+- ✅ **File Limit**: Stops processing when `max_files` limit is reached
+- ✅ **Platform Support**: GitHub.com, GitHub Enterprise, GitLab.com, and self-hosted GitLab
+
+**Implementation:**
+- ✅ **Simple Parsing**: Single-pass parsing with `unidiff.PatchSet(response.text)`
+- ✅ **Direct URLs**: Uses native PR/MR diff_url attributes when available
+- ✅ **Fast Timeout**: 10-second default timeout (typical diffs <200KB download in <1s)
+- ✅ **Transparent Operation**: No user configuration required, works automatically
+
+**Configuration Options:**
+- ✅ **Timeout Adjustment**: `diff_download_timeout` setting (default: 10s)
+- ✅ **Pattern Exclusions**: Respects `exclude_patterns` configuration
+- ✅ **No Feature Flags**: Always attempts HTTP method first with transparent fallback
 
 ## 🔧 Non-Functional Requirements
 
@@ -1057,6 +1083,7 @@ ai-code-review --owner "$GITHUB_REPOSITORY_OWNER" --repo "$GITHUB_REPOSITORY_NAM
 - ✅ **Multi-Language Support**: Support for 6+ programming languages with framework detection
 - ✅ **Enhanced Reviews**: Context-aware reviews with project-specific insights
 - ✅ **Smart Skip Review**: Automatic detection and skipping of draft/WIP reviews
+- ✅ **Complete Diff Fetching**: All files included in reviews using robust unidiff parsing
 
 ### Quality
 

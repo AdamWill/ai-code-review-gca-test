@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import ssl
 from datetime import datetime
 from typing import Any
 
@@ -206,10 +207,83 @@ class GitLabClient(BasePlatformClient):
         except Exception as e:
             raise GitLabAPIError(f"Unexpected error: {e}") from e
 
+    def _build_auth_headers(self) -> dict[str, str]:
+        """Build authentication headers for HTTP requests.
+
+        Returns:
+            Dictionary with authentication headers
+        """
+        return {
+            "PRIVATE-TOKEN": self.config.get_platform_token(),
+        }
+
+    def _get_ssl_context(self) -> ssl.SSLContext | bool:
+        """Get SSL context for HTTP requests.
+
+        Returns:
+            SSL context if certificate is configured, bool otherwise
+        """
+        ssl_verify: bool | str = self.config.ssl_verify
+
+        # Use cached certificate path from async download if available
+        if self._ssl_cert_path:
+            ssl_verify = self._ssl_cert_path
+        elif self.config.ssl_cert_path:
+            ssl_verify = self.config.ssl_cert_path
+
+        # Create SSL context
+        if isinstance(ssl_verify, str):
+            ssl_context = ssl.create_default_context()
+            ssl_context.load_verify_locations(ssl_verify)
+            return ssl_context
+        elif not ssl_verify:
+            return False
+        else:
+            return True
+
     async def _fetch_merge_request_diffs(
         self, merge_request: ProjectMergeRequest
     ) -> list[PullRequestDiff]:
-        """Fetch diffs for a merge request."""
+        """Fetch diffs for a merge request.
+
+        Attempts to fetch complete diff via .diff URL first for maximum
+        coverage (includes large files), with automatic fallback to API
+        method if HTTP fetch fails.
+
+        Args:
+            merge_request: GitLab merge request object
+
+        Returns:
+            List of diffs for the merge request
+        """
+        # Try HTTP .diff URL first (complete, includes large files)
+        # GitLab: web_url + ".diff" (e.g., .../-/merge_requests/123.diff)
+        diffs = await self._fetch_diff_via_http(
+            diff_url=f"{merge_request.web_url}.diff",
+            headers=self._build_auth_headers(),
+            ssl_context=self._get_ssl_context(),
+        )
+
+        # Fallback to API method if HTTP fetch failed
+        if diffs is None:
+            return await self._fetch_merge_request_diffs_via_api(merge_request)
+
+        return diffs
+
+    async def _fetch_merge_request_diffs_via_api(
+        self, merge_request: ProjectMergeRequest
+    ) -> list[PullRequestDiff]:
+        """Fetch diffs for a merge request via GitLab API.
+
+        This is the original implementation, kept as a fallback method
+        when HTTP .diff URL fetching fails.
+
+        Args:
+            merge_request: GitLab merge request object
+
+        Returns:
+            List of diffs from API
+        """
         diffs: list[PullRequestDiff] = []
         excluded_files: list[str] = []
         excluded_chars = 0

@@ -212,18 +212,26 @@ class LocalGitClient(BasePlatformClient):
             # Don't fail the entire operation if this check fails
             logger.debug("Could not check target branch status", error=str(e))
 
-    def _get_diff_content(self, diff_item: Any) -> str:
+    def _get_diff_content(self, diff_item: Any) -> str | None:
         """Get diff content as unified diff string with proper headers.
 
         GitPython's diff_item.diff property returns the patch content (from @@ onwards).
         We need to construct a complete unified diff format for the AI to understand.
+
+        Note: GitPython automatically detects binary files and returns None for their
+        diff content. No extension-based filtering is needed - GitPython's detection
+        is more reliable as it checks actual file content, not just extensions.
+
+        Returns:
+            str: Formatted diff content for text files
+            None: For binary files (to distinguish from empty diffs)
         """
         # Get the actual diff content (patch from @@ onwards)
         diff_bytes = diff_item.diff
 
-        # Handle None case explicitly (e.g., binary files, empty diffs)
+        # GitPython returns None for binary files - return None to distinguish from empty
         if diff_bytes is None:
-            return ""
+            return None
 
         # Convert bytes to string if necessary
         if isinstance(diff_bytes, bytes):
@@ -287,10 +295,19 @@ class LocalGitClient(BasePlatformClient):
             return "local-user"
 
     async def _get_local_diffs(self, base_commit: str) -> list[PullRequestDiff]:
-        """Get diffs between base commit and current HEAD."""
+        """Get diffs between base commit and current HEAD.
+
+        Filters excluded file patterns before reading diff content.
+
+        Args:
+            base_commit: Base commit SHA to compare against
+
+        Returns:
+            List of diffs for files that pass filters
+        """
         diffs: list[PullRequestDiff] = []
         excluded_files: list[str] = []
-        excluded_chars = 0
+        binary_files: list[str] = []
 
         try:
             # Get the diff between base and current HEAD
@@ -308,20 +325,24 @@ class LocalGitClient(BasePlatformClient):
                 if not file_path:
                     continue
 
-                # Get the actual diff content
+                # Skip excluded patterns before reading content
+                if self._should_exclude_file(file_path):
+                    excluded_files.append(file_path)
+                    continue
+
+                # NOW read the actual diff content (only for files we'll use)
                 diff_content = await asyncio.to_thread(
                     self._get_diff_content, diff_item
                 )
 
-                # Skip binary files or files without diffs
-                if not diff_content or diff_content.strip() == "":
-                    skipped_no_diff.append(file_path)
+                # None = binary file (GitPython detected binary content)
+                if diff_content is None:
+                    binary_files.append(file_path)
                     continue
 
-                # Check if file should be excluded from AI review
-                if self._should_exclude_file(file_path):
-                    excluded_files.append(file_path)
-                    excluded_chars += len(diff_content)
+                # Empty string = file with no actual changes
+                if not diff_content or diff_content.strip() == "":
+                    skipped_no_diff.append(file_path)
                     continue
 
                 # Create diff object
@@ -344,16 +365,23 @@ class LocalGitClient(BasePlatformClient):
                 logger.info(
                     "Files excluded from local review",
                     excluded_files=len(excluded_files),
-                    excluded_chars=excluded_chars,
                     included_files=len(diffs),
                     examples=excluded_files[:3],
+                )
+
+            if binary_files:
+                logger.info(
+                    "Binary files skipped",
+                    binary_files=len(binary_files),
+                    reason="GitPython detected binary content",
+                    examples=binary_files[:3],
                 )
 
             if skipped_no_diff:
                 logger.info(
                     "Files skipped - no diff content",
                     skipped_files=len(skipped_no_diff),
-                    reason="Binary files or files with no changes",
+                    reason="Files with no changes",
                     examples=skipped_no_diff[:3],
                 )
 

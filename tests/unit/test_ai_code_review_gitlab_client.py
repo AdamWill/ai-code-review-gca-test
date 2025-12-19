@@ -3,23 +3,30 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import gitlab
 import pytest
 
 from ai_code_review.core.gitlab_client import GitLabClient
-from ai_code_review.models.config import Config
+from ai_code_review.models.config import Config, PlatformProvider
 from ai_code_review.models.platform import PullRequestData, PullRequestDiff
 from ai_code_review.utils.platform_exceptions import GitLabAPIError
 
 
 @pytest.fixture
-def test_config() -> Config:
-    """Test configuration."""
+def test_config(monkeypatch) -> Config:
+    """Test configuration isolated from environment variables."""
     from ai_code_review.models.config import AIProvider
 
+    # Clear CI environment variables that might interfere
+    monkeypatch.delenv("CI_SERVER_URL", raising=False)
+    monkeypatch.delenv("GITHUB_SERVER_URL", raising=False)
+    monkeypatch.delenv("CI_PROJECT_PATH", raising=False)
+    monkeypatch.delenv("CI_MERGE_REQUEST_IID", raising=False)
+
     return Config(
+        platform_provider=PlatformProvider.GITLAB,
         gitlab_token="test_token",
         gitlab_url="https://test-gitlab.com",
         ai_provider=AIProvider.OLLAMA,
@@ -994,3 +1001,83 @@ class TestGitLabClient:
 
         with pytest.raises(GitLabAPIError, match="Failed to get authenticated user"):
             await client.get_authenticated_username()
+
+
+class TestGitLabClientHTTPDiffFetching:
+    """Test HTTP .diff URL fetching functionality."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_merge_request_diffs_uses_http_first(
+        self, test_config: Config
+    ) -> None:
+        """Test that _fetch_merge_request_diffs tries HTTP method first."""
+        client = GitLabClient(test_config)
+
+        # Mock merge request
+        mock_mr = MagicMock()
+        mock_mr.project_id = 123
+        mock_mr.iid = 456
+        mock_mr.web_url = "https://gitlab.com/owner/repo/-/merge_requests/456"
+
+        # Mock successful HTTP fetch with unidiff
+        diff_content = """diff --git a/file.py b/file.py
+index abc123..def456 100644
+--- a/file.py
++++ b/file.py
+@@ -1,1 +1,1 @@
+-old
++new
+"""
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_response = AsyncMock()
+            mock_response.status_code = 200
+            mock_response.text = diff_content
+            mock_client.return_value.__aenter__.return_value.get = AsyncMock(
+                return_value=mock_response
+            )
+
+            diffs = await client._fetch_merge_request_diffs(mock_mr)
+
+            # Should have fetched via HTTP
+            assert len(diffs) >= 1
+            mock_client.return_value.__aenter__.return_value.get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_fetch_merge_request_diffs_fallback_to_api(
+        self, test_config: Config
+    ) -> None:
+        """Test fallback to API when HTTP fails."""
+        client = GitLabClient(test_config)
+
+        # Mock merge request
+        mock_mr = MagicMock()
+        mock_mr.project_id = 123
+        mock_mr.iid = 456
+        mock_mr.web_url = "https://gitlab.com/owner/repo/-/merge_requests/456"
+
+        # Mock HTTP failure
+        with patch("httpx.AsyncClient") as mock_client:
+            mock_client.return_value.__aenter__.return_value.get.side_effect = (
+                Exception("HTTP error")
+            )
+
+            # Mock the API fallback method
+            with patch.object(
+                client,
+                "_fetch_merge_request_diffs_via_api",
+                new_callable=AsyncMock,
+            ) as mock_api:
+                mock_api.return_value = [
+                    PullRequestDiff(
+                        file_path="test.py",
+                        new_file=False,
+                        renamed_file=False,
+                        deleted_file=False,
+                        diff="test diff from API",
+                    )
+                ]
+
+                diffs = await client._fetch_merge_request_diffs(mock_mr)
+
+                assert len(diffs) == 1
+                mock_api.assert_called_once()

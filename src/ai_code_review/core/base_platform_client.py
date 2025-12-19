@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 from abc import ABC, abstractmethod
 from pathlib import PurePath
+from typing import Any
+
+import httpx
+import structlog
+import unidiff  # type: ignore
 
 from ai_code_review.models.config import Config
 from ai_code_review.models.platform import (
@@ -13,6 +19,8 @@ from ai_code_review.models.platform import (
     PullRequestData,
     PullRequestDiff,
 )
+
+logger = structlog.get_logger(__name__)
 
 
 class BasePlatformClient(PlatformClientInterface, ABC):
@@ -82,6 +90,104 @@ class BasePlatformClient(PlatformClientInterface, ABC):
             total_chars += diff_chars
 
         return limited_diffs
+
+    def _convert_patchset_to_diffs(self, patch_set: Any) -> list[PullRequestDiff]:
+        """Convert unidiff PatchSet to our PullRequestDiff format.
+
+        Applies filtering for binary files and excluded patterns,
+        and enforces max_files limit.
+
+        Args:
+            patch_set: unidiff.PatchSet object with parsed diffs
+
+        Returns:
+            List of filtered and converted PullRequestDiff objects
+        """
+        diffs: list[PullRequestDiff] = []
+        binary_skipped = 0
+        excluded_by_pattern = 0
+
+        for patched_file in patch_set:
+            file_path = patched_file.path
+
+            # Skip binaries (unidiff detects via "Binary files differ")
+            if patched_file.is_binary_file:
+                binary_skipped += 1
+                continue
+
+            # Apply user exclusion patterns
+            if self._should_exclude_file(file_path):
+                excluded_by_pattern += 1
+                continue
+
+            diffs.append(
+                PullRequestDiff(
+                    file_path=file_path,
+                    new_file=patched_file.is_added_file,
+                    renamed_file=patched_file.is_rename,
+                    deleted_file=patched_file.is_removed_file,
+                    diff=str(patched_file),
+                )
+            )
+
+            if len(diffs) >= self.config.max_files:
+                logger.info(
+                    "Reached max_files limit",
+                    max_files=self.config.max_files,
+                )
+                break
+
+        logger.info(
+            "Complete diff fetched via HTTP",
+            total_files=len(patch_set),
+            included=len(diffs),
+            binary_skipped=binary_skipped,
+            excluded_by_pattern=excluded_by_pattern,
+        )
+
+        return diffs
+
+    async def _fetch_diff_via_http(
+        self,
+        diff_url: str,
+        headers: dict[str, str],
+        ssl_context: Any = True,
+    ) -> list[PullRequestDiff] | None:
+        """Fetch and parse diff via HTTP .diff URL.
+
+        This method provides a common implementation for fetching complete diffs
+        via HTTP, which is more reliable than API endpoints for large files.
+
+        Args:
+            diff_url: The URL to fetch the diff from
+            headers: HTTP headers (authentication, etc.)
+            ssl_context: SSL context for verification (True, False, or ssl.SSLContext)
+
+        Returns:
+            List of PullRequestDiff objects if successful, None if fetch fails
+        """
+        try:
+            timeout = httpx.Timeout(self.config.diff_download_timeout)
+            async with httpx.AsyncClient(verify=ssl_context, timeout=timeout) as client:
+                response = await client.get(diff_url, headers=headers)
+
+                if response.status_code == 200:
+                    # Parse with unidiff - it handles binary detection automatically
+                    # Use to_thread for CPU-bound parsing to avoid blocking event loop
+                    patch_set = await asyncio.to_thread(unidiff.PatchSet, response.text)
+
+                    # Convert to our format (shared logic)
+                    diffs = self._convert_patchset_to_diffs(patch_set)
+
+                    return self._apply_content_limits(diffs)
+
+        except Exception as e:
+            logger.info(
+                "HTTP diff fetch failed, using API fallback",
+                error=str(e),
+            )
+
+        return None
 
     @abstractmethod
     async def get_authenticated_username(self) -> str:

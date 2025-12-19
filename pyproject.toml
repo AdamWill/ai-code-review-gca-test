@@ -63,6 +63,7 @@ dependencies = [
     "GitPython>=3.1.40",
     "aiofiles>=23.2.0",
     "defusedxml>=0.7.1",
+    "unidiff>=0.7.0",
 ]
 
 [project.scripts]
