@@ -529,7 +529,15 @@ TEMPERATURE=0.1                 # Response randomness (0.1 default)
 MAX_TOKENS=8000                 # Max response tokens (8000 default)
 
 # Processing Configuration
-MAX_CHARS=100000               # Max diff characters (100K default)
+# MAX_CHARS=200000             # Max diff characters (optional: auto-adapts to provider if not set)
+                               # Adaptive defaults: Gemini=200K, Anthropic=150K, Ollama=50K, OpenAI=100K
+                               #
+                               # Why adaptive limits?
+                               # - Each provider has different "context windows" (how much text they can process)
+                               # - Using 10-40% of capacity provides optimal results (filling >70% degrades quality)
+                               # - Prevents "lost in the middle" effect where LLMs lose focus with too much context
+                               # - Local models (Ollama) need smaller limits to avoid memory issues
+                               # - Balances speed and cost while maintaining review quality
 MAX_FILES=100                  # Max files to process (100 default)
 BIG_DIFFS=false                # Force 24K context (false default)
 LANGUAGE_HINT=python           # Language hint for better analysis

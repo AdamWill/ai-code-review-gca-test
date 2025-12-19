@@ -70,6 +70,35 @@ CLOUD_PROVIDERS = {
 # Default AI provider
 DEFAULT_AI_PROVIDER = AIProvider.GEMINI
 
+# Provider-specific max_chars limits based on model capabilities
+PROVIDER_DEFAULT_MAX_CHARS = {
+    AIProvider.GEMINI: 200_000,  # 200K - Gemini 2.5 (2M tokens input)
+    AIProvider.ANTHROPIC: 150_000,  # 150K - Claude 3.5 (200K tokens input)
+    AIProvider.OLLAMA: 50_000,  # 50K - Local models (24K tokens max)
+    AIProvider.OPENAI: 100_000,  # 100K - GPT-4 (128K tokens input)
+}
+"""Provider-specific max_chars defaults based on model context windows.
+
+Maps each AI provider to its optimal max_chars limit based on the model's
+actual context window capabilities:
+
+- Gemini:    200,000 chars (~80K tokens) - 2M token context window
+- Anthropic: 150,000 chars (~60K tokens) - 200K token context window
+- Ollama:     50,000 chars (~20K tokens) - 24K token max context
+- OpenAI:    100,000 chars (~40K tokens) - 128K token context window
+
+These limits are automatically applied by Config.set_adaptive_max_chars()
+when max_chars is not explicitly configured in the config file or CLI.
+"""
+
+# Default max_chars for unknown providers
+DEFAULT_MAX_CHARS = 100_000
+"""Default max_chars for unknown or future AI providers.
+
+Provides a safe fallback limit when a provider is not found in
+PROVIDER_DEFAULT_MAX_CHARS mapping.
+"""
+
 
 class SkipReviewConfig(BaseModel):
     """Configuration for automatic review skipping."""
@@ -341,8 +370,13 @@ class Config(BaseSettings):
     )
 
     # Content processing
-    max_chars: int = Field(
-        default=100_000, description="Maximum characters to process from diff"
+    max_chars: int | None = Field(
+        default=None,
+        description=(
+            "Maximum characters to process from diff. "
+            "If not specified, automatically adapts based on AI provider's "
+            "context window capabilities (see PROVIDER_DEFAULT_MAX_CHARS)"
+        ),
     )
     max_files: int = Field(
         default=100, description="Maximum number of files to process"
@@ -814,6 +848,17 @@ class Config(BaseSettings):
                 )
 
         return config
+
+    @model_validator(mode="after")
+    def set_adaptive_max_chars(self) -> Config:
+        """Set adaptive max_chars based on AI provider if not explicitly set."""
+        if self.max_chars is None:
+            # Use provider-specific default
+            self.max_chars = PROVIDER_DEFAULT_MAX_CHARS.get(
+                self.ai_provider, DEFAULT_MAX_CHARS
+            )
+
+        return self
 
     model_config = {
         "env_file": ".env",

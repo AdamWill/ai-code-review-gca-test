@@ -435,6 +435,15 @@ def main(**kwargs: Any) -> None:
         # Setup structured logging
         _setup_logging(config)
 
+        # Log configuration info (after logging is set up)
+        logger.info(
+            "Configuration loaded",
+            provider=config.ai_provider.value,
+            model=config.get_ai_model(),
+            max_chars=config.max_chars,
+            platform=config.platform_provider.value,
+        )
+
         # Handle health check early exit
         if config.health_check:
             asyncio.run(_run_health_check(config))

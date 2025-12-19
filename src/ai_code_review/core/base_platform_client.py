@@ -51,6 +51,13 @@ class BasePlatformClient(PlatformClientInterface, ABC):
         self, diffs: list[PullRequestDiff]
     ) -> list[PullRequestDiff]:
         """Apply content size limits to diffs."""
+        # max_chars should never be None after Config initialization
+        # (set by adaptive validator if not explicitly provided)
+        if self.config.max_chars is None:
+            raise ValueError(
+                "max_chars must be set. This indicates a configuration error."
+            )
+
         total_chars = 0
         limited_diffs: list[PullRequestDiff] = []
 
