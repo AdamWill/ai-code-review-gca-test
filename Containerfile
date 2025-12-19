@@ -9,7 +9,7 @@ RUN uv build --no-cache && \
 
 # Use the binary distributable in the system Python environment
 # so it's accessible globally in containers
-FROM registry.access.redhat.com/ubi9:latest
+FROM registry.access.redhat.com/ubi10:latest
 ENV DNF_OPTS="--setopt=install_weak_deps=False --setopt=tsflags=nodocs"
 RUN dnf install -y \
                 python3.12-pip \
