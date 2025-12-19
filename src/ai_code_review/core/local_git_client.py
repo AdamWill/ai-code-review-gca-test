@@ -213,12 +213,12 @@ class LocalGitClient(BasePlatformClient):
             logger.debug("Could not check target branch status", error=str(e))
 
     def _get_diff_content(self, diff_item: Any) -> str:
-        """Get diff content as unified diff string.
+        """Get diff content as unified diff string with proper headers.
 
-        GitPython's diff_item.diff property returns the actual unified diff content.
-        str(diff_item) only returns file metadata (name and blob SHAs), not the diff.
+        GitPython's diff_item.diff property returns the patch content (from @@ onwards).
+        We need to construct a complete unified diff format for the AI to understand.
         """
-        # Get the actual diff content (not just metadata)
+        # Get the actual diff content (patch from @@ onwards)
         diff_bytes = diff_item.diff
 
         # Handle None case explicitly (e.g., binary files, empty diffs)
@@ -227,22 +227,53 @@ class LocalGitClient(BasePlatformClient):
 
         # Convert bytes to string if necessary
         if isinstance(diff_bytes, bytes):
-            diff_str = diff_bytes.decode("utf-8", errors="replace")
+            patch_content = diff_bytes.decode("utf-8", errors="replace")
         else:
-            diff_str = str(diff_bytes) if diff_bytes else ""
+            patch_content = str(diff_bytes) if diff_bytes else ""
+
+        if not patch_content:
+            return ""
+
+        # Construct complete unified diff format with headers
+        # This helps the AI understand the context better
+        a_path = diff_item.a_path or diff_item.b_path
+        b_path = diff_item.b_path or diff_item.a_path
+
+        diff_lines = []
+
+        # Add diff header
+        diff_lines.append(f"diff --git a/{a_path} b/{b_path}")
+
+        # Add file mode indicators
+        if diff_item.change_type == "A":  # New file
+            diff_lines.append(f"new file mode {diff_item.b_mode or '100644'}")
+        elif diff_item.change_type == "D":  # Deleted file
+            diff_lines.append(f"deleted file mode {diff_item.a_mode or '100644'}")
+        elif diff_item.change_type == "R":  # Renamed
+            diff_lines.append(f"rename from {a_path}")
+            diff_lines.append(f"rename to {b_path}")
+
+        # Add --- and +++ lines
+        diff_lines.append(f"--- a/{a_path}")
+        diff_lines.append(f"+++ b/{b_path}")
+
+        # Add the actual patch content
+        diff_lines.append(patch_content)
+
+        full_diff = "\n".join(diff_lines)
 
         # Log first diff for debugging (only once)
         if not hasattr(self, "_logged_first_diff"):
             self._logged_first_diff = True
             logger.debug(
                 "Sample diff content from GitPython",
-                file_path=diff_item.b_path or diff_item.a_path,
-                diff_length=len(diff_str),
-                first_200_chars=diff_str[:200] if diff_str else "(empty)",
-                is_bytes=isinstance(diff_bytes, bytes),
+                file_path=b_path,
+                diff_length=len(full_diff),
+                patch_length=len(patch_content),
+                first_200_chars=full_diff[:200],
             )
 
-        return diff_str
+        return full_diff
 
     async def _get_current_user(self) -> str:
         """Get current git user name."""
