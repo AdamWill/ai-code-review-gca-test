@@ -63,7 +63,16 @@ ssl_verify: true
 #==============================================================================
 
 # Processing limits
-max_chars: 100000       # Max characters from diff
+# max_chars: Maximum characters from diff to process
+#   - If not specified, uses adaptive limits based on AI provider:
+#     * Gemini (default): 200,000 chars
+#     * Anthropic: 150,000 chars
+#     * Ollama: 50,000 chars
+#     * OpenAI: 100,000 chars
+#   - Set explicitly to override provider defaults
+#   - Example: max_chars: 120000
+# max_chars: 200000     # Uncomment to override adaptive defaults
+
 max_files: 100          # Max files to process per review
 
 # File filtering (glob patterns)

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from ai_code_review.models.config import (
     _DEFAULT_EXCLUDE_PATTERNS,
+    PROVIDER_DEFAULT_MAX_CHARS,
     AIProvider,
     Config,
     PlatformProvider,
@@ -172,3 +173,96 @@ class TestConfigFromCliArgs:
             assert config.ai_provider == AIProvider.GEMINI
             assert config.exclude_patterns == _DEFAULT_EXCLUDE_PATTERNS
             assert config.include_mr_summary is True
+
+
+class TestAdaptiveMaxChars:
+    """Test adaptive max_chars based on AI provider."""
+
+    def test_adaptive_max_chars_gemini(self) -> None:
+        """Test that Gemini gets 200K max_chars by default."""
+        with patch.dict(
+            "os.environ",
+            {
+                "AI_API_KEY": "fake_api_key",
+                "GITLAB_TOKEN": "fake_token",
+            },
+        ):
+            config = Config(ai_provider=AIProvider.GEMINI)
+            assert config.max_chars == 200_000
+
+    def test_adaptive_max_chars_anthropic(self) -> None:
+        """Test that Anthropic gets 150K max_chars by default."""
+        with patch.dict(
+            "os.environ",
+            {
+                "AI_API_KEY": "fake_api_key",
+                "GITLAB_TOKEN": "fake_token",
+            },
+        ):
+            config = Config(
+                ai_provider=AIProvider.ANTHROPIC,
+            )
+            assert config.max_chars == 150_000
+
+    def test_adaptive_max_chars_ollama(self) -> None:
+        """Test that Ollama gets 50K max_chars by default."""
+        with patch.dict(
+            "os.environ",
+            {
+                "GITLAB_TOKEN": "fake_token",
+            },
+        ):
+            config = Config(
+                ai_provider=AIProvider.OLLAMA,
+                ollama_base_url="http://localhost:11434",
+            )
+            assert config.max_chars == 50_000
+
+    def test_adaptive_max_chars_openai(self) -> None:
+        """Test that OpenAI gets 100K max_chars by default."""
+        with patch.dict(
+            "os.environ",
+            {
+                "AI_API_KEY": "fake_api_key",
+                "GITLAB_TOKEN": "fake_token",
+            },
+        ):
+            config = Config(
+                ai_provider=AIProvider.OPENAI,
+            )
+            assert config.max_chars == 100_000
+
+    def test_explicit_max_chars_override(self) -> None:
+        """Test that explicit max_chars overrides adaptive defaults."""
+        with patch.dict(
+            "os.environ",
+            {
+                "AI_API_KEY": "fake_api_key",
+                "GITLAB_TOKEN": "fake_token",
+            },
+        ):
+            config = Config(
+                ai_provider=AIProvider.GEMINI,
+                max_chars=120_000,
+            )
+            assert config.max_chars == 120_000
+
+    def test_adaptive_max_chars_all_providers(self) -> None:
+        """Test that all providers have appropriate defaults."""
+        for provider, expected_max_chars in PROVIDER_DEFAULT_MAX_CHARS.items():
+            with patch.dict(
+                "os.environ",
+                {
+                    "AI_API_KEY": "fake_api_key",
+                    "GITLAB_TOKEN": "fake_token",
+                },
+            ):
+                if provider == AIProvider.OLLAMA:
+                    config = Config(
+                        ai_provider=provider,
+                        ollama_base_url="http://localhost:11434",
+                    )
+                else:
+                    config = Config(ai_provider=provider)
+
+                assert config.max_chars == expected_max_chars

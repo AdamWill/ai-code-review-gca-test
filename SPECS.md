@@ -830,7 +830,8 @@ HTTP_TIMEOUT=5.0                        # HTTP timeout in seconds
 OLLAMA_BASE_URL=http://localhost:11434  # Ollama server URL
 
 # Processing Limits
-MAX_CHARS=100000                        # Max characters from diff
+# MAX_CHARS=200000                      # Max characters from diff (auto-adapts to provider if not set)
+                                        # Adaptive: Gemini=200K, Anthropic=150K, Ollama=50K, OpenAI=100K
 MAX_FILES=100                           # Max files to process
 
 # Review Format Configuration
